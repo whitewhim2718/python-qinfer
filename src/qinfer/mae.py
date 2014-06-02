@@ -89,11 +89,15 @@ class MAEUpdater(Distribution):
     :param type updater_class: Actual class to use for conditional distributions.
         This will almost always be :class:`~qinfer.smc.SMCUpdater`, but is allowed
         to vary to enable other approximations.
+    :param int n_exclude_params: Specifies the number of parameters to exclude
+        from being treated as common. Useful if the individual models aren't
+        properly "nested."
     """
     def __init__(self,
             models, n_particles, priors,
             resampler=None, smc_kwargs={},
-            updater_class=SMCUpdater
+            updater_class=SMCUpdater,
+            n_exclude_params=0
             ):
         
         # Make sure we have a list of priors.
@@ -107,6 +111,9 @@ class MAEUpdater(Distribution):
         
         # Initialize the data record.
         self._data_record = []
+        
+        # Remember details about how the models relate to each other.
+        self._n_exclude = n_exclude_params
         
         # Save the models as a dictionary onto updaters.
         self._updaters = {}
@@ -132,6 +139,10 @@ class MAEUpdater(Distribution):
                 model, self._n_particles, prior, **self._smc_kwargs
             )
             self._updaters[model] = new_updater
+        
+            # Do some more validity checking.
+            if not self.n_common_modelparams > 0:
+                raise ValueError("Models admit less than 1 common parameter--- there is nothing to update.")
             
             # Next, we need to update the new updater with all of the
             # already-collected data.
@@ -177,7 +188,7 @@ class MAEUpdater(Distribution):
         
     @property
     def n_common_modelparams(self):
-        return min(model.n_modelparams for model in self._updaters.iterkeys())
+        return min(model.n_modelparams for model in self._updaters.iterkeys()) - self._n_exclude
 
     ## UPDATE METHODS #########################################################
 
