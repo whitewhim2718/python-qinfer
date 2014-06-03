@@ -211,7 +211,9 @@ class MAEUpdater(Distribution):
             a resampling step may be performed.
         """
         
-        raise NotImplementedError("Not yet implemented.")
+        [updater.update(outcome, expparams, check_for_resample = check_for_resample) for updater in self._updaters.itervalues()]
+        
+        #TODO: extract the normalization record and update log_total_likelihood
 
     def batch_update(self, outcomes, expparams, resample_interval=5):
         r"""
@@ -248,6 +250,20 @@ class MAEUpdater(Distribution):
 
     ## ESTIMATION METHODS #####################################################
 
+    def posterior_model_pr(self):
+        """
+        Returns the posterior over models, assuming a uniform prior.
+        
+        :rtype: :class:`numpy.ndarray`, shape ``(len(_updaters),)``.
+        :returns: An array containing the posterior probabilities of each model.
+        """
+
+        un_normalized = np.array([
+            updater.normalization_record[-1] for updater in self._updaters.itervalues()
+            ])
+        
+        return un_normalized/np.sum(un_normalized)
+        
     def est_mean(self):
         """
         Returns an estimate of the posterior mean model, given by the
@@ -257,8 +273,12 @@ class MAEUpdater(Distribution):
         :rtype: :class:`numpy.ndarray`, shape ``(n_modelparams,)``.
         :returns: An array containing the an estimate of the mean model vector.
         """
-        # This is going to be a bit fun.
-        raise NotImplementedError("Not yet implemented.")
+        post_pr = self.posterior_model_pr()
+        means = np.array([
+            updater.est_mean()[:self.n_common_modelparams()]
+            for updater in self._updaters.itervalues()
+            ])        
+        return post_pr*means
         
     def est_meanfn(self, fn):
         """
