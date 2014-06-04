@@ -42,6 +42,7 @@ import warnings
 import numpy as np
 
 from qinfer.abstract_model import Model
+from qinfer.abstract_updater import Updater
 from qinfer.distributions import Distribution
 from qinfer._exceptions import ApproximationWarning
 
@@ -54,7 +55,7 @@ except ImportError:
 
 ## CLASSES #####################################################################
 
-class MAEUpdater(Distribution):
+class MAEUpdater(Updater):
     r"""
     Updates a posterior distribution over several models, along with parameters
     of each model, such that estimates of those parameters can be obtained
@@ -99,6 +100,8 @@ class MAEUpdater(Distribution):
             updater_class=SMCUpdater,
             n_exclude_params=0
             ):
+            
+        super(MAEUpdater, self).__init__()
         
         # Make sure we have a list of priors.
         if isinstance(priors, Distribution):
@@ -108,9 +111,6 @@ class MAEUpdater(Distribution):
         self._n_particles = n_particles
         self._smc_kwargs = smc_kwargs
         self._updater_class = updater_class
-        
-        # Initialize the data record.
-        self._data_record = []
         
         # Remember details about how the models relate to each other.
         self._n_exclude = n_exclude_params
@@ -146,9 +146,7 @@ class MAEUpdater(Distribution):
             
             # Next, we need to update the new updater with all of the
             # already-collected data.
-            # FIXME: need expparams too!
-            for datum in self._data_record:
-                new_updater.update(datum, expparams)
+            new_updater.batch_update(self.data_record, self.experiment_record)
             
     def remove_model(self, model):
         raise NotImplementedError("Not yet implemented.")
@@ -210,6 +208,7 @@ class MAEUpdater(Distribution):
             update, the effective sample size condition will be checked and
             a resampling step may be performed.
         """
+        super(MAEUpdater, self).update(outcome, expparams)
         
         [updater.update(outcome, expparams, check_for_resample = check_for_resample) for updater in self._updaters.itervalues()]
         

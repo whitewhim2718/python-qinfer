@@ -46,6 +46,7 @@ from scipy.spatial import Delaunay
 import scipy.linalg as la
 import scipy.stats
 
+from qinfer.abstract_updater import Updater
 from qinfer.abstract_model import DifferentiableModel
 from qinfer.metrics import rescaled_distance_mtx
 from qinfer import clustering
@@ -64,7 +65,7 @@ except ImportError:
 
 ## CLASSES #####################################################################
 
-class SMCUpdater(Distribution):
+class SMCUpdater(Updater):
     r"""
     Creates a new Sequential Monte carlo updater, using the algorithm of
     [GFWC12]_.
@@ -81,13 +82,16 @@ class SMCUpdater(Distribution):
     :param float zero_weight_thresh: Value to be used when testing for the
         zero-weight condition.
     """
+    
+    _resample_count = 0
+    
     def __init__(self,
             model, n_particles, prior,
             resample_a=None, resampler=None, resample_thresh=0.5,
             zero_weight_policy='error', zero_weight_thresh=None
             ):
-
-        self._resample_count = 0
+            
+        super(SMCUpdater, self).__init__()
         
         self.model = model
         self.n_particles = n_particles
@@ -110,7 +114,6 @@ class SMCUpdater(Distribution):
 
         self.resample_thresh = resample_thresh
 
-        self._data_record = []
         self._normalization_record = []
         
         self._zero_weight_policy = zero_weight_policy
@@ -170,15 +173,6 @@ class SMCUpdater(Distribution):
         :return float: The effective sample size, given by :math:`1/\sum_i w_i^2`.
         """
         return 1 / (np.sum(self.particle_weights**2))
-
-    @property
-    def data_record(self):
-        """
-        List of outcomes given to :meth:`~SMCUpdater.update`.
-        """
-        # We use [:] to force a new list to be made, decoupling
-        # this property from the caller.
-        return self._data_record[:]
 
     ## PRIVATE METHODS ########################################################
     
@@ -302,9 +296,8 @@ class SMCUpdater(Distribution):
             a resampling step may be performed.
         """
 
-        # First, record the outcome.
-        # TODO: record the experiment as well.
-        self._data_record.append(outcome)
+        # First, let the base class handle data/experiment records.
+        super(SMCUpdater, self).update(outcome, expparams)
 
         # Perform the update. 
         weights, norm = self.hypothetical_update(outcome, expparams, return_normalization=True)
