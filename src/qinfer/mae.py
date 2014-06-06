@@ -53,7 +53,7 @@ except ImportError:
     warnings.warn("Could not import pyplot. Plotting methods will not work.")
     plt = None
 
-## CLASSES #####################################################################
+## CLASSES ####################################################################
 
 class MAEUpdater(Updater):
     r"""
@@ -94,6 +94,32 @@ class MAEUpdater(Updater):
         from being treated as common. Useful if the individual models aren't
         properly "nested."
     """
+    
+    ## DESIGN NOTES ###########################################################
+    #  We want to maintain the advantages of SMC, namely that everything
+    #  proceeds iteratively. Thus, we maintain a prior over models and update
+    #  it with each incoming call to update(). This also avoids numerical
+    #  instability in the estimation of Pr(m_i | D), as that involves a
+    #  normalization over very small numbers as |D| → infinity.
+    #
+    #  We implement this by recording model weights along with the model
+    #  updaters, similarly to SMC itself (each model is thus one gigantic
+    #  particle).
+    #
+    #  To allow for dynamic model addition, this then requires that when a new
+    #  model is added, its weight is immediately calculated from the data
+    #  record. Moreover, we need a data structure that can manage these weights
+    #  when models can be added and removed in an online fashion, and so we
+    #  use a dictionary 
+    #      _posterior : models → float × updaters
+    #  to represent everything.
+    #
+    #  The weights are kept to a normalization not of 1, but of the total number
+    #  of models in the posterior, such that a uniform prior assigns a weight of
+    #  1 to each model as it is added.
+    
+    ## INIT ###################################################################
+    
     def __init__(self,
             models, n_particles, priors,
             resampler=None, smc_kwargs={},
@@ -116,17 +142,17 @@ class MAEUpdater(Updater):
         self._n_exclude = n_exclude_params
         
         # Save the models as a dictionary onto updaters.
-        self._updaters = {}
+        self._posterior = {}
         starmap(self.add_model, zip(models, priors))
      
     ## MODEL ADDITION AND REMOVAL #############################################
         
     def add_model(self, model, prior):
-        if model not in self._updaters:
+        if model not in self._posterior:
             # If we already have models, make sure the new one matches in
             # expparams_dtype.
-            if self._updaters:
-                current_dtype = self._updaters.iterkeys().next().expparams_dtype
+            if self._posterior:
+                current_dtype = self._posterior.iterkeys().next().expparams_dtype
                 if model.expparams_dtype != current_dtype:
                     raise TypeError((
                             "Model {} has expparams_dtype {}, which "
@@ -138,11 +164,15 @@ class MAEUpdater(Updater):
             new_updater = self._updater_class(
                 model, self._n_particles, prior, **self._smc_kwargs
             )
-            self._updaters[model] = new_updater
+            # Add the updater to the posterior with weight 1.
+            self._posterior[model] = (1.0, new_updater)
         
             # Do some more validity checking.
             if not self.n_common_modelparams > 0:
                 raise ValueError("Models admit less than 1 common parameter--- there is nothing to update.")
+            
+            if self.data_record:
+                raise NotImplementedError("Dynamic addition of models has not yet been implemented; need to work out the weights of the new models.")
             
             # Next, we need to update the new updater with all of the
             # already-collected data.
@@ -173,7 +203,7 @@ class MAEUpdater(Updater):
 
         :return float: The smallest effective sample size of any current model.
         """
-        return min(updater.ess for updater in self._updaters.itervalues())
+        return min(updater.ess for weight, updater in self._posterior.itervalues())
 
     @property
     def data_record(self):
@@ -186,7 +216,7 @@ class MAEUpdater(Updater):
         
     @property
     def n_common_modelparams(self):
-        return min(model.n_modelparams for model in self._updaters.iterkeys()) - self._n_exclude
+        return min(model.n_modelparams for model in self._posterior.iterkeys()) - self._n_exclude
 
     ## UPDATE METHODS #########################################################
 
@@ -210,9 +240,21 @@ class MAEUpdater(Updater):
         """
         super(MAEUpdater, self).update(outcome, expparams)
         
-        [updater.update(outcome, expparams, check_for_resample = check_for_resample) for updater in self._updaters.itervalues()]
+        norm_acc = 0.
         
-        #TODO: extract the normalization record and update log_total_likelihood
+        for weight, updater in self._posterior.itervalues():
+            updater.update(outcome, expparams, check_for_resample=check_for_resample)
+            norm_acc += updater.normalization_record[-1]
+        
+        # Choose a scale such that sum(weights) = len(posterior).
+        scale = len(self._posterior) / norm_acc
+        
+        # Rescale the weights by new normalziation.
+        for model, (weight, updater) in self._posterior.iteritems():
+            updater[model] = (
+                weight * updater.normalization_record[-1],
+                updater
+            )
 
     def batch_update(self, outcomes, expparams, resample_interval=5):
         r"""
@@ -240,6 +282,11 @@ class MAEUpdater(Updater):
         return self._model.n_modelparams
         
     def sample(self, n=1):
+        # TODO!
+        # 1) Pick model.
+        # 2) Sample that model's updater.
+        # 3) Slice down to common parameters.
+        
         # TODO: cache this.
         cumsum_weights = np.cumsum(self.particle_weights)
         return self.particle_locations[np.minimum(cumsum_weights.searchsorted(
@@ -257,11 +304,12 @@ class MAEUpdater(Updater):
         :returns: An array containing the posterior probabilities of each model.
         """
 
-        un_normalized = np.array([
-            updater.normalization_record[-1] for updater in self._updaters.itervalues()
-            ])
-        
-        return un_normalized/np.sum(un_normalized)
+        # FIXME: there's a subtle issue here, in that dict does not guarantee
+        #        an ordering as elements are added/removed, so the order
+        #        of the elements here is arbitrary.
+        return np.array([
+            weight for weight, updater in self._posterior.itervalues()
+        ]) / len(self._posterior)
         
     def est_mean(self):
         """
@@ -272,12 +320,13 @@ class MAEUpdater(Updater):
         :rtype: :class:`numpy.ndarray`, shape ``(n_modelparams,)``.
         :returns: An array containing the an estimate of the mean model vector.
         """
-        post_pr = self.posterior_model_pr()
         means = np.array([
-            updater.est_mean()[:self.n_common_modelparams()]
-            for updater in self._updaters.itervalues()
-            ])        
-        return post_pr*means
+            weight * updater.est_mean()[:self.n_common_modelparams()]
+            for weight, updater in self._posterior.itervalues()
+        ])        
+            
+        # Sum over the model axis, leaving the common model parameter axis.
+        return np.sum(means, axis=0)
         
     def est_meanfn(self, fn):
         """
