@@ -92,9 +92,16 @@ class SMCUpdater(Updater):
             ):
             
         super(SMCUpdater, self).__init__()
+
+        # Initialize zero-element arrays such that n_particles is always
+        # a valid property.
+        self.particle_locations = np.zeros((0, model.n_modelparams))
+        self.particle_weights = np.zeros((0,))
+        
+        # Initialize metadata on resampling performance.
+        self._resample_count = 0
         
         self.model = model
-        self.n_particles = n_particles
         self.prior = prior
 
         ## RESAMPLER CONFIGURATION ##
@@ -124,9 +131,19 @@ class SMCUpdater(Updater):
         )
         
         ## PARTICLE INITIALIZATION ##
-        self.reset()
+        self.reset(n_particles)
 
     ## PROPERTIES #############################################################
+
+    @property
+    def n_particles(self):
+        """
+        Returns the number of particles currently used in the sequential Monte
+        Carlo approximation.
+        
+        :rtype: `int`
+        """
+        return self.particle_locations.shape[0]
 
     @property
     def resample_count(self):
@@ -194,11 +211,14 @@ class SMCUpdater(Updater):
 
     ## INITIALIZATION METHODS #################################################
     
-    def reset(self):
+    def reset(self, n_particles=None):
         """
         Causes all particle locations and weights to be drawn fresh from the
         initial prior.
         """
+        if n_particles is None:
+            n_particles = self.n_particles
+        
         # Particles are stored using two arrays, particle_locations and
         # particle_weights, such that:
         # 
@@ -206,8 +226,8 @@ class SMCUpdater(Updater):
         #     parameter of the particle idx_particle.
         # particle_weights[idx_particle] is the weight of the particle
         #     idx_particle.
-        self.particle_locations = np.zeros((self.n_particles, self.model.n_modelparams))
-        self.particle_weights = np.ones((self.n_particles,)) / self.n_particles
+        self.particle_locations = np.zeros((n_particles, self.model.n_modelparams))
+        self.particle_weights = np.ones((n_particles,)) / n_particles
 
         self.particle_locations[:, :] = self.prior.sample(n=self.n_particles)
 
@@ -803,7 +823,7 @@ class SMCUpdater(Updater):
             # TODO: change format string based on number of digits of precision
             #       admitted by the variance.
             parameter_values="\n".join(
-                "<td>{}</td>".format(
+                "<td>${}$</td>".format(
                     format_uncertainty(mu, std)
                 )
                 for mu, std in
