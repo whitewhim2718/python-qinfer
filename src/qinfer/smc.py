@@ -45,6 +45,7 @@ import numpy as np
 from scipy.spatial import Delaunay
 import scipy.linalg as la
 import scipy.stats
+from scipy.ndimage.filters import gaussian_filter1d
 
 from qinfer.abstract_updater import Updater
 from qinfer.abstract_model import DifferentiableModel
