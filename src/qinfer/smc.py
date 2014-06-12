@@ -260,8 +260,6 @@ class SMCUpdater(Updater):
             be set if ``n_particles`` is also given.
         :param bool reset_weights: Resets the weights as well as the particles.
         """
-        if n_particles is None:
-            n_particles = self.n_particles
         
         # Particles are stored using two arrays, particle_locations and
         # particle_weights, such that:
@@ -273,7 +271,7 @@ class SMCUpdater(Updater):
         
         if n_particles is not None and only_params is not None:
             raise ValueError("Cannot set both n_particles and only_params.")
-        
+            
         if n_particles is None:
             n_particles = self.n_particles
         
