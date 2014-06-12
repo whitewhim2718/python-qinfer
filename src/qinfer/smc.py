@@ -51,10 +51,12 @@ from qinfer.abstract_model import DifferentiableModel
 from qinfer.metrics import rescaled_distance_mtx
 from qinfer import clustering
 from qinfer.distributions import Distribution
-from qinfer.resamplers import LiuWestResampler
+import qinfer.resamplers
+import qinfer.clustering
+import qinfer.metrics
 from qinfer.utils import outer_product, mvee, uniquify, particle_meanfn, \
         particle_covariance_mtx, format_uncertainty
-from qinfer._exceptions import ApproximationWarning
+from qinfer._exceptions import ApproximationWarning, ResamplerWarning
 
 try:
     import matplotlib.pyplot as plt
@@ -62,6 +64,12 @@ except ImportError:
     import warnings
     warnings.warn("Could not import pyplot. Plotting methods will not work.")
     plt = None
+
+## LOGGING ####################################################################
+
+import logging
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 ## CLASSES #####################################################################
 
@@ -76,6 +84,12 @@ class SMCUpdater(Updater):
     :param callable resampler: Specifies the resampling algorithm to be used. See :ref:`resamplers`
         for more details.
     :param float resample_thresh: Specifies the threshold for :math:`N_{\text{ess}}` to decide when to resample.
+    :param bool debug_resampling: If `True`, debug information will be
+        generated on resampling performance, and will be written to the
+        standard Python logger.
+    :param bool track_resampling_divergence: If true, then the divergences
+        between the pre- and post-resampling distributions are tracked and
+        recorded in the ``resampling_divergences`` attribute.
     :param str zero_weight_policy: Specifies the action to be taken when the
         particle weights would all be set to zero by an update.
         One of ``["ignore", "skip", "warn", "error", "reset"]``.
@@ -88,6 +102,8 @@ class SMCUpdater(Updater):
     def __init__(self,
             model, n_particles, prior,
             resample_a=None, resampler=None, resample_thresh=0.5,
+            debug_resampling=False,
+            track_resampling_divergence=False,
             zero_weight_policy='error', zero_weight_thresh=None
             ):
             
@@ -107,21 +123,26 @@ class SMCUpdater(Updater):
         ## RESAMPLER CONFIGURATION ##
         # Backward compatibility with the old resample_a keyword argument,
         # which assumed that the Liu and West resampler was being used.
+        self._debug_resampling = debug_resampling
         if resample_a is not None:
             warnings.warn("The 'resample_a' keyword argument is deprecated; use 'resampler=LiuWestResampler(a)' instead.", DeprecationWarning)
             if resampler is not None:
                 raise ValueError("Both a resample_a and an explicit resampler were provided; please provide only one.")
-            self.resampler = LiuWestResampler(a=resample_a)
+            self.resampler = qinfer.resamplers.LiuWestResampler(a=resample_a)
         else:
             if resampler is None:
-                self.resampler = LiuWestResampler()
+                self.resampler = qinfer.resamplers.LiuWestResampler()
             else:
                 self.resampler = resampler
 
 
         self.resample_thresh = resample_thresh
 
+        # Initialize properties to hold information about the history.
+        self._just_resampled = False
+        self._data_record = []
         self._normalization_record = []
+        self._resampling_divergences = [] if track_resampling_divergence else None
         
         self._zero_weight_policy = zero_weight_policy
         self._zero_weight_thresh = (
@@ -156,6 +177,14 @@ class SMCUpdater(Updater):
         # We wrap this in a property to prevent external resetting and to enable
         # a docstring.
         return self._resample_count
+        
+    @property
+    def just_resampled(self):
+        """
+        `True` if and only if there has been no data added since the last
+        resampling, or if there has not yet been a resampling step.
+        """
+        return self._just_resampled
 
     @property
     def normalization_record(self):
@@ -191,6 +220,15 @@ class SMCUpdater(Updater):
         """
         return 1 / (np.sum(self.particle_weights**2))
 
+        
+    @property
+    def resampling_divergences(self):
+        """
+        List of KL divergences between the pre- and post-resampling
+        distributions, if that is being tracked. Otherwise, `None`.
+        """
+        return self._resampling_divergences
+
     ## PRIVATE METHODS ########################################################
     
     def _maybe_resample(self):
@@ -211,10 +249,16 @@ class SMCUpdater(Updater):
 
     ## INITIALIZATION METHODS #################################################
     
-    def reset(self, n_particles=None):
+    def reset(self, n_particles=None, only_params=None, reset_weights=True):
         """
         Causes all particle locations and weights to be drawn fresh from the
         initial prior.
+        
+        :param int n_particles: Forces the size of the new particle set. If
+            `None`, the size of the particle set is not changed.
+        :param slice only_params: Resets only some of the parameters. Cannot
+            be set if ``n_particles`` is also given.
+        :param bool reset_weights: Resets the weights as well as the particles.
         """
         if n_particles is None:
             n_particles = self.n_particles
@@ -226,10 +270,24 @@ class SMCUpdater(Updater):
         #     parameter of the particle idx_particle.
         # particle_weights[idx_particle] is the weight of the particle
         #     idx_particle.
-        self.particle_locations = np.zeros((n_particles, self.model.n_modelparams))
-        self.particle_weights = np.ones((n_particles,)) / n_particles
+        
+        if n_particles is not None and only_params is not None:
+            raise ValueError("Cannot set both n_particles and only_params.")
+        
+        if n_particles is None:
+            n_particles = self.n_particles
+        
+        if reset_weights:
+            self.particle_weights = np.ones((n_particles,)) / n_particles
+        
+        if only_params is None:
+            sl = np.s_[:, :]
+            # Might as well make a new array if we're resetting everything.
+            self.particle_locations = np.zeros((n_particles, self.model.n_modelparams))
+        else:
+            sl = np.s_[:, only_params]
 
-        self.particle_locations[:, :] = self.prior.sample(n=self.n_particles)
+        self.particle_locations[sl] = self.prior.sample(n=n_particles)[sl]
 
     ## UPDATE METHODS #########################################################
 
@@ -318,6 +376,7 @@ class SMCUpdater(Updater):
 
         # First, let the base class handle data/experiment records.
         super(SMCUpdater, self).update(outcome, expparams)
+        self._just_resampled = False
 
         # Perform the update. 
         weights, norm = self.hypothetical_update(outcome, expparams, return_normalization=True)
@@ -393,9 +452,28 @@ class SMCUpdater(Updater):
 
     def resample(self):
         # TODO: add amended docstring.
+        
+        if self.just_resampled:
+            warnings.warn(
+                "Resampling without additional data; this may not perform as "
+                "desired.",
+                ResamplerWarning
+            )
 
         # Record that we have performed a resampling step.
+        self._just_resampled = True
         self._resample_count += 1
+
+        # If we're tracking divergences, make a copy of the weights and
+        # locations.
+        if self._resampling_divergences is not None:
+            old_locs = self.particle_locations.copy()
+            old_weights = self.particle_weights.copy()
+            
+        # Record the previous mean, cov if needed.
+        if self._debug_resampling:
+            old_mean = self.est_mean()
+            old_cov = self.est_covariance_mtx()
 
         # Find the new particle locations according to the chosen resampling
         # algorithm.
@@ -413,6 +491,21 @@ class SMCUpdater(Updater):
             self.model.clear_cache()
         except Exception as e:
             warnings.warn("Exception raised when clearing model cache: {}. Ignoring.".format(e))
+
+        # Possibly track the new divergence.
+        if self._resampling_divergences is not None:
+            self._resampling_divergences.append(
+                self._kl_divergence(old_locs, old_weights)
+            )
+            
+        # Report current and previous mean, cov.
+        if self._debug_resampling:
+            new_mean = self.est_mean()
+            new_cov = self.est_covariance_mtx()
+            logger.debug("Resampling changed mean by {}. Norm change in cov: {}.".format(
+                old_mean - new_mean,
+                np.linalg.norm(new_cov - old_cov)
+            ))
 
     ## DISTRIBUTION CONTRACT ##################################################
     
@@ -571,25 +664,36 @@ class SMCUpdater(Updater):
     def est_entropy(self):
         nz_weights = self.particle_weights[self.particle_weights > 0]
         return -np.sum(np.log(nz_weights) * nz_weights)
-        
-    def est_kl_divergence(self, other, kernel=None, delta=1e-2):
-        # TODO: document.
+    
+    def _kl_divergence(self, other_locs, other_weights, kernel=None, delta=1e-2):
+        """
+        Finds the KL divergence between this and another SMC-approximated
+        distribution by using a kernel density estimator to smooth over the
+        other distribution's particles.
+        """
         if kernel is None:
             kernel = scipy.stats.norm(loc=0, scale=1).pdf
         
-        dist = rescaled_distance_mtx(self, other) / delta
-        K = kernel(dist)
-        
+        dist = qinfer.metrics.rescaled_distance_mtx(self, other_locs) / delta
+        K = kernel(dist)        
         
         return -self.est_entropy() - (1 / delta) * np.sum(
             self.particle_weights * 
             np.log(
                 np.sum(
-                    other.particle_weights * K,
+                    other_weights * K,
                     axis=1 # Sum over the particles of ``other``.
                 )
             ),
             axis=0  # Sum over the particles of ``self``.
+        )  
+        
+    def est_kl_divergence(self, other, kernel=None, delta=1e-2):
+        # TODO: document.
+        return self._kl_divergence(
+            other.particle_locations,
+            other.particle_weights,
+            kernel, delta
         )
         
     ## CLUSTER ESTIMATION METHODS #############################################
@@ -729,6 +833,67 @@ class SMCUpdater(Updater):
         
     ## PLOTTING METHODS #######################################################
     
+    def posterior_marginal(self, idx_param=0, res=100, smoothing=0, range_min=None, range_max=None):
+        """
+        Returns an estimate of the marginal distribution of a given model parameter, based on 
+        taking the derivative of the interpolated cdf.
+        
+        :param int idx_param: Index of parameter to be marginalized.
+        :param int res1: Resolution of of the axis.
+        :param float smoothing: Standard deviation of the Gaussian kernel
+            used to smooth; same units as parameter.
+        :param float range_min: Minimum range of the output axis.
+        :param float range_max: Maximum range of the output axis.
+            
+        .. seealso::
+        
+            :meth:`SMCUpdater.plot_posterior_marginal`
+        """
+
+        # We need to sort the particles to get cumsum to make sense.
+        # interp1d would  do it anyways (using argsort, too), so it's not a waste
+        s = np.argsort(self.particle_locations[:,idx_param])
+        locs = self.particle_locations[s,idx_param]
+        
+        # relevant axis discretization
+        r_min = np.min(locs) if range_min is None else range_min
+        r_max = np.max(locs) if range_max is None else range_max
+        ps = np.linspace(r_min, r_max, res)
+
+        # interpolate the cdf of the marginal distribution using cumsum
+        interp = scipy.interpolate.interp1d(
+            np.append(locs, r_max + np.abs(r_max-r_min)), 
+            np.append(np.cumsum(self.particle_weights[s]), 1),
+            #kind='cubic',
+            bounds_error=False,
+            fill_value=0,
+            assume_sorted=True
+        )
+
+        # get distribution from derivative of cdf, and smooth it
+        pr = np.gradient(interp(ps), ps[1]-ps[0])
+        if smoothing > 0:
+            gaussian_filter1d(pr, res*smoothing/(np.abs(r_max-r_min)), output=pr)
+
+        return ps, pr
+
+    def plot_posterior_marginal(self, idx_param=0, res=100, smoothing=0, range_min=None, range_max=None):
+        """
+        Plots a marginal of the requested parameter.
+        
+        :param int idx_param: Index of parameter to be marginalized.
+        :param int res1: Resolution of of the axis.
+        :param float smoothing: Standard deviation of the Gaussian kernel
+            used to smooth; same units as parameter.
+        :param float range_min: Minimum range of the output axis.
+        :param float range_max: Maximum range of the output axis.
+            
+        .. seealso::
+        
+            :meth:`SMCUpdater.posterior_marginal`
+        """
+        return plt.plot(*self.posterior_marginal(idx_param, res, smoothing, range_min, range_max))
+
     def posterior_mesh(self, idx_param1=0, idx_param2=1, res1=100, res2=100, smoothing=0.01):
         """
         Returns a mesh, useful for plotting, of kernel density estimation
@@ -747,6 +912,7 @@ class SMCUpdater(Updater):
         
             :meth:`SMCUpdater.plot_posterior_contour`
         """
+
         # WARNING: fancy indexing is used here, which means that a copy is
         #          made.
         locs = self.particle_locations[:, [idx_param1, idx_param2]]
