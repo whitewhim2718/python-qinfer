@@ -33,7 +33,8 @@ from __future__ import division
 __all__ = [
     'SMCUpdater',
     'SMCUpdaterBCRB',
-    'SMCUpdaterABC'
+    'SMCUpdaterABC',
+    'MixedApproximateSMCUpdater'
 ]
 
 ## IMPORTS ####################################################################
@@ -50,7 +51,6 @@ from scipy.ndimage.filters import gaussian_filter1d
 from qinfer.abstract_updater import Updater
 from qinfer.abstract_model import DifferentiableModel
 from qinfer.metrics import rescaled_distance_mtx
-from qinfer import clustering
 from qinfer.distributions import Distribution
 import qinfer.resamplers
 import qinfer.clustering
@@ -703,7 +703,7 @@ class SMCUpdater(Updater):
         if cluster_opts is None:
             cluster_opts = {}
         
-        for cluster_label, cluster_particles in clustering.particle_clusters(
+        for cluster_label, cluster_particles in qinfer.clustering.particle_clusters(
                 self.particle_locations, self.particle_weights,
                 **cluster_opts
             ):
@@ -873,6 +873,8 @@ class SMCUpdater(Updater):
         pr = np.gradient(interp(ps), ps[1]-ps[0])
         if smoothing > 0:
             gaussian_filter1d(pr, res*smoothing/(np.abs(r_max-r_min)), output=pr)
+            
+        del interp
 
         return ps, pr
 
