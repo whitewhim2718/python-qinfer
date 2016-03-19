@@ -58,3 +58,6 @@ nosetests.xml
 
 #Mr Developer
 .mr.developer.cfg
+
+#Ipython notebooks used for development
+src/*.ipynb

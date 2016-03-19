@@ -31,7 +31,6 @@ __version__ = '1.0b1'
 
 ## IMPORTS ####################################################################
 # These imports control what is made available by importing qinfer itself.
-
 from qinfer._exceptions import *
 
 from qinfer.gpu_models import *
@@ -45,6 +44,7 @@ from qinfer.score import *
 from qinfer.rb import *
 from qinfer.unstructured_models import *
 from qinfer.derived_models import *
-
+from qinfer.continuous_models import * 
+from qinfer.smc import * 
 import qinfer.tomography
 

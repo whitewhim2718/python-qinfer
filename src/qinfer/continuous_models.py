@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 ##
-# _exceptions.py: Derived classes for Errors and Warnings specific to Qinfer.
+# continuous_models.py: Models that have continuous outcomes and must therefore discretize them in some manner 
 ##
 # © 2012 Chris Ferrie (csferrie@gmail.com) and
 #        Christopher E. Granade (cgranade@gmail.com)
@@ -25,43 +25,27 @@
 
 ## FEATURES ###################################################################
 
-from __future__ import division
+from __future__ import division # Ensures that a/b is always a float.
 
 ## ALL ########################################################################
 
 # We use __all__ to restrict what globals are visible to external modules.
 __all__ = [
-    'ResamplerWarning', 'ResamplerError', 'ApproximationWarning'
+	'GaussianNoiseModel'
 ]
 
 ## IMPORTS ####################################################################
 
-import warnings
+import numpy as np
+from scipy.stats import binom
 
-## CLASSES ####################################################################
-
-class ResamplerError(RuntimeError):
-    """
-    Error failed when a resampler has failed in an unrecoverable manner.
-    """
-    def __init__(self, msg, cause=None):
-        super(ResamplerError, self).__init__(
-            "{}, caused by exception: {}".format(msg, cause)
-            if cause is not None else msg
-        )
-        self._cause = cause
-
-class ResamplerWarning(RuntimeWarning):
-    """
-    Warning raised in response to events within resampling steps.
-    """
-    pass
+from qinfer.utils import binomial_pdf
+from qinfer.abstract_model import ContinuousModel
+from qinfer._lib import enum # <- TODO: replace with flufl.enum!
+from qinfer.ale import binom_est_error
     
-class ApproximationWarning(RuntimeWarning):
-    """
-    Warning raised when a numerical approximation fails in a way that may
-    violate assumptions, such as when a negative variance is observed due to
-    numerical errors.
-    """
-    pass
+## CLASSES #####################################################################
 
+
+class GaussianNoiseModel():
+	pass

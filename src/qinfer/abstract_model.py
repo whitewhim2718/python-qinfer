@@ -469,3 +469,78 @@ class DifferentiableModel(Model):
             return fisher
             
             
+class ContinuousModel(Model):
+    """
+    Define a model that adapts the current SMC algorithm which assumes a discrete set of outputs
+    to a continuous set of possible outputs. 
+    """
+    __metaclass__ = abc.ABCMeta # Needed in any class that has abstract methods.
+
+    def __init__(self,num_sampled_points=20,num_samples_per_point=20):
+        self.num_sampled_points = num_sampled_points
+        self.num_samples_per_point = num_samples_per_point
+        super(ContinuousModel, self).__init__()
+    
+    @property
+    def num_sampled_points(self):
+        return self._num_sampled_points
+    @num_sampled_points.setter
+    def num_sampled_points(self, num_sampled_points):
+        self._num_sampled_points = num_sampled_points
+
+    @property
+    def num_samples_per_point(self):
+        return self._num_samples_per_point
+    @num_samples_per_point.setter
+    def num_samples_per_point(self, num_samples_per_point):
+        self._num_samples_per_point = num_samples_per_point
+    
+    
+    @abc.abstractmethod
+    def likelihood(self, outcomes, modelparams, expparams):
+        """
+        :param outcomes: floating point value of outcome. 
+        :type outcomes: float or an ndarray of dtype float. 
+
+        :param expparams: array or array of arrays each corresponding
+                    to a respective outcome. 
+        :param modelparams: array of unknown model parameter 
+                     points to evaluate likelihood function at 
+
+
+        """
+        
+    
+        self._call_count += outcomes.shape[0] * modelparams.shape[0] * expparams.shape[0]
+                
+    def is_n_outcomes_constant(self):
+        return True
+    
+    def n_outcomes(self,expparams):
+        return self.num_samples_per_point*self.num_sampled_points
+
+    @abc.abstractmethod
+    def sample(self,weights,modelparams,expparams,num_sampled_points=None,num_samples_per_point=None):
+        """
+        Sample num_samples at len(expparams) experimental parameter selections. returning num_samples*len(expparams) samples
+        """
+        pass 
+
+    
+    @abc.abstractmethod
+    def simulate_experiment(self, modelparams, expparams, repeat=1):
+        # NOTE: implements abstract method of Simulatable.
+        # TODO: document
+        
+        # Call the superclass simulate_experiment, not recording the result.
+        # This is used to count simulation calls.
+        super(Model, self).simulate_experiment(modelparams, expparams, repeat)
+
+    
+    @abc.abstractmethod
+    def outcomes(self,weights,modelparams,expparams):
+        pass
+                
+    ## STATIC METHODS ##
+    # These methods are provided as a convienence to make it easier to write
+    # simple models.

@@ -50,8 +50,7 @@ import scipy.linalg as la
 import scipy.stats
 import scipy.interpolate
 from scipy.ndimage.filters import gaussian_filter1d
-
-from qinfer.abstract_model import DifferentiableModel
+from qinfer.abstract_model import DifferentiableModel, ContinuousModel
 from qinfer.metrics import rescaled_distance_mtx
 from qinfer.distributions import Distribution
 import qinfer.resamplers
@@ -166,7 +165,13 @@ class SMCUpdater(Distribution):
         self.reset(n_particles)
 
     ## PROPERTIES #############################################################
+    @property
+    def is_continuous_model(self):
+        if issubclass(self.model.__class__,ContinuousModel):
+            return True
 
+        return False  
+    
     @property
     def n_particles(self):
         """
@@ -317,9 +322,12 @@ class SMCUpdater(Distribution):
         experiment.
 
         :param outcomes: Integer index of the outcome of the hypothetical
-            experiment.
+            experiment if model is discrete. If model is continuous 
+            floating point value of outcome. 
+
             TODO: Fix this to take an array-like of ints as well.
-        :type outcomes: int or an ndarray of dtype int.
+        :type outcomes: int or an ndarray of dtype int if discrete. float or 
+                        an ndarray of dtype float if continuous. 
         :param expparams: TODO
 
         :type weights: ndarray, shape (n_outcomes, n_expparams, n_particles)
@@ -333,6 +341,7 @@ class SMCUpdater(Distribution):
 
         # Check if we have a single outcome or an array. If we only have one
         # outcome, wrap it in a one-index array.
+ 
         if not isinstance(outcomes, np.ndarray):
             outcomes = np.array([outcomes])
 
@@ -340,6 +349,7 @@ class SMCUpdater(Distribution):
         # Rearrange so that likelihoods have shape (outcomes, experiments, models).
         # This makes the multiplication with weights (shape (models,)) make sense,
         # since NumPy broadcasting rules align on the right-most index.
+       
         L = self.model.likelihood(outcomes, locs, expparams).transpose([0, 2, 1])
         hyp_weights = weights * L
         
@@ -400,6 +410,7 @@ class SMCUpdater(Distribution):
         self._just_resampled = False
 
         # Perform the update. 
+
         weights, norm = self.hypothetical_update(outcome, expparams, return_normalization=True)
 
         # Check for negative weights before applying the update.            
@@ -625,8 +636,15 @@ class SMCUpdater(Distribution):
         # Q = np array(Nmodelparams), which contains the diagonal part of the
         #     rescaling matrix.  Non-diagonal could also be considered, but
         #     for the moment this is not implemented.
-        nout = self.model.n_outcomes(expparams) # This is a vector so this won't work
-        w, L = self.hypothetical_update(np.arange(nout), expparams, return_likelihood=True)
+        if self.is_continuous_model:
+
+            outcomes = self.model.outcomes(self.particle_weights,self.particle_locations,expparams)
+        else:
+            nout = self.model.n_outcomes(expparams) # This is a vector so this won't work
+            outcomes = np.arange(nout)
+    
+        w, L = self.hypothetical_update(outcomes, expparams, return_likelihood=True)
+        
         w = w[:, 0, :] # Fix w.shape == (n_outcomes, n_particles).
         L = L[:, :, 0] # Fix L.shape == (n_outcomes, n_particles).
 
@@ -667,8 +685,15 @@ class SMCUpdater(Distribution):
             of the hypothetical experiment ``expparams``.
         """
 
-        nout = self.model.n_outcomes(expparams)
-        w, L = self.hypothetical_update(np.arange(nout), expparams, return_likelihood=True)
+        if self.is_continuous_model:
+            outcomes = self.model.outcomes(self.particle_weights,self.particle_locations,expparams)
+
+        else:
+            nout = self.model.n_outcomes(expparams) # This is a vector so this won't work
+            outcomes = np.arange(nout)
+
+        w, L = self.hypothetical_update(outcomes, expparams, return_likelihood=True)
+        
         w = w[:, 0, :] # Fix w.shape == (n_outcomes, n_particles).
         L = L[:, :, 0] # Fix L.shape == (n_outcomes, n_particles).
         
