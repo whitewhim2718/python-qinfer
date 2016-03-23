@@ -681,7 +681,7 @@ class SMCUpdater(Distribution):
             model's :attr:`~qinfer.abstract_model.Simulatable.expparams_dtype` property,
             and of shape ``(1,)``
             
-        :return float: The Bayes risk for the current posterior distribution
+        :return float: The information gain for the current posterior distribution
             of the hypothetical experiment ``expparams``.
         """
 

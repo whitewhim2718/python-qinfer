@@ -38,7 +38,7 @@ __all__ = [
 
 import numpy as np
 from scipy.stats import binom
-
+from abc import ABCMeta,abstractmethod,abstractproperty
 from qinfer.utils import binomial_pdf
 from qinfer.abstract_model import ContinuousModel
 from qinfer._lib import enum # <- TODO: replace with flufl.enum!
@@ -47,5 +47,69 @@ from qinfer.ale import binom_est_error
 ## CLASSES #####################################################################
 
 
-class GaussianNoiseModel():
-	pass
+class GaussianNoiseModel(ContinuousModel):
+    __metaclass__ = ABCMeta # Needed in any class that has abstract methods.
+    
+    def __init__(self,sigma,Q,num_sampled_points=20,num_samples_per_point=20):
+        super(GaussianNoiseModel,self).__init__(num_sampled_points,
+                                                num_samples_per_point)
+        self.sigma = sigma
+        self._Q = Q
+    @abstractmethod
+    def model_function(self,modelparams,expparams):
+        pass
+    
+    @property
+    def sigma(self):
+        return self._sigma
+    def sigma(self,sig):
+        self._sigma = sig
+       
+    def likelihood(self,outcomes,modelparams,expparams):
+        if len(outcomes.shape) == 1:
+            outcomes = outcomes[np.newaxis,:]
+        
+        
+        like =  1/(np.sqrt(2*np.pi)*self.sigma)*np.exp(-(np.transpose(outcomes)[:,
+                    np.newaxis,:]\
+                    -self.model_function(
+                    modelparams,expparams)[np.newaxis,:,:])**2/(2*self.sigma**2))
+        return like
+        
+    def sample(self,weights,points,expparams,
+               num_sampled_points=20,num_samples_per_point=20):
+        
+     
+        sampled_points_in = np.random.choice(np.shape(points)[0],size=num_sampled_points,
+                                         p=weights)
+        sampled_points = points[sampled_points_in]
+        fs = np.transpose(self.model_function(sampled_points,expparams))
+      
+        norm_samples = fs[...,np.newaxis] + np.random.normal(0,
+                                self.sigma,fs.shape+(num_samples_per_point,))
+        return norm_samples
+    
+    @property
+    def is_n_outcomes_constant(self):
+        return False
+    
+    def constant_outcome_sample(self,weights,modelparams,expparams):
+
+        return self.sample(weights,modelparams,expparams,num_sampled_points=self.num_sampled_points,
+                num_samples_per_point=self.num_samples_per_point)
+    
+    def simulate_experiment(self,modelparams,expparams,repeat=1):
+        fs = self.model_function(sampled_points,expparams)
+        return fs + np.random.normal(0,self.sigma,fs.shape)
+    
+    
+    def outcomes(self,weights,modelparams,expparams):
+        return self.constant_outcome_sample(weights,modelparams,
+                                            expparams).reshape(expparams.shape[0],-1)
+        #sampled_points_in = np.random.choice(np.shape(modelparams)[0],
+        #                    size=self.num_sampled_points*self.num_samples_per_point,
+        #                                 p=weights)
+        #sampled_points = modelparams[sampled_points_in]
+        #fs = np.transpose(self.model_function(sampled_points,expparams)).reshape(-1)
+        #return sampled_points
+    
