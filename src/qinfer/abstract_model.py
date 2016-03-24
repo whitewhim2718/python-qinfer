@@ -50,7 +50,6 @@ class Simulatable(object):
     
     def __init__(self):
         self._sim_count = 0
-        
         # Initialize a default scale matrix.
         self._Q = np.ones((self.n_modelparams,))
         
@@ -122,6 +121,15 @@ class Simulatable(object):
     @property
     def sim_count(self):
         return self._sim_count
+
+    @property
+    def is_discrete(self):
+        """
+        Whether the model is discrete or continuous model. 
+        Should be true unless changed by inheriting class.  
+        """
+        return True
+    
         
     @property
     def Q(self):
@@ -407,7 +415,7 @@ class DifferentiableModel(Model):
         """
         pass
         
-    def fisher_information(self, modelparams, expparams):
+    def fisher_information(self, modelparams, expparams,weights=None):
         """
         Returns the covariance of the score taken over possible outcomes,
         known as the Fisher information.
@@ -430,8 +438,17 @@ class DifferentiableModel(Model):
         #       slower.
         #       Here, we sketch the first case.
         # FIXME: completely untested!
+
+        if weights is None:
+            weights = np.empty(np.shape(modelparams)[0]).fill(1)
+            weights = weights/np.linalg.norm(weights)
+
         if self.is_n_outcomes_constant:
-            outcomes = np.arange(self.n_outcomes(expparams))
+            if self.is_discrete is False:
+                outcomes = self.outcomes(weights,modelparams,expparams)
+            else:
+                outcomes = np.arange(self.n_outcomes(expparams))
+                
             scores, L = self.score(outcomes, modelparams, expparams, return_L=True)
             
             assert len(scores.shape) in (3, 4)
@@ -540,6 +557,9 @@ class ContinuousModel(Model):
     @abc.abstractmethod
     def outcomes(self,weights,modelparams,expparams):
         pass
+
+    def is_discrete(self):
+        return False
                 
     ## STATIC METHODS ##
     # These methods are provided as a convienence to make it easier to write

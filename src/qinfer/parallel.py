@@ -55,6 +55,13 @@ except ImportError:
         ipp = None
         interactive = lambda fn: fn
 
+try:
+    import tensorflow as tf 
+except ImportError:
+    warnings.warn('''Could not import Tensroflow. Tensorflow support 
+        will be disabled. 
+        ''')
+
 ## LOGGING ###################################################################
 
 import logging
@@ -175,3 +182,23 @@ class DirectViewParallelizedModel(DerivedModel):
 
         return np.concatenate(L, axis=1)
 
+
+
+    class TensorFlowModel(Model):
+        r"""
+    A model that will be executed via a tensorflow graph 
+    """
+        def __init__(self,graph = None ):
+            if tf is None:
+
+                raise RuntimeError(
+                    "This model requires tensorflow to run."
+                    "but an error was raised while importing."
+                )
+
+            if graph is None:
+                self._graph = tf.graph() 
+            elif isinstance(graph,tf.Graph):
+                self._graph = graph 
+            else:
+                raise TypeError('supplied graph must be of type tf.Graph')
