@@ -104,8 +104,8 @@ class GaussianNoiseModel(ContinuousModel):
     
     
     def outcomes(self,weights,modelparams,expparams):
-        return self.constant_outcome_sample(weights,modelparams,
-                                            expparams).reshape(expparams.shape[0],-1)
+        return np.sort(self.constant_outcome_sample(weights,modelparams,
+                                            expparams).reshape(expparams.shape[0],-1))
         #sampled_points_in = np.random.choice(np.shape(modelparams)[0],
         #                    size=self.num_sampled_points*self.num_samples_per_point,
         #                                 p=weights)

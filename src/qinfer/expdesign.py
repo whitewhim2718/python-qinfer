@@ -58,7 +58,8 @@ def identity(arg): return arg
 
 ## CLASSES #####################################################################
 
-OptimizationAlgorithms = enum.enum("NULL", "CG", "NCG", "NELDER_MEAD")
+OptimizationAlgorithms = enum.enum("NULL", "CG", "NCG", "NELDER_MEAD","SWEEP_GUESSES",
+    "L_BFGS_B","BASIN_HOPPING")
 
 class Heuristic(object):
     r"""
@@ -189,7 +190,7 @@ class PGH(Heuristic):
         self._x_ = inv_field
         self._t = t_field
         self._inv_func = inv_func
-        self._t_func = t_func
+        self._t_func = t_funcs
         self._maxiters = maxiters
         self._other_fields = other_fields if other_fields is not None else {}
         
@@ -249,8 +250,9 @@ class ExperimentDesigner(object):
             guess, field,
             cost_scale_k=1.0, disp=False,
             maxiter=None, maxfun=None,
-            store_guess=False, grad_h=None, cost_mult=False
-        ):
+            store_guess=False, grad_h=None, cost_mult=False,
+            bounds=None,niter=100,
+            sweep_guesses= None ,**opt_options):
         r"""
         Designs a new experiment by varying a single field of a shape ``(1,)``
         record array and minimizing the objective function
@@ -286,6 +288,17 @@ class ExperimentDesigner(object):
             this experiment, or the previous best-known experiment design.
         :param float grad_h: Step size to use in estimating gradients. Used
             only if ``opt_algo`` is NCG.
+        :param dict opt_options: Dictionary of additional keyword arguments to
+            be passed to the optimization function.
+        :param list bounds: Bounds for the optimized parameter of the form (min,max).
+             Used only if ``opt_algo`` is L_BFGS_B or BASIN_HOPPING.
+        :param int niter: Number of iterations for optimization algorithms that
+            take a fixed amount of iterations. Currently only used if ``opt_algo`` is 
+            BASIN_HOPPING. 
+        :param sweep_guesses: A list of guesses for expparams to minimize the
+            risk over (only for SWEEP_GUESSES). 
+        :type sweep_guesses: Instance of :class:`~numpy.ndarray` of Nx``dtype``
+            :attr:`~qinfer.abstract_model.Simulatable.expparams_dtype`
         :return: An array representing the best experiment design found so
             far for the current experiment.
         """
@@ -294,6 +307,8 @@ class ExperimentDesigner(object):
         up = self._updater
         m  = up.model
         
+        if opt_options is None:
+            opt_options = {}
         # Generate a new guess or use a guess provided, depending on the
         # type of the guess argument.
         if isinstance(guess, Heuristic):
@@ -349,7 +364,6 @@ class ExperimentDesigner(object):
             
         elif self._opt_algo == OptimizationAlgorithms.CG:
             # Prepare any additional options.
-            opt_options = {}
             if maxiter is not None:
                 opt_options['maxiter'] = maxiter
                 
@@ -361,7 +375,7 @@ class ExperimentDesigner(object):
             
         elif self._opt_algo == OptimizationAlgorithms.NCG:
             # Prepare any additional options.
-            opt_options = {}
+        
             if maxfun is not None:
                 opt_options['maxfun'] = maxfun
             if grad_h is not None:
@@ -393,7 +407,7 @@ class ExperimentDesigner(object):
                 f_opt = None
                 
         elif self._opt_algo == OptimizationAlgorithms.NELDER_MEAD:
-            opt_options = {}
+    
             if maxfun is not None:
                 opt_options['maxfun'] = maxfun
             if maxiter is not None:
@@ -403,7 +417,48 @@ class ExperimentDesigner(object):
                 objective_function, guess[0][field],
                 disp=disp, full_output=True, **opt_options
             )
-            
+        
+        elif self._opt_algo == OptimizationAlgorithms.L_BFGS_B:
+            if maxfun is not None:
+                opt_options['maxfun'] = maxfun
+            if maxiter is not None:
+                opt_options['maxiter'] = maxiter
+            if grad_h is not None:
+                opt_options['epsilon'] = grad_h
+            if bounds is not None:
+                opt_options['bounds'] = bounds
+
+            x_opt,f_opt,d = opt.fmin_l_bfgs_b(objective_function,
+                guess[0][field],approx_grad=True,disp=disp,**opt_options)
+
+            if disp > 0 :
+                print ("grad:{0}   function calls:{1}    iterations:{2}".format(
+                    d['grad'],d['funcalls'],d['nit']))
+
+        elif self._opt_algo == OptimizationAlgorithms.SWEEP_GUESSES:
+            if sweep_guesses is None:
+                raise ValueError('''sweep_guesses must be provided for optimization
+                    method SWEEP_GUESSES. 
+                    ''') 
+
+            risks = [objective_function(g) for g in sweep_guesses]
+            x_opt = np.min(risks)   
+
+        elif self._opt_algo == OptimizationAlgorithms.BASIN_HOPPING:
+            if not isinstance(niter,int):
+                raise ValueError('For BASIN_HOPPING niter must be set')
+            elif niter<=0:
+                raise ValueError('niter must be an integer >0')
+
+            if bounds: 
+                opt_options['accept_test'] = Bounds(bounds[0],bounds[1])
+
+            res = opt.basinhopping(objective_function,guess[0][field],niter=niter,disp=disp,**opt_options)
+            x_opt = res.x 
+            f_opt = res.fun 
+
+
+
         # Optionally compare the result to previous guesses.            
         if store_guess:
             # Possibly compute the objective function value at the local optimum
@@ -427,5 +482,17 @@ class ExperimentDesigner(object):
         
         # In any case, return the optimized guess.
         return ep
+
+class Bounds(object):
+
+    def __init__(self,xmin,xmax):
+        self.xmax = np.array(xmax)
+        self.xmin = np.array(xmin)
+
+    def __call__(self,**kwargs):
+        x = kwargs["x_new"]
+        tmax = bool(np.all(x <= self.xmax))
+        tmin = bool(np.all(x >= self.xmin))
+        return tmax and tmin
         
     

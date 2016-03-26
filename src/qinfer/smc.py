@@ -1352,7 +1352,7 @@ class SMCUpdaterBCRB(SMCUpdater):
         # and e being a model index.
         # We will thus want to return an array of shape BI[i, j, e], reducing
         # over the model index.
-        fi = self.model.fisher_information(modelparams, expparams)
+        fi = self.model.fisher_information(modelparams, expparams,modelweights)
         
         # We now either reweight and sum, or sum and divide, based on whether we
         # have model weights to consider or not.
