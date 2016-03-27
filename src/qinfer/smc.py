@@ -164,6 +164,8 @@ class SMCUpdater(Distribution):
         ## PARTICLE INITIALIZATION ##
         self.reset(n_particles)
 
+        # initial model update callback 
+        self.model.update_callback(self.particle_weights,self.particle_locations)
     ## PROPERTIES #############################################################
     @property
     def is_continuous_model(self):
@@ -453,6 +455,8 @@ class SMCUpdater(Distribution):
         if check_for_resample:
             self._maybe_resample()
 
+        # call model update callback function
+        self.model.update_callback(self.particle_weights,self.particle_locations,expparams)
     def batch_update(self, outcomes, expparams, resample_interval=5):
         r"""
         Updates based on a batch of outcomes and experiments, rather than just

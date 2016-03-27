@@ -292,7 +292,21 @@ class Simulatable(object):
         call this method.
         """
         return modelparams
-        
+    
+    def update_points_callback(self, weights, modelparams, expparams=None):
+        """
+        Callback function that will be called by the SMC updater 
+        at everypoints points are updated. By default does nothing. 
+
+        :param np.ndarray weights: Set of weights with a weight
+            corresponding to every modelparam. 
+        :param np.ndarray modelparams: Set of model parameter vectors to be
+            updated.
+        :param np.ndarray expparams: An experiment parameter array describing
+            the experiment that was just performed.
+
+        """
+        pass
         
 class LinearCostModelMixin(Simulatable):
     # FIXME: move this mixin to a new module.
@@ -448,7 +462,7 @@ class DifferentiableModel(Model):
                 outcomes = self.outcomes(weights,modelparams,expparams)
             else:
                 outcomes = np.arange(self.n_outcomes(expparams))
-                
+
             scores, L = self.score(outcomes, modelparams, expparams, return_L=True)
             
             assert len(scores.shape) in (3, 4)

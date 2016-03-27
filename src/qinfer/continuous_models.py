@@ -55,6 +55,12 @@ class GaussianNoiseModel(ContinuousModel):
                                                 num_samples_per_point)
         self.sigma = sigma
         self._Q = Q
+        
+        self._outcome_stochastic_component = np.random.normal(0,self.sigma,
+        										(self.num_sampled_points,num_samples_per_point)	)
+        
+        self._outcome_sampled_points = np.zeros((self.num_sampled_points,self.n_modelparams))
+
     @abstractmethod
     def model_function(self,modelparams,expparams):
         pass
@@ -76,11 +82,11 @@ class GaussianNoiseModel(ContinuousModel):
                     modelparams,expparams)[np.newaxis,:,:])**2/(2*self.sigma**2))
         return like
         
-    def sample(self,weights,points,expparams,
+    def sample(self,weights,modelparams,expparams,
                num_sampled_points=20,num_samples_per_point=20):
         
      
-        sampled_points_in = np.random.choice(np.shape(points)[0],size=num_sampled_points,
+        sampled_points_in = np.random.choice(np.shape(modelparams)[0],size=num_sampled_points,
                                          p=weights)
         sampled_points = points[sampled_points_in]
         fs = np.transpose(self.model_function(sampled_points,expparams))
@@ -104,12 +110,34 @@ class GaussianNoiseModel(ContinuousModel):
     
     
     def outcomes(self,weights,modelparams,expparams):
-        return np.sort(self.constant_outcome_sample(weights,modelparams,
-                                            expparams).reshape(expparams.shape[0],-1))
+        #return np.sort(self.constant_outcome_sample(weights,modelparams,
+        #                                    expparams).reshape(expparams.shape[0],-1))
         #sampled_points_in = np.random.choice(np.shape(modelparams)[0],
         #                    size=self.num_sampled_points*self.num_samples_per_point,
         #                                 p=weights)
         #sampled_points = modelparams[sampled_points_in]
         #fs = np.transpose(self.model_function(sampled_points,expparams)).reshape(-1)
         #return sampled_points
+    	
+    	fs = np.transpose(self.model_function(self._outcome_sampled_points,expparams))
+    	norm_samples = fs[...,np.newaxis]+self._outcome_stochastic_component
+    	return np.sort(norm_samples.reshape(expparams.shape[0],-1))
     
+    def update_callback(self, weights, modelparams, expparams= None):
+        """
+        Callback function that will be called by the SMC updater 
+        at every update. By default does nothing. 
+
+        :param np.ndarray weights: Set of weights with a weight
+            corresponding to every modelparam. 
+        :param np.ndarray modelparams: Set of model parameter vectors to be
+            updated.
+        :param np.ndarray expparams: An experiment parameter array describing
+            the experiment that was just performed.
+
+        """
+    	self._outcome_stochastic_component = np.random.normal(0,self.sigma,
+    										(self.num_sampled_points,self.num_samples_per_point))
+    	sampled_indexes = np.random.choice(np.shape(modelparams)[0],size=self.num_sampled_points,
+                                     p=weights)
+    	self._outcome_sampled_points = modelparams[sampled_indexes]
