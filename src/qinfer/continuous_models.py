@@ -117,6 +117,9 @@ class GaussianNoiseModel(ContinuousModel):#,DifferentiableModel):
     
     @staticmethod
     def _numpy_likelihood(model_function,sigma,outcomes,modelparams,expparams):
+        """
+        Hidden method that implements the Gaussian likelihood function with numpy
+        """
             return 1/(np.sqrt(2*np.pi)*sigma)*np.exp(-(np.transpose(outcomes)[:,
                     np.newaxis,:]\
                     -model_function(
@@ -127,6 +130,9 @@ class GaussianNoiseModel(ContinuousModel):#,DifferentiableModel):
         @staticmethod
         @nb.jit
         def _numba_likelihood(model_function,sigma,outcomes,modelparams,expparams):
+            """
+            Hidden method that implements the Gaussian likelihood function with numba
+            """
             model_func_results = model_function(modelparams,expparams)
             tran_outcomes = np.transpose(outcomes)
             
@@ -136,8 +142,11 @@ class GaussianNoiseModel(ContinuousModel):#,DifferentiableModel):
 
         @staticmethod
         @nb.guvectorize([(nb.float64[:],nb.float64[:,:],nb.float64[:,:],nb.float64[:,:,:])],
-                        '(),(x,z),(y,z)->(x,y,z)',nopython=True,target='cpu')
+                        '(),(x,z),(y,z)->(x,y,z)',nopython=True,target='parallel')
         def _numba_nopython_likelihood_component(sigma,tran_outcomes,model_func_results,res):
+            """
+            Vectorized numba call 
+            """
             mul_const = 1/(math.sqrt(2*math.pi)*sigma[0])
             scal_const = 2*sigma[0]**2
             for x in range(tran_outcomes.shape[0]):
@@ -149,6 +158,9 @@ class GaussianNoiseModel(ContinuousModel):#,DifferentiableModel):
         #numba is not available revert 
         @staticmethod
         def _numba_likelihood(model_function,sigma,outcomes,modelparams,expparams):
+            """
+            Fallback to numpy if numba is not available
+            """
             warnings.warn('Numbda is not available, reverting to numpy implementation')
             return _numpy_likelihood(model_function,sigma,outcomes,modelparams,expparams)
 
