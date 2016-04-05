@@ -40,31 +40,63 @@ import numpy as np
 from scipy.stats import binom
 from abc import ABCMeta,abstractmethod,abstractproperty
 from qinfer.utils import binomial_pdf
-from qinfer.abstract_model import ContinuousModel
+from qinfer.abstract_model import ContinuousModel, DifferentiableModel
 from qinfer._lib import enum # <- TODO: replace with flufl.enum!
 from qinfer.ale import binom_est_error
-    
+import math 
+import warnings
+
+NUMBA_AVAILABLE = False
+try:
+    import numba as nb
+    NUMBA_AVAILABLE = True
+except ImportError:
+    warnings.warn('''Could not import Numbda. Numba support 
+        will be disabled. 
+        ''')    
+
 ## CLASSES #####################################################################
 
+with warnings.catch_warnings():
+    warnings.filterwarnings("module",category=ImportWarning)
 
-class GaussianNoiseModel(ContinuousModel):
+class GaussianNoiseModel(ContinuousModel):#,DifferentiableModel):
     __metaclass__ = ABCMeta # Needed in any class that has abstract methods.
+
+
     
-    def __init__(self,sigma,Q,num_sampled_points=20,num_samples_per_point=20):
+    def __init__(self,sigma,Q,num_sampled_points=20,num_samples_per_point=20,
+                    use_numba=False,parallelize='cpu'):
         super(GaussianNoiseModel,self).__init__(num_sampled_points,
                                                 num_samples_per_point)
         self.sigma = sigma
         self._Q = Q
         
+        self.use_numba = use_numba
+        if not NUMBA_AVAILABLE:
+            self.use_numba = False 
+
+        assert parallelize in ('cpu','parallel','cuda')
+
+        self.parallelize = parallelize
+
+
+
+
         self._outcome_stochastic_component = np.random.normal(0,self.sigma,
         										(self.num_sampled_points,num_samples_per_point)	)
         
         self._outcome_sampled_points = np.zeros((self.num_sampled_points,self.n_modelparams))
 
+
     @abstractmethod
     def model_function(self,modelparams,expparams):
         pass
     
+    @abstractmethod
+    def model_function_derivative(self,modelparams,expparams):
+        pass
+
     @property
     def sigma(self):
         return self._sigma
@@ -76,12 +108,51 @@ class GaussianNoiseModel(ContinuousModel):
             outcomes = outcomes[np.newaxis,:]
         
         
-        like =  1/(np.sqrt(2*np.pi)*self.sigma)*np.exp(-(np.transpose(outcomes)[:,
+        if self.use_numba:
+            return GaussianNoiseModel._numba_likelihood(self.model_function,self.sigma,
+                    outcomes,modelparams,expparams)
+        else:
+            return GaussianNoiseModel._numpy_likelihood(self.model_function,self.sigma,
+                    outcomes,modelparams,expparams)
+    
+    @staticmethod
+    def _numpy_likelihood(model_function,sigma,outcomes,modelparams,expparams):
+            return 1/(np.sqrt(2*np.pi)*sigma)*np.exp(-(np.transpose(outcomes)[:,
                     np.newaxis,:]\
-                    -self.model_function(
-                    modelparams,expparams)[np.newaxis,:,:])**2/(2*self.sigma**2))
-        return like
-        
+                    -model_function(
+                    modelparams,expparams)[np.newaxis,:,:])**2/(2*sigma**2))
+
+
+    if NUMBA_AVAILABLE:
+        @staticmethod
+        @nb.jit
+        def _numba_likelihood(model_function,sigma,outcomes,modelparams,expparams):
+            model_func_results = model_function(modelparams,expparams)
+            tran_outcomes = np.transpose(outcomes)
+            
+           
+            return GaussianNoiseModel._numba_nopython_likelihood_component(sigma,tran_outcomes,
+                                        model_func_results)
+
+        @staticmethod
+        @nb.guvectorize([(nb.float64[:],nb.float64[:,:],nb.float64[:,:],nb.float64[:,:,:])],
+                        '(),(x,z),(y,z)->(x,y,z)',nopython=True,target='cpu')
+        def _numba_nopython_likelihood_component(sigma,tran_outcomes,model_func_results,res):
+            mul_const = 1/(math.sqrt(2*math.pi)*sigma[0])
+            scal_const = 2*sigma[0]**2
+            for x in range(tran_outcomes.shape[0]):
+                for y in range(model_func_results.shape[0]):
+                    for z in range(model_func_results.shape[1]):
+                        res[x,y,z] = mul_const*math.exp(-(tran_outcomes[x,z]-\
+                            model_func_results[y,z])**2/scal_const)
+    else:
+        #numba is not available revert 
+        @staticmethod
+        def _numba_likelihood(model_function,sigma,outcomes,modelparams,expparams):
+            warnings.warn('Numbda is not available, reverting to numpy implementation')
+            return _numpy_likelihood(model_function,sigma,outcomes,modelparams,expparams)
+
+
     def sample(self,weights,modelparams,expparams,
                num_sampled_points=20,num_samples_per_point=20):
         
@@ -95,6 +166,28 @@ class GaussianNoiseModel(ContinuousModel):
                                 self.sigma,fs.shape+(num_samples_per_point,))
         return norm_samples
     
+    def score(self,outcomes,modelparams,expparams,return_L=False):
+    	r"""
+        Returns the score of this likelihood function, defined as:
+        
+        .. math::
+        
+            q(d, \vec{x}; \vec{e}) = \vec{\nabla}_{\vec{x}} \log \Pr(d | \vec{x}; \vec{e}).
+            
+        Calls are represented as a four-index tensor
+        ``score[idx_modelparam, idx_outcome, idx_model, idx_experiment]``.
+        The left-most index may be suppressed for single-parameter models.
+        
+        If return_L is True, both `q` and the likelihood `L` are returned as `q, L`.
+        """
+    	fs = self.model_function(outcomes,expparams)
+    	
+    	np.log()
+
+    	if return_L:
+    		return q, self.likelihood(outcomes,modelparams,expparams)
+    	else:
+    		return q 
     @property
     def is_n_outcomes_constant(self):
         return False

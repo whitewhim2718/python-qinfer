@@ -55,12 +55,7 @@ except ImportError:
         ipp = None
         interactive = lambda fn: fn
 
-try:
-    import tensorflow as tf 
-except ImportError:
-    warnings.warn('''Could not import Tensroflow. Tensorflow support 
-        will be disabled. 
-        ''')
+
 
 ## LOGGING ###################################################################
 
@@ -184,21 +179,3 @@ class DirectViewParallelizedModel(DerivedModel):
 
 
 
-    class TensorFlowModel(Model):
-        r"""
-    A model that will be executed via a tensorflow graph 
-    """
-        def __init__(self, session = None ):
-            if tf is None:
-
-                raise RuntimeError(
-                    "This model requires tensorflow to run."
-                    "but an error was raised while importing."
-                )
-
-            if session is None:
-                self._session = tf.session() 
-            elif isinstance(graph,tf.Session):
-                self._session = session
-            else:
-                raise TypeError('supplied session must be of type tf.Session')

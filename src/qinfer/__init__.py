@@ -47,4 +47,3 @@ from qinfer.derived_models import *
 from qinfer.continuous_models import * 
 from qinfer.smc import * 
 import qinfer.tomography
-
