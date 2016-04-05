@@ -120,10 +120,10 @@ class GaussianNoiseModel(ContinuousModel):#,DifferentiableModel):
         """
         Hidden method that implements the Gaussian likelihood function with numpy
         """
-            return 1/(np.sqrt(2*np.pi)*sigma)*np.exp(-(np.transpose(outcomes)[:,
-                    np.newaxis,:]\
-                    -model_function(
-                    modelparams,expparams)[np.newaxis,:,:])**2/(2*sigma**2))
+        return 1/(np.sqrt(2*np.pi)*sigma)*np.exp(-(np.transpose(outcomes)[:,
+                np.newaxis,:]\
+                -model_function(
+                modelparams,expparams)[np.newaxis,:,:])**2/(2*sigma**2))
 
 
     if NUMBA_AVAILABLE:
