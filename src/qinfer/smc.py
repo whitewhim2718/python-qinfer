@@ -674,7 +674,8 @@ class SMCUpdater(Distribution):
         # Q has shape (n_mp,), therefore rescale_var has shape (n_outcomes,).
         tot_like = np.sum(L, axis=1)
         return np.dot(tot_like.T, rescale_var)
-        
+    
+    
     def expected_information_gain(self, expparams):
         r"""
         Calculates the expected information gain for a hypothetical experiment.

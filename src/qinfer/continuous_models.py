@@ -80,6 +80,11 @@ class GaussianNoiseModel(ContinuousModel):#,DifferentiableModel):
 
         self.parallelize = parallelize
 
+        if self.use_numba:
+            self._numba_nopython_likelihood_component = nb.vectorize([nb.float64(nb.float64,
+                    nb.float64,nb.float64)],target=self.parallelize)\
+                    (GaussianNoiseModel._numba_nopython_likelihood_component)
+
 
 
 
@@ -109,14 +114,14 @@ class GaussianNoiseModel(ContinuousModel):#,DifferentiableModel):
         
         
         if self.use_numba:
-            return GaussianNoiseModel._numba_likelihood(self.model_function,self.sigma,
+            return self._numba_likelihood(self.model_function,self.sigma,
                     outcomes,modelparams,expparams)
         else:
-            return GaussianNoiseModel._numpy_likelihood(self.model_function,self.sigma,
+            return self._numpy_likelihood(self.model_function,self.sigma,
                     outcomes,modelparams,expparams)
     
-    @staticmethod
-    def _numpy_likelihood(model_function,sigma,outcomes,modelparams,expparams):
+    
+    def _numpy_likelihood(self,model_function,sigma,outcomes,modelparams,expparams):
         """
         Hidden method that implements the Gaussian likelihood function with numpy
         """
@@ -127,37 +132,31 @@ class GaussianNoiseModel(ContinuousModel):#,DifferentiableModel):
 
 
     if NUMBA_AVAILABLE:
-        @staticmethod
+        
         @nb.jit
-        def _numba_likelihood(model_function,sigma,outcomes,modelparams,expparams):
+        def _numba_likelihood(self,model_function,sigma,outcomes,modelparams,expparams):
             """
             Hidden method that implements the Gaussian likelihood function with numba
             """
-            model_func_results = model_function(modelparams,expparams)
-            tran_outcomes = np.transpose(outcomes)
-            
+            model_func_results = model_function(modelparams,expparams)[np.newaxis,:,:]
+            tran_outcomes = np.transpose(outcomes)[:,np.newaxis,:]
            
-            return GaussianNoiseModel._numba_nopython_likelihood_component(sigma,tran_outcomes,
+            return self._numba_nopython_likelihood_component(sigma,tran_outcomes,
                                         model_func_results)
 
         @staticmethod
-        @nb.guvectorize([(nb.float64[:],nb.float64[:,:],nb.float64[:,:],nb.float64[:,:,:])],
-                        '(),(x,z),(y,z)->(x,y,z)',nopython=True,target='parallel')
-        def _numba_nopython_likelihood_component(sigma,tran_outcomes,model_func_results,res):
+        def _numba_nopython_likelihood_component(sigma,tran_outcomes,model_func_results):
             """
             Vectorized numba call 
             """
-            mul_const = 1/(math.sqrt(2*math.pi)*sigma[0])
-            scal_const = 2*sigma[0]**2
-            for x in range(tran_outcomes.shape[0]):
-                for y in range(model_func_results.shape[0]):
-                    for z in range(model_func_results.shape[1]):
-                        res[x,y,z] = mul_const*math.exp(-(tran_outcomes[x,z]-\
-                            model_func_results[y,z])**2/scal_const)
+            mul_const = 1/(math.sqrt(2*math.pi)*sigma)
+            scal_const = 2*sigma**2
+            return mul_const*math.exp(-(tran_outcomes-\
+                            model_func_results)**2/scal_const)
     else:
         #numba is not available revert 
-        @staticmethod
-        def _numba_likelihood(model_function,sigma,outcomes,modelparams,expparams):
+        
+        def _numba_likelihood(self,model_function,sigma,outcomes,modelparams,expparams):
             """
             Fallback to numpy if numba is not available
             """
