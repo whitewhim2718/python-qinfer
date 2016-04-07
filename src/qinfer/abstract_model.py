@@ -454,7 +454,8 @@ class DifferentiableModel(Model):
         # FIXME: completely untested!
 
         if weights is None:
-            weights = np.empty(np.shape(modelparams)[0]).fill(1)
+            weights = np.empty(np.shape(modelparams)[0],dtype=np.float64)
+            weights.fill(1)
             weights = weights/np.linalg.norm(weights)
 
         if self.is_n_outcomes_constant:

@@ -60,7 +60,7 @@ except ImportError:
 with warnings.catch_warnings():
     warnings.filterwarnings("module",category=ImportWarning)
 
-class GaussianNoiseModel(ContinuousModel):#,DifferentiableModel):
+class GaussianNoiseModel(ContinuousModel,DifferentiableModel):
     __metaclass__ = ABCMeta # Needed in any class that has abstract methods.
 
 
@@ -96,10 +96,16 @@ class GaussianNoiseModel(ContinuousModel):#,DifferentiableModel):
 
     @abstractmethod
     def model_function(self,modelparams,expparams):
+        """
+        Return model functions in form [idx_expparams,idx_modelparams]
+        """
         pass
     
     @abstractmethod
     def model_function_derivative(self,modelparams,expparams):
+        """
+        Return model functions derivatives in form [idx_modelparam,idx_expparams,idx_modelparams]
+        """
         pass
 
     @property
@@ -171,10 +177,10 @@ class GaussianNoiseModel(ContinuousModel):#,DifferentiableModel):
         sampled_points_in = np.random.choice(np.shape(modelparams)[0],size=num_sampled_points,
                                          p=weights)
         sampled_points = points[sampled_points_in]
-        fs = np.transpose(self.model_function(sampled_points,expparams))
+        fns = np.transpose(self.model_function(sampled_points,expparams))
       
-        norm_samples = fs[...,np.newaxis] + np.random.normal(0,
-                                self.sigma,fs.shape+(num_samples_per_point,))
+        norm_samples = fns[...,np.newaxis] + np.random.normal(0,
+                                self.sigma,fns.shape+(num_samples_per_point,))
         return norm_samples
     
     def score(self,outcomes,modelparams,expparams,return_L=False):
@@ -191,17 +197,25 @@ class GaussianNoiseModel(ContinuousModel):#,DifferentiableModel):
         
         If return_L is True, both `q` and the likelihood `L` are returned as `q, L`.
         """
-    	fs = self.model_function(outcomes,expparams)
-    	
-    	np.log()
+        #original form [idx_expparams,idx_model] new form 
+        #[idx_modelparam, idx_outcome, idx_model, idx_experiment]
+    	fns = self.model_function(modelparams,expparams)[np.newaxis,np.newaxis,:,:]
+        #original form [idx_modelparam,idx_expparams,idx_model] new form 
+        #[idx_modelparam, idx_outcome, idx_model, idx_experiment]
+    	fns_deriv = self.model_function_derivative(modelparams,expparams)[:,np.newaxis,:,:]
+        #original form [idx_outcomes] new form [idx_modelparam, idx_outcome, idx_model, idx_experiment]
+        outcomes_reshaped = outcomes[np.newaxis,:,np.newaxis,np.newaxis]
 
+
+
+        scr = ((outcomes_reshaped-fns)/self.sigma**2)*fns_deriv    	
     	if return_L:
-    		return q, self.likelihood(outcomes,modelparams,expparams)
+    		return scr, self.likelihood(outcomes,modelparams,expparams)
     	else:
-    		return q 
+    		return scr 
     @property
     def is_n_outcomes_constant(self):
-        return False
+        return True
     
     def constant_outcome_sample(self,weights,modelparams,expparams):
 
