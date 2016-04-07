@@ -1358,7 +1358,6 @@ class SMCUpdaterBCRB(SMCUpdater):
         # We will thus want to return an array of shape BI[i, j, e], reducing
         # over the model index.
         fi = self.model.fisher_information(modelparams, expparams,modelweights)
-        
         # We now either reweight and sum, or sum and divide, based on whether we
         # have model weights to consider or not.
         if modelweights is None:
@@ -1390,7 +1389,6 @@ class SMCUpdaterBCRB(SMCUpdater):
         # for the next step, then add that accordingly.
         if self._track_adaptive:
             self.adaptive_bim += self.posterior_bayes_information(expparams)[:, :, 0]
-        
         # We now can update as normal.
         SMCUpdater.update(self, outcome, expparams)
         
