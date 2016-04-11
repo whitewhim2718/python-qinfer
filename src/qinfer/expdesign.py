@@ -251,8 +251,8 @@ class ExperimentDesigner(object):
             cost_scale_k=1.0, disp=False,
             maxiter=None, maxfun=None,
             store_guess=False, grad_h=None, cost_mult=False,
-            bounds=None,niter=100,
-            sweep_guesses= None ,**opt_options):
+            sweep_guesses=None,
+            bounds=None,niter=100,**opt_options):
         r"""
         Designs a new experiment by varying a single field of a shape ``(1,)``
         record array and minimizing the objective function
@@ -265,8 +265,8 @@ class ExperimentDesigner(object):
         :math:`k` is a parameter specified to relate the units of the risk and
         the cost. See :ref:`expdesign` for more details.
         
-        :param guess: Either a record array with a single guess, or
-            a callable function that generates guesses.
+        :param guess: Either a record array with a single guess,an array of guesses
+            for SWEEP_GUESS or a callable function that generates guesses.
         :type guess: Instance of :class:`~Heuristic`, `callable`
             or :class:`~numpy.ndarray` of ``dtype``
             :attr:`~qinfer.abstract_model.Simulatable.expparams_dtype`
@@ -295,10 +295,10 @@ class ExperimentDesigner(object):
         :param int niter: Number of iterations for optimization algorithms that
             take a fixed amount of iterations. Currently only used if ``opt_algo`` is 
             BASIN_HOPPING. 
-        :param sweep_guesses: A list of guesses for expparams to minimize the
-            risk over (only for SWEEP_GUESSES). 
-        :type sweep_guesses: Instance of :class:`~numpy.ndarray` of Nx``dtype``
-            :attr:`~qinfer.abstract_model.Simulatable.expparams_dtype`
+        :param sweep_guesses:  A numpy array of guesses to evaluate for the lowest risk.
+            Elements must be of type ``dtype``
+            :attr:`~qinfer.abstract_model.Simulatable.expparams_dtype`. Currently only 
+            used by SWEEP_GUESSES
         :return: An array representing the best experiment design found so
             far for the current experiment.
         """
@@ -323,6 +323,12 @@ class ExperimentDesigner(object):
         else:
             # Make a copy of the guess that we can manipulate, but otherwise
             # use it as-is.
+
+            #handle case where multiple guesses are provided for sweep guesses
+            # I feel that this whole class could be reworked with a better design
+            # -Thomas 
+
+            
             ep = np.copy(guess)
         
         # Define an objective function that wraps a vector of scalars into
@@ -437,12 +443,12 @@ class ExperimentDesigner(object):
 
         elif self._opt_algo == OptimizationAlgorithms.SWEEP_GUESSES:
             if sweep_guesses is None:
-                raise ValueError('''sweep_guesses must be provided for optimization
-                    method SWEEP_GUESSES. 
-                    ''') 
+                raise ValueError('parameter sweep_guesses must be set for '
+                    'optimization algorithm SWEEP_GUESSES')
 
             risks = [objective_function(g) for g in sweep_guesses]
-            x_opt = np.min(risks)   
+            x_opt,f_opt = sweep_guesses[np.argmin(risks)], np.amin(risks)   
+
 
         elif self._opt_algo == OptimizationAlgorithms.BASIN_HOPPING:
             if not isinstance(niter,int):
