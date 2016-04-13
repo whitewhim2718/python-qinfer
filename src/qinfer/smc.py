@@ -641,7 +641,6 @@ class SMCUpdater(Distribution):
         #     rescaling matrix.  Non-diagonal could also be considered, but
         #     for the moment this is not implemented.
         if self.is_continuous_model:
-
             outcomes = self.model.outcomes(self.particle_weights,self.particle_locations,expparams)
         else:
             nout = self.model.n_outcomes(expparams) # This is a vector so this won't work
