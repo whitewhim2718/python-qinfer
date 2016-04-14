@@ -144,7 +144,9 @@ class GaussianNoiseModel(ContinuousModel,DifferentiableModel):
             """
             Hidden method that implements the Gaussian likelihood function with numba
             """
-            model_func_results = model_function(modelparams,expparams)[np.newaxis,:,:]
+            outcomes = outcomes.astype(np.float64)
+            modelparams = modelparams.astype(np.float64)
+            model_func_results = model_function(modelparams,expparams)[np.newaxis,:,:].astype(np.float64)
             tran_outcomes = np.transpose(outcomes)[:,np.newaxis,:]
            
             return self._numba_nopython_likelihood_component(sigma,tran_outcomes,
