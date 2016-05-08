@@ -249,14 +249,14 @@ class ExperimentDesigner(object):
         self.__best_ep = None
         
     def design_expparams_field(self,
-            guess, field,
+            guess, fields,
             cost_scale_k=1.0, disp=False,
             maxiter=None, maxfun=None,
             store_guess=False, grad_h=None, cost_mult=False,
             sweep_guesses=None,
             bounds=None,niter=100,**opt_options):
         r"""
-        Designs a new experiment by varying a single field of a shape ``(1,)``
+        Designs a new experiment by varying a field (or multiple) of a shape ``(n,)``
         record array and minimizing the objective function
         
         .. math::
@@ -272,8 +272,9 @@ class ExperimentDesigner(object):
         :type guess: Instance of :class:`~Heuristic`, `callable`
             or :class:`~numpy.ndarray` of ``dtype``
             :attr:`~qinfer.abstract_model.Simulatable.expparams_dtype`
-        :param str field: The name of the ``expparams`` field to be optimized.
-            All other fields of ``guess`` will be held constant.
+        :param str list fields: The names of the ``expparams`` fields to be optimized,
+            eg. of the form 'field' for one field, and ['field1','field2',...] for 
+            multiple fields. All other fields of ``guess`` will be held constant.
         :param float cost_scale_k: A scale parameter :math:`k` relating the
             Bayes risk to the experiment cost.
             See :ref:`expdesign`.
@@ -304,7 +305,13 @@ class ExperimentDesigner(object):
         :return: An array representing the best experiment design found so
             far for the current experiment.
         """
-        
+        # Check if a single field is passed and convert to list of fields
+        if type(fields) is str:
+            fields = [fields]
+            # also need to form sweep_guesses to right shape 
+            if sweep_guesses is not None:
+                sweep_guesses = sweep_guesses[...,np.newaxis]
+                
         # Define some short names for commonly used properties.
         up = self._updater
         m  = up.model
@@ -341,7 +348,9 @@ class ExperimentDesigner(object):
                 Used internally by design_expparams_field.
                 If you see this, something probably went wrong.
                 """
-                ep[field] = x
+
+                for i,f in enumerate(fields): 
+                    ep[f] = x[i]
                 return up.bayes_risk(ep) + cost_scale_k * m.experiment_cost(ep)
         else:
             def objective_function(x):
@@ -349,14 +358,12 @@ class ExperimentDesigner(object):
                 Used internally by design_expparams_field.
                 If you see this, something probably went wrong.
                 """
-                ep[field] = x
+                for i,f in enumerate(fields): 
+                    ep[f] = x[i]
+            
                 return up.bayes_risk(ep)* m.experiment_cost(ep)**cost_scale_k
         
             
-        # Some optimizers require gradients of the objective function.
-        # Here, we create a FiniteDifference object to compute that for
-        # us.
-        d_dx_objective = FiniteDifference(objective_function, ep[field].size)
         
         # Allocate a variable to hold the local optimum value found.
         # This way, if an optimization algorithm doesn't support returning
@@ -368,7 +375,9 @@ class ExperimentDesigner(object):
         if self._opt_algo == OptimizationAlgorithms.NULL:
             # This optimization algorithm does nothing locally, but only
             # exists to leverage the store_guess functionality below.
-            x_opt = guess[0][field]
+            
+            x_opt = [guess[0][f] for f in fields]
+            x_opt = np.array(x_opt)
             
         elif self._opt_algo == OptimizationAlgorithms.CG:
             # Prepare any additional options.
@@ -377,7 +386,7 @@ class ExperimentDesigner(object):
                 
             # Actually call fmin_cg, gathering all outputs we can.
             x_opt, f_opt, func_calls, grad_calls, warnflag = opt.fmin_cg(
-                objective_function, guess[0][field],
+                objective_function, [guess[0][f] for f in fields],
                 disp=disp, full_output=True, **opt_options
             )
             
@@ -403,7 +412,7 @@ class ExperimentDesigner(object):
             # anyway.
             try:
                 x_opt, f_opt, func_calls, grad_calls, h_calls, warnflag = opt.fmin_tnc(
-                    objective_function, guess[0][field],
+                    objective_function, [guess[0][f] for f in fields],
                     fprime=None, bounds=None, approx_grad=True,
                     disp=disp, full_output=True, **opt_options
                 )
@@ -411,7 +420,7 @@ class ExperimentDesigner(object):
                 warnings.warn(
                     "Gradient function too flat for NCG.",
                     RuntimeWarning)
-                x_opt = guess[0][field]
+                x_opt = np.array([guess[0][f] for f in fields])
                 f_opt = None
                 
         elif self._opt_algo == OptimizationAlgorithms.NELDER_MEAD:
@@ -422,7 +431,7 @@ class ExperimentDesigner(object):
                 opt_options['maxiter'] = maxiter
                 
             x_opt, f_opt, iters, func_calls, warnflag = opt.fmin(
-                objective_function, guess[0][field],
+                objective_function, [guess[0][f] for f in fields],
                 disp=disp, full_output=True, **opt_options
             )
         
@@ -437,7 +446,8 @@ class ExperimentDesigner(object):
                 opt_options['bounds'] = bounds
 
             x_opt,f_opt,d = opt.fmin_l_bfgs_b(objective_function,
-                guess[0][field],approx_grad=True,disp=disp,**opt_options)
+                [guess[0][f] for f in fields],approx_grad=True,
+                    disp=disp,**opt_options)
 
             if disp > 0 :
                 print ("grad:{0}   function calls:{1}    iterations:{2}".format(
@@ -448,7 +458,7 @@ class ExperimentDesigner(object):
                 raise ValueError('parameter sweep_guesses must be set for '
                     'optimization algorithm SWEEP_GUESSES')
 
-            risks = [objective_function(g) for g in sweep_guesses]
+            risks = [objective_function(g)for g in sweep_guesses]
             x_opt,f_opt = sweep_guesses[np.argmin(risks)], np.amin(risks)   
 
 
@@ -459,26 +469,29 @@ class ExperimentDesigner(object):
                 raise ValueError('niter must be an integer >0')
 
             if bounds: 
-                opt_options['accept_test'] = Bounds(bounds[0],bounds[1])
+                b = np.array(bounds)
+                opt_options['accept_test'] = Bounds(b[:][0],bounds[:][1])
 
-            res = opt.basinhopping(objective_function,guess[0][field],niter=niter,disp=disp,**opt_options)
+            res = opt.basinhopping(objective_function,[guess[0][f] for f in fields],niter=niter,disp=disp,**opt_options)
             x_opt = res.x 
             f_opt = res.fun 
 
 
 
-        # Optionally compare the result to previous guesses.            
+        # Optionally compare the result to previous guesses.           
         if store_guess:
             # Possibly compute the objective function value at the local optimum
             # if we don't already know it.
             if f_opt is None:
-                guess_qual = objective_function(x_opt)
+                guess_qual = objective_function(*x_opt)
             
             # Compare to the known best cost so far.
             if self.__best_cost is None or (self.__best_cost > f_opt):
                 # No known best yet, or we're better than the previous best,
                 # so record this guess.
-                ep[field] = x_opt
+                for i,f in enumerate(fields): 
+                    ep[f] = x_opt[i]
+                
                 self.__best_cost = f_opt
                 self.__best_ep = ep
             else:
@@ -486,9 +499,10 @@ class ExperimentDesigner(object):
         else:
             # We aren't using guess recording, so just pack the local optima
             # into ep for returning.
-            ep[field] = x_opt
-        
+            for i,f in enumerate(fields): 
+                ep[f] = x_opt[i]
         # In any case, return the optimized guess.
+
         return ep
 
 class Bounds(object):
