@@ -360,7 +360,7 @@ class ExperimentDesigner(object):
                 """
                 for i,f in enumerate(fields): 
                     ep[f] = x[i]
-            
+
                 return up.bayes_risk(ep)* m.experiment_cost(ep)**cost_scale_k
         
             
