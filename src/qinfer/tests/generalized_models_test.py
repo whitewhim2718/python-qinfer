@@ -35,7 +35,7 @@ from numpy.testing import assert_equal, assert_almost_equal, assert_array_less
 from qinfer.tests.base_test import DerandomizedTestCase
 from qinfer.abstract_model import (
     Model)
-from qinfer import GaussianModel,PoissonModel,MultinomialModel
+from qinfer import GaussianModel,PoissonModel,ExampleMultinomialModel
 
 from qinfer.smc import SMCUpdater
 
@@ -74,7 +74,7 @@ class TestMultinomialModel(DerandomizedTestCase):
     def setUp(self):
 
         super(TestMultinomialModel,self).setUp()
-        self.multinomial_model = MultinomialModel()
+        self.multinomial_model = ExampleMultinomialModel()
         self.expparams = TestMultinomialModel.TEST_EXPPARAMS.reshape(-1,1)
         self.outcomes = self.multinomial_model.simulate_experiment(TestMultinomialModel.MODELPARAMS,
                 TestMultinomialModel.TEST_EXPPARAMS,repeat=1 ).reshape(-1,1)
