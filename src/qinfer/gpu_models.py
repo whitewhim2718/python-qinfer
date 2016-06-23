@@ -58,7 +58,7 @@ import numpy as np
 import numpy.linalg as la
 import time
 
-from qinfer.abstract_model import Model
+from qinfer.abstract_model import FiniteModel
 from qinfer.finite_test_models import SimplePrecessionModel
 from qinfer.smc import SMCUpdater
 from qinfer.distributions import UniformDistribution
@@ -83,7 +83,7 @@ __kernel void cos_model(
 
 ## CLASSES #####################################################################
 
-class AcceleratedPrecessionModel(Model):
+class AcceleratedPrecessionModel(FiniteModel):
     r"""
     Reimplementation of `qinfer.finite_test_models.SimplePrecessionModel`, using OpenCL
     to accelerate computation.
@@ -123,7 +123,7 @@ class AcceleratedPrecessionModel(Model):
         experiment is independent of the experiment being performed.
         
         This property is assumed by inference engines to be constant for
-        the lifetime of a Model instance.
+        the lifetime of a FiniteModel instance.
         """
         return True
     
@@ -180,7 +180,7 @@ class AcceleratedPrecessionModel(Model):
         dest_buf.release()
         
         # Now we concatenate over outcomes.
-        return Model.pr0_to_likelihood_array(outcomes, pr0)
+        return FiniteModel.pr0_to_likelihood_array(outcomes, pr0)
 
 ## SCRIPT ######################################################################
 

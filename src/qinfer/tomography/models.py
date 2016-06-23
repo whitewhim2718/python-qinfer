@@ -42,7 +42,7 @@ from __future__ import unicode_literals
 
 from builtins import range, map
 
-from qinfer import Model
+from qinfer import FiniteModel
 
 import numpy as np
 
@@ -111,7 +111,7 @@ def heisenberg_weyl_operators(d=2):
         
 #         return expparams
 
-class TomographyModel(Model):
+class TomographyModel(FiniteModel):
     def __init__(self, basis, allow_subnormalized=False):
         self._dim = basis.dim
         self._basis = basis
@@ -199,7 +199,7 @@ class TomographyModel(Model):
         )
         np.clip(pr1, 0, 1, out=pr1)
 
-        return Model.pr0_to_likelihood_array(outcomes, 1 - pr1)
+        return FiniteModel.pr0_to_likelihood_array(outcomes, 1 - pr1)
 
 class DiffusiveTomographyModel(TomographyModel):
     @property

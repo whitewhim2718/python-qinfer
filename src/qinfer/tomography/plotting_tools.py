@@ -81,7 +81,7 @@ def plot_rebit_modelparams(modelparams, rebit_axes=REBIT_AXES, **kwargs):
     rebit states as a scatter plot. Additional keyword arguments
     are passed to :ref:`plt.scatter`.
 
-    :param np.ndarray modelparams: Model parameters representing
+    :param np.ndarray modelparams: FiniteModel parameters representing
         rebits.
     :param list rebit_axes: List containing indices for the :math:`x`
         and :math:`z` axes.
@@ -209,7 +209,7 @@ def plot_rebit_posterior(updater, prior=None, true_state=None, n_std=3, rebit_ax
     :param qinfer.smc.SMCUpdater updater: Posterior distribution over rebits.
     :param qinfer.tomography.DensityOperatorDistribution: Prior distribution
         over rebit states.
-    :param np.ndarray true_state: Model parameters for "true" state to plot
+    :param np.ndarray true_state: FiniteModel parameters for "true" state to plot
         as comparison.
     :param float n_std: Number of standard deviations out from the mean
         at which to draw the covariance ellipse.

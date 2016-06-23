@@ -33,7 +33,7 @@ from __future__ import division, unicode_literals
 
 __all__ = [
     'Simulatable',
-    'Model',
+    'FiniteModel',
     'DifferentiableModel'
 ]
 
@@ -99,7 +99,7 @@ class Simulatable(with_metaclass(abc.ABCMeta, object)):
         record type, such as ``[('time', 'float64'), ('axis', 'uint8')]``.
         
         This property is assumed by inference engines to be constant for
-        the lifetime of a Model instance.
+        the lifetime of a FiniteModel instance.
         """
         pass
         
@@ -203,7 +203,7 @@ class Simulatable(with_metaclass(abc.ABCMeta, object)):
         )
         if not suppress_base and self.model_chain:
             s += r"""<br>
-            <p>Model chain:</p>
+            <p>FiniteModel chain:</p>
             <ul>{}
             </ul>
             """.format(r"\n".join(
@@ -402,14 +402,14 @@ class LinearCostModelMixin(Simulatable):
     def experiment_cost(self, expparams):
         return expparams[self._field]
 
-class Model(Simulatable):
-    # TODO: now that Model is a subclass of Simulatable, Model may no longer
+class FiniteModel(Simulatable):
+    # TODO: now that FiniteModel is a subclass of Simulatable, FiniteModel may no longer
     #       be the best name. Maybe rename to SimulatableModel and
     #       ExplicitModel?
     
     ## INITIALIZERS ##
     def __init__(self):
-        super(Model, self).__init__()
+        super(FiniteModel, self).__init__()
         self._call_count = 0
     
     ## CONCRETE PROPERTIES ##
@@ -447,7 +447,7 @@ class Model(Simulatable):
         
         # Call the superclass simulate_experiment, not recording the result.
         # This is used to count simulation calls.
-        super(Model, self).simulate_experiment(modelparams, expparams, repeat)
+        super(FiniteModel, self).simulate_experiment(modelparams, expparams, repeat)
         
         if self.is_n_outcomes_constant:
             all_outcomes = np.arange(self.n_outcomes(expparams[0, np.newaxis]))
@@ -495,7 +495,7 @@ class Model(Simulatable):
             for idx in range(safe_shape(outcomes))
         ]) 
         
-class DifferentiableModel(with_metaclass(abc.ABCMeta, Model)):
+class DifferentiableModel(with_metaclass(abc.ABCMeta, FiniteModel)):
     
     @abc.abstractmethod
     def score(self, outcomes, modelparams, expparams, return_L=False):

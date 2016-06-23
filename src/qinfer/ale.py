@@ -45,7 +45,7 @@ import numpy as np
 
 from scipy.stats.distributions import binom
 
-from qinfer.abstract_model import Model, Simulatable
+from qinfer.abstract_model import FiniteModel, Simulatable
 from qinfer._exceptions import ApproximationWarning
 
 ## FUNCTIONS ##################################################################
@@ -75,7 +75,7 @@ def binom_est_error(p, N, hedge = float(0)):
 
 ## CLASSES ####################################################################
 
-class ALEApproximateModel(Model):
+class ALEApproximateModel(FiniteModel):
     r"""
     Given a :class:`~qinfer.abstract_model.Simulatable`, estiamtes the
     likelihood of that simulator by using adaptive likelihood estimation (ALE).
@@ -161,7 +161,7 @@ class ALEApproximateModel(Model):
         super(ALEApproximateModel, self).likelihood(outcomes, modelparams, expparams)
         # We will use the fact we have assumed a two-outcome model to make the
         # problem easier. As such, we will rely on the static method 
-        # Model.pr0_to_likelihood_array.
+        # FiniteModel.pr0_to_likelihood_array.
         
         # Start off with min_samp samples.
         n = np.zeros((modelparams.shape[0], expparams.shape[0]))
@@ -174,5 +174,5 @@ class ALEApproximateModel(Model):
             error_est_p1 = binom_est_error(binom_est_p(n, N, self._adapt_hedge), N, self._adapt_hedge)
             if np.all(error_est_p1 < self._error_tol): break
             
-        return Model.pr0_to_likelihood_array(outcomes, 1 - binom_est_p(n, N, self._est_hedge))
+        return FiniteModel.pr0_to_likelihood_array(outcomes, 1 - binom_est_p(n, N, self._est_hedge))
     

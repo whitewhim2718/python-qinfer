@@ -39,7 +39,7 @@ __all__ = [
 from itertools import starmap
 
 import numpy as np
-from qinfer.abstract_model import Model, DifferentiableModel
+from qinfer.abstract_model import FiniteModel, DifferentiableModel
 
 from operator import mul
 
@@ -164,7 +164,7 @@ class RandomizedBenchmarkingModel(DifferentiableModel):
         pr0 = np.zeros((modelparams.shape[0], expparams.shape[0]))
         pr0[:, :] = 1 - (A * (p ** m) + B)
         
-        return Model.pr0_to_likelihood_array(outcomes, pr0)
+        return FiniteModel.pr0_to_likelihood_array(outcomes, pr0)
         
     def score(self, outcomes, modelparams, expparams, return_L=False):
 
