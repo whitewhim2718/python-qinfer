@@ -54,9 +54,27 @@ class Simulatable(with_metaclass(abc.ABCMeta, object)):
 
     # TODO: docstring!
     
-    def __init__(self):
+    def __init__(self,always_resample_outcomes=False,initial_outcomes = None):
+        """
+        Initialize Simulatable model
+
+        :param bool always_resample_outcomes: Resample outcomes stochastically with 
+                    each outcome call.
+
+        :param :class:`~numpy.ndarray` initial_outcomes: Initial set of outcomes 
+                    that may be supplied. Otherwise initial outcomes default to 
+                    zeros. 
+        """
         self._sim_count = 0
-        
+        if initial_outcomes is not None:
+            #verify that the supplied outcomes are of the correct length
+            assert initial_outcomes.shape[0] == self.n_outcomes
+            self._outcomes = initial_outcomes
+        else:
+            #otherwise initialize all outcomes to zero at start
+            self._outcomes = np.zeros(self.n_outcomes)
+
+        self.needs_resample = False
         # Initialize a default scale matrix.
         self._Q = np.ones((self.n_modelparams,))
         
@@ -155,6 +173,24 @@ class Simulatable(with_metaclass(abc.ABCMeta, object)):
         """
         return list(map("x_{{{}}}".format, range(self.n_modelparams)))
 
+    @property
+    def needs_resample(self):
+        """
+        Determines whether the outcomes need to be resampled during call to :func:`~abstract_model.Simulatable.outcomes`
+        .
+        :return: Resampling state 
+        :rtype: bool 
+        """
+        return self._needs_resample
+    @needs_resample.setter
+    def needs_resample(self,needs_resample):
+        """
+        Set resampling value
+
+        :param bool needs_resample: Whether to resample or not in call to :func:`~abstract_model.Simulatable.outcomes`.
+        """
+        self._needs_resample = needs_resample
+    
     ## CONCRETE METHODS ##
 
     def _repr_html_(self, suppress_base=False):
@@ -206,6 +242,7 @@ class Simulatable(with_metaclass(abc.ABCMeta, object)):
         
     ## CONCRETE METHODS ##
     
+
     def clear_cache(self):
         """
         Tells the model to clear any internal caches used in computing
@@ -291,7 +328,66 @@ class Simulatable(with_metaclass(abc.ABCMeta, object)):
         call this method.
         """
         return modelparams
-        
+
+    def resample_outcomes(self,weights,modelparams,expparams):
+        """
+        Sample points from the prior distribution, and then use these sampled points (model parameters) to sample outcomes from
+        the likelihood function. Ie. sample 
+        :math:`n` points from 
+        .. :math::
+            \vec{x_i} ~ \pi(\vec{x})
+             y_i ~ L(\vec{x_i};\vec{C}) 
+
+        Where :math:`\vec{x_i}` is a sampled point from the particle distribution, and :math:`y_i` is the sampled outcome from this
+        point. In the limit of infinite samples the binned sampled outcomes should be proportional to the outcome likelihood distribution
+        under the prior probability function. 
+
+
+        :param np.ndarray weights: Set of weights with a weight
+            corresponding to every modelparam. 
+        :param np.ndarray modelparams: Set of model parameter vectors (particles) to samples outcomes from.
+        :param np.ndarray expparams: An experiment parameter array describing
+            the experiments that outcomes should be sampled for.
+
+        :return np.ndarray: Array of shape 
+            ``(n_outcomes,n_expparams,outcomes_length)`` describing the sampled outcomes if outcomes are arrays,
+            otherwise shape of ``(n_outcomes,n_expparams)``
+        :rtype: :class:`~numpy.ndarray`
+        """
+
+        sampled_points = modelparams[np.random.choice(np.shape(modelparams)[0],size=self.n_outcomes,p=weights)]
+        outcomes = self.simulate_experiment(sample_points,expparams)
+
+        if len(outcomes.shape)==4:
+            self._outcomes =  outcomes.reshape(sampled_points.shape[0],expparams.shape[0],outcomes.shape[4])
+        else:
+            self._outcomes =  outcomes.reshape(sampled_points.shape[0],expparams.shape[0])
+
+
+
+    def outcomes(self,weights,modelparams,expparams,resample=False):
+        """
+        Supplies array of outcomes sampled from the particle filter prior distribution/model likelihood function. 
+        Only resamples if ``needs_resample``,``resample``, or ``self.always_resample_outcomes`` is ``True``.
+
+        :param np.ndarray weights: Set of weights with a weight
+            corresponding to every modelparam. 
+        :param np.ndarray modelparams: Set of model parameter vectors (particles) to samples outcomes from.
+        :param np.ndarray expparams: An experiment parameter array describing
+            the experiments that outcomes should be sampled for.
+        :param bool resample: Force resampling of outcomes 
+
+        :return np.ndarray: Array of shape 
+            ``(n_outcomes,n_expparams,outcomes_length)`` describing the sampled outcomes if outcomes are arrays,
+            otherwise shape of ``(n_outcomes,n_expparams)``
+        :rtype: :class:`~numpy.ndarray` 
+
+        """
+        if self.needs_resample or resample or self.always_resample_outcomes:
+            self.resample_outcomes(weights,modelparams,expparams)
+
+        return self._outcomes
+
         
 class LinearCostModelMixin(Simulatable):
     # FIXME: move this mixin to a new module.
