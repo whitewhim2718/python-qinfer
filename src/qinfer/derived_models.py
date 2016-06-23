@@ -392,7 +392,7 @@ class RandomWalkModel(DerivedModel):
 if __name__ == "__main__":
     
     import operator as op
-    from .test_models import SimplePrecessionModel
+    from .finite_test_models import SimplePrecessionModel
     
     m = BinomialModel(SimplePrecessionModel())
     

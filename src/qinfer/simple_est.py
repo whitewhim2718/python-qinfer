@@ -42,7 +42,7 @@ __all__ = [
 import numpy as np
 
 from qinfer.smc import SMCUpdater
-from qinfer.test_models import SimplePrecessionModel
+from qinfer.finite_test_models import SimplePrecessionModel
 from qinfer.rb import RandomizedBenchmarkingModel
 from qinfer.derived_models import BinomialModel
 from qinfer.distributions import UniformDistribution, PostselectedDistribution

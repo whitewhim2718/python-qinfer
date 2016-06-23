@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 ##
-# test_models.py: Simple models for testing inference engines.
+# finite_test_models.py: Simple models for testing inference engines.
 ##
 # © 2012 Chris Ferrie (csferrie@gmail.com) and
 #        Christopher E. Granade (cgranade@gmail.com)
