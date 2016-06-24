@@ -88,7 +88,7 @@ class Simulatable(with_metaclass(abc.ABCMeta, object)):
         This property is assumed by inference engines to be constant for
         the lifetime of a :class:`Simulatable` instance.
         """
-        pass
+        return 1 
         
     @abc.abstractproperty
     def expparams_dtype(self):
@@ -101,7 +101,20 @@ class Simulatable(with_metaclass(abc.ABCMeta, object)):
         This property is assumed by inference engines to be constant for
         the lifetime of a FiniteModel instance.
         """
-        pass
+        return []
+
+    @abc.abstractproperty
+    def outcomes_dtype(self):
+        """
+        Returns the dtype of the outcomes parameter array. For a
+        model with single-parameter outcomes, this will likely be a scalar dtype,
+        such as ``"int64"`` for finite models or ``"float64"`` for continuous models. More generally, this can be an example of a
+        record type, such as ``[('time', 'float64'), ('axis', 'uint8')]``.
+        
+        This property is assumed by inference engines to be constant for
+        the lifetime of a FiniteModel instance.
+        """
+        return int
         
     ## CONCRETE PROPERTIES ##
     
@@ -114,7 +127,7 @@ class Simulatable(with_metaclass(abc.ABCMeta, object)):
         This property is assumed by inference engines to be constant for
         the lifetime of a Simulatable instance.
         """
-        return False
+        return True
 
     @property
     def model_chain(self):
@@ -182,6 +195,7 @@ class Simulatable(with_metaclass(abc.ABCMeta, object)):
         :rtype: bool 
         """
         return self._needs_resample
+
     @needs_resample.setter
     def needs_resample(self,needs_resample):
         """
@@ -358,10 +372,9 @@ class Simulatable(with_metaclass(abc.ABCMeta, object)):
         sampled_points = modelparams[np.random.choice(np.shape(modelparams)[0],size=self.n_outcomes,p=weights)]
         outcomes = self.simulate_experiment(sample_points,expparams)
 
-        if len(outcomes.shape)==4:
-            self._outcomes =  outcomes.reshape(sampled_points.shape[0],expparams.shape[0],outcomes.shape[4])
-        else:
-            self._outcomes =  outcomes.reshape(sampled_points.shape[0],expparams.shape[0])
+        
+        assert outcomes.dtype == self.outcomes_dtype
+        self._outcomes =  outcomes.reshape(sampled_points.shape[0],expparams.shape[0])
 
 
 
@@ -440,6 +453,18 @@ class FiniteModel(Simulatable):
         this model.
         """
         return self.are_models_valid(modelparams[np.newaxis, :])[0]
+
+    def outcomes_dtype(self):
+        """
+        Returns the dtype of the outcomes parameter array. For a
+        model with single-parameter outcomes, this will likely be a scalar dtype,
+        such as ``"int64"`` for finite models or ``"float64"`` for continuous models. More generally, this can be an example of a
+        record type, such as ``[('time', 'float64'), ('axis', 'uint8')]``.
+        
+        This property is assumed by inference engines to be constant for
+        the lifetime of a FiniteModel instance.
+        """
+        return int
     
     def simulate_experiment(self, modelparams, expparams, repeat=1):
         # NOTE: implements abstract method of Simulatable.

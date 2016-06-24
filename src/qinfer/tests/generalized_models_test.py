@@ -35,7 +35,7 @@ from numpy.testing import assert_equal, assert_almost_equal, assert_array_less
 from qinfer.tests.base_test import DerandomizedTestCase
 from qinfer.abstract_model import (
     FiniteModel)
-from qinfer import GaussianModel,PoissonModel,ExampleMultinomialModel
+from qinfer import GaussianModel,PoissonModel,MultinomialModel
 
 from qinfer.smc import SMCUpdater
 
@@ -58,29 +58,10 @@ class TestPoissonModel(DerandomizedTestCase):
         self.outcomes = self.poisson_model.simulate_experiment(TestPoissonModel.MODELPARAMS,
                 TestPoissonModel.TEST_EXPPARAMS,repeat=1 ).reshape(-1,1)
 
-        self.updater = TestPoissonModel(self.poisson_model,
+        self.updater = SMCUpdater(self.poisson_model,
                 TestPoissonModel.N_PARTICLES,TestPoissonModel.PRIOR)
        
 
-class TestMultinomialModel(DerandomizedTestCase):
-    # True model parameter for test
-    MODELPARAMS = np.array([1,])
-    TEST_EXPPARAMS = np.linspace(1.,10.,100,dtype=np.float)
-    PRIOR = UniformDistribution([[0,2]])
-    N_PARTICLES = 10000
-
-    TEST_TARGET_COV = np.array([[0.01]])
-
-    def setUp(self):
-
-        super(TestMultinomialModel,self).setUp()
-        self.multinomial_model = ExampleMultinomialModel()
-        self.expparams = TestMultinomialModel.TEST_EXPPARAMS.reshape(-1,1)
-        self.outcomes = self.multinomial_model.simulate_experiment(TestMultinomialModel.MODELPARAMS,
-                TestMultinomialModel.TEST_EXPPARAMS,repeat=1 ).reshape(-1,1)
-
-        self.updater = TestMultinomialModel(self.multinomial_model,
-                TestMultinomialModel.N_PARTICLES,TestMultinomialModel.PRIOR)
 
 
 
@@ -101,5 +82,29 @@ class TestGaussianModel(DerandomizedTestCase):
         self.outcomes = self.gaussian_model.simulate_experiment(TestGaussianModel.MODELPARAMS,
                 TestGaussianModel.TEST_EXPPARAMS,repeat=1 ).reshape(-1,1)
 
-        self.updater = TestGaussianModel(self.gaussian_model,
+        self.updater = SMCUpdater(self.gaussian_model,
                 TestGaussianModel.N_PARTICLES,TestGaussianModel.PRIOR)
+
+
+
+
+
+class TestMultinomialModel(DerandomizedTestCase):
+    # True model parameter for test
+    MODELPARAMS = np.array([1,])
+    TEST_EXPPARAMS = np.linspace(1.,10.,100,dtype=np.float)
+    PRIOR = UniformDistribution([[0,2]])
+    N_PARTICLES = 10000
+
+    TEST_TARGET_COV = np.array([[0.01]])
+
+    def setUp(self):
+
+        super(TestMultinomialModel,self).setUp()
+        self.multinomial_model = MultinomialModel()
+        self.expparams = MultinomialModel.TEST_EXPPARAMS.reshape(-1,1)
+        self.outcomes = self.multinomial_model.simulate_experiment(TestMultinomialModel.MODELPARAMS,
+                MultinomialModel.TEST_EXPPARAMS,repeat=1 ).reshape(-1,1)
+
+        self.updater = SMCUpdater(self.multinomial_model,
+                TestMultinomialModel.N_PARTICLES,TestMultinomialModel.PRIOR)
