@@ -255,7 +255,18 @@ class Model(with_metaclass(abc.ABCMeta, object)):
     def simulate_experiment(self, modelparams, expparams, repeat=1):
         # TODO: document
         self._sim_count += modelparams.shape[0] * expparams.shape[0] * repeat
+    
+
+    @abc.abstractmethod
+    def likelihood(self, outcomes, modelparams, expparams):
+        # TODO: document
         
+        # Count the number of times the inner-most loop is called.
+        self._call_count += (
+            safe_shape(outcomes) * safe_shape(modelparams) * safe_shape(expparams)
+        )
+                
+
     ## CONCRETE METHODS ##
     
 
@@ -436,18 +447,7 @@ class FiniteModel(Model):
     
     ## ABSTRACT METHODS ##
     
-    @abc.abstractmethod
-    def likelihood(self, outcomes, modelparams, expparams):
-        # TODO: document
-        
-        # Count the number of times the inner-most loop is called.
-        self._call_count += (
-            safe_shape(outcomes) * safe_shape(modelparams) * safe_shape(expparams)
-        )
-                
-    ## CONCRETE METHODS ##
-    # These methods depend on the abstract methods, and thus their behaviors
-    # change in each inheriting class.
+    
     
     def is_model_valid(self, modelparams):
         """
