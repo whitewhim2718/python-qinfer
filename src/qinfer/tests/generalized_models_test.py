@@ -35,7 +35,7 @@ from numpy.testing import assert_equal, assert_almost_equal, assert_array_less
 from qinfer.tests.base_test import DerandomizedTestCase
 from qinfer.abstract_model import (
     FiniteModel)
-from qinfer import GaussianModel,PoissonModel,MultinomialModel
+from qinfer import GaussianModel,PoissonModel,MultinomialModel,UniformDistribution
 
 from qinfer.smc import SMCUpdater
 
@@ -43,12 +43,12 @@ from qinfer.smc import SMCUpdater
 
 class TestPoissonModel(DerandomizedTestCase):
     # True model parameter for test
-    MODELPARAMS = np.array([1,])
-    TEST_EXPPARAMS = np.linspace(1.,10.,100,dtype=np.float)
-    PRIOR = UniformDistribution([[0,2]])
+    MODELPARAMS = np.array([100,])
+    TEST_EXPPARAMS = np.arange(500,dtype=np.float)
+    PRIOR = UniformDistribution([[0,500]])
     N_PARTICLES = 10000
 
-    TEST_TARGET_COV = np.array([[0.01]])
+    TEST_TARGET_COV = np.array([[0.1]])
 
     def setUp(self):
 
@@ -60,8 +60,15 @@ class TestPoissonModel(DerandomizedTestCase):
 
         self.updater = SMCUpdater(self.poisson_model,
                 TestPoissonModel.N_PARTICLES,TestPoissonModel.PRIOR)
-       
+    
 
+    def test_poisson_model(self):
+
+        self.updater.batch_update(self.outcomes,self.expparams)
+
+
+        assert_almost_equal(self.updater.est_mean(),TestSMCUpdater.MODELPARAMS,2)
+        assert_array_less(self.updater.est_covariance_mtx(),TestSMCUpdater.TEST_TARGET_COV)
 
 
 

@@ -1,7 +1,3 @@
 {
-  "src/qinfer/tests/generalized_models_test.py": true, 
-  "src/qinfer/tests/precession_model_test.py::TestSMCUpdater::test_bim": true, 
-  "src/qinfer/tests/precession_model_test.py::TestSMCUpdater::test_smc_fitting": true, 
-  "src/qinfer/tests/test_abstract_model.py::TestModel::test_pr0_shape": true, 
-  "src/qinfer/tests/test_abstract_model.py::TestModel::test_simulate_experiment": true
+  "src/qinfer/tests/generalized_models_test.py": true
 }

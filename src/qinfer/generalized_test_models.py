@@ -62,7 +62,7 @@ class PoissonModel(DifferentiableModel):
     
     ## INITIALIZER ##
 
-    def __init__(self, num_outcome_samples=400):
+    def __init__(self, num_outcome_samples=500):
         super(PoissonModel, self).__init__()
         self.num_outcome_samples = num_outcome_samples
 
@@ -127,21 +127,26 @@ class PoissonModel(DifferentiableModel):
         t = expparams['t']
         dw = modelparams - expparams['w_']
 
-        outcomes = outcomes.reshape((outcomes.shape[0], 1, 1))
-
-        arg = dw * t / 2        
-        q = (
-            np.power( t / np.tan(arg), outcomes) *
-            np.power(-t * np.tan(arg), 1 - outcomes)
-        )[np.newaxis, ...]
-
-        assert q.ndim == 4
+        outcomes_reshaped = outcomes[np.newaxis,:,np.newaxis,np.newaxis]
+        modelparams_reshaped = modelparams[:,np.newaxix,:,:]
+        scr = (outcomes*np.pow(modelparams,outcomes-1)*np.exp(-modelparams)-\
+                modelparams*np.pow(modelparams,outcomes))/np.misc.factorial(outcomes)
         
+
         
         if return_L:
             return q, self.likelihood(outcomes, modelparams, expparams)
         else:
             return q
+
+
+    def simulate_experiment(self,modelparams,expparams,repeat=1):
+        outcomes = np.empty((expparams.shape[0],modelparams.shape[0],dtype=int)
+        for i in expparams.shape[0]:
+            for j in modelparams.shape[0]:
+                outcomes[i,j] = np.random.poisson(modelparams[i][0],1)
+
+        return outcomes 
 
 class GaussianModel(DifferentiableModel):
     r"""
