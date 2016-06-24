@@ -440,6 +440,7 @@ class SMCUpdater(Distribution):
             self.particle_locations, expparams
         )[:, :, 0]
         
+        self.model.needs_resample = True
         # Resample if needed.
         if check_for_resample:
             self._maybe_resample()

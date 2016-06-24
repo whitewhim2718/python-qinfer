@@ -44,11 +44,11 @@ import numpy as np
 
 from .utils import binomial_pdf
 
-from .abstract_model import FiniteModel, DifferentiableModel
+from .abstract_model import FiniteModel, Simulateable
     
 ## CLASSES ###################################################################
 
-class PoissonModel(DifferentiableModel):
+class PoissonModel(Simulateable):
     r"""
     Describes the free evolution of a single qubit prepared in the
     :math:`\left|+\right\rangle` state under a Hamiltonian :math:`H = \omega \sigma_z / 2`,
@@ -79,6 +79,10 @@ class PoissonModel(DifferentiableModel):
     @property
     def expparams_dtype(self):
         return []
+    
+    @property
+    def outcomes_dtype(self):
+        return int
     
     @property
     def is_n_outcomes_constant(self):
@@ -141,7 +145,7 @@ class PoissonModel(DifferentiableModel):
 
 
     def simulate_experiment(self,modelparams,expparams,repeat=1):
-        outcomes = np.empty((expparams.shape[0],modelparams.shape[0],dtype=int)
+        outcomes = np.empty((expparams.shape[0],modelparams.shape[0]),dtype=int)
         for i in expparams.shape[0]:
             for j in modelparams.shape[0]:
                 outcomes[i,j] = np.random.poisson(modelparams[i][0],1)

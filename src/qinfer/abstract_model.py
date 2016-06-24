@@ -68,11 +68,13 @@ class Simulatable(with_metaclass(abc.ABCMeta, object)):
         self._sim_count = 0
         if initial_outcomes is not None:
             #verify that the supplied outcomes are of the correct length
-            assert initial_outcomes.shape[0] == self.n_outcomes
+            assert initial_outcomes.dtype== self.outcomes_dtype
             self._outcomes = initial_outcomes
         else:
             #otherwise initialize all outcomes to zero at start
-            self._outcomes = np.zeros(self.n_outcomes)
+            import pdb
+            pdb.set_trace()
+            self._outcomes = np.empty(None,self.outcomes_dtype)
 
         self.needs_resample = False
         # Initialize a default scale matrix.
@@ -88,7 +90,7 @@ class Simulatable(with_metaclass(abc.ABCMeta, object)):
         This property is assumed by inference engines to be constant for
         the lifetime of a :class:`Simulatable` instance.
         """
-        return 1 
+        pass
         
     @abc.abstractproperty
     def expparams_dtype(self):
@@ -101,7 +103,7 @@ class Simulatable(with_metaclass(abc.ABCMeta, object)):
         This property is assumed by inference engines to be constant for
         the lifetime of a FiniteModel instance.
         """
-        return []
+        pass
 
     @abc.abstractproperty
     def outcomes_dtype(self):
@@ -229,7 +231,7 @@ class Simulatable(with_metaclass(abc.ABCMeta, object)):
     ## ABSTRACT METHODS ##
     
     @abc.abstractmethod
-    def n_outcomes(self, expparams):
+    def n_outcomes(self, expparams=None):
         """
         Returns an array of dtype ``uint`` describing the number of outcomes
         for each experiment specified by ``expparams``.
@@ -520,7 +522,7 @@ class FiniteModel(Simulatable):
             for idx in range(safe_shape(outcomes))
         ]) 
         
-class DifferentiableModel(with_metaclass(abc.ABCMeta, FiniteModel)):
+class DifferentiableModel(with_metaclass(abc.ABCMeta, Model)):
     
     @abc.abstractmethod
     def score(self, outcomes, modelparams, expparams, return_L=False):
