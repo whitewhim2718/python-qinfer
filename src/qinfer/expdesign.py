@@ -269,7 +269,7 @@ class ExperimentDesigner(object):
             a callable function that generates guesses.
         :type guess: Instance of :class:`~Heuristic`, `callable`
             or :class:`~numpy.ndarray` of ``dtype``
-            :attr:`~qinfer.abstract_model.Simulatable.expparams_dtype`
+            :attr:`~qinfer.abstract_model.Model.expparams_dtype`
         :param str field: The name of the ``expparams`` field to be optimized.
             All other fields of ``guess`` will be held constant.
         :param float cost_scale_k: A scale parameter :math:`k` relating the

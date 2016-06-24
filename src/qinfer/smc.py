@@ -612,11 +612,11 @@ class SMCUpdater(Distribution):
         r"""
         Calculates the Bayes risk for a hypothetical experiment, assuming the
         quadratic loss function defined by the current model's scale matrix
-        (see :attr:`qinfer.abstract_model.Simulatable.Q`).
+        (see :attr:`qinfer.abstract_model.Model.Q`).
         
         :param expparams: The experiment at which to compute the Bayes risk.
         :type expparams: :class:`~numpy.ndarray` of dtype given by the current
-            model's :attr:`~qinfer.abstract_model.Simulatable.expparams_dtype` property,
+            model's :attr:`~qinfer.abstract_model.Model.expparams_dtype` property,
             and of shape ``(1,)``
             
         :return float: The Bayes risk for the current posterior distribution
@@ -667,7 +667,7 @@ class SMCUpdater(Distribution):
         :param expparams: The experiment at which to compute expected
             information gain.
         :type expparams: :class:`~numpy.ndarray` of dtype given by the current
-            model's :attr:`~qinfer.abstract_model.Simulatable.expparams_dtype` property,
+            model's :attr:`~qinfer.abstract_model.Model.expparams_dtype` property,
             and of shape ``(1,)``
             
         :return float: The Bayes risk for the current posterior distribution

@@ -45,7 +45,7 @@ import numpy as np
 
 from scipy.stats.distributions import binom
 
-from qinfer.abstract_model import FiniteModel, Simulatable
+from qinfer.abstract_model import FiniteModel, Model
 from qinfer._exceptions import ApproximationWarning
 
 ## FUNCTIONS ##################################################################
@@ -77,10 +77,10 @@ def binom_est_error(p, N, hedge = float(0)):
 
 class ALEApproximateModel(FiniteModel):
     r"""
-    Given a :class:`~qinfer.abstract_model.Simulatable`, estiamtes the
+    Given a :class:`~qinfer.abstract_model.Model`, estiamtes the
     likelihood of that simulator by using adaptive likelihood estimation (ALE).
     
-    :param qinfer.abstract_model.Simulatable simulator: Simulator to estimate
+    :param qinfer.abstract_model.Model simulator: Simulator to estimate
         the likelihood function of.
     :param float error_tol: Allowed error in the estimated likelihood. Note that
         the simulation cost scales as :math:`O(\epsilon^{-2})`, where
@@ -102,8 +102,8 @@ class ALEApproximateModel(FiniteModel):
     ):
         
         ## INPUT VALIDATION ##
-        if not isinstance(simulator, Simulatable):
-            raise TypeError("Simulator must be an instance of Simulatable.")
+        if not isinstance(simulator, Model):
+            raise TypeError("Simulator must be an instance of Model.")
 
         if error_tol <= 0:
             raise ValueError("Error tolerance must be strictly positive.")
@@ -132,7 +132,7 @@ class ALEApproximateModel(FiniteModel):
         
     ## WRAPPED METHODS AND PROPERTIES ##
     # These methods and properties do nothing but pass along to the
-    # consumed Simulatable instance, and so we present them here in a
+    # consumed Model instance, and so we present them here in a
     # compressed form.
     
     @property
