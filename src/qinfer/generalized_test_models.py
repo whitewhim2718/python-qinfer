@@ -44,7 +44,7 @@ import numpy as np
 
 from .utils import binomial_pdf
 
-from .abstract_model import FiniteModel, Model
+from .abstract_model import Model, DifferentiableModel
     
 ## CLASSES ###################################################################
 
@@ -127,7 +127,8 @@ class PoissonModel(Model):
     def score(self, outcomes, modelparams, expparams, return_L=False):
         if len(modelparams.shape) == 1:
             modelparams = modelparams[:, np.newaxis]
-            
+        
+        return super(PoissonModel, self).score(outcomes, modelparams, expparams, return_L) 
         t = expparams['t']
         dw = modelparams - expparams['w_']
 
@@ -145,10 +146,16 @@ class PoissonModel(Model):
 
 
     def simulate_experiment(self,modelparams,expparams,repeat=1):
+
+        super(PoissonModel, self).simulate_experiment(modelparams, expparams, repeat)
+
+        if len(modelparams.shape) == 1:
+            modelparams = modelparams[:, np.newaxis]
+
         outcomes = np.empty((expparams.shape[0],modelparams.shape[0]),dtype=int)
-        for i in expparams.shape[0]:
-            for j in modelparams.shape[0]:
-                outcomes[i,j] = np.random.poisson(modelparams[i][0],1)
+        for i in range(expparams.shape[0]):
+            for j in range(modelparams.shape[0]):
+                outcomes[i,j] = np.random.poisson(modelparams[j][0],1)
 
         return outcomes 
 

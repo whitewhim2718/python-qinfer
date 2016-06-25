@@ -66,14 +66,13 @@ class Model(with_metaclass(abc.ABCMeta, object)):
                     zeros. 
         """
         self._sim_count = 0
+        self._call_count = 0
         if initial_outcomes is not None:
             #verify that the supplied outcomes are of the correct length
             assert initial_outcomes.dtype== self.outcomes_dtype
             self._outcomes = initial_outcomes
         else:
             #otherwise initialize all outcomes to zero at start
-            import pdb
-            pdb.set_trace()
             self._outcomes = np.empty(None,self.outcomes_dtype)
 
         self.needs_resample = False
@@ -206,6 +205,11 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         :param bool needs_resample: Whether to resample or not in call to :func:`~abstract_model.Model.outcomes`.
         """
         self._needs_resample = needs_resample
+
+    @property
+    def call_count(self):
+        # TODO: document
+        return self._call_count
     
     ## CONCRETE METHODS ##
 
@@ -312,7 +316,10 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         
         return np.apply_along_axis(
             lambda vec: np.linalg.norm(vec, 1),
-            1,
+            1,@property
+    def call_count(self):
+        # TODO: document
+        return self._call_count
             self.Q * (a - b)
         )
         
@@ -436,14 +443,8 @@ class FiniteModel(Model):
     ## INITIALIZERS ##
     def __init__(self):
         super(FiniteModel, self).__init__()
-        self._call_count = 0
     
     ## CONCRETE PROPERTIES ##
-    
-    @property
-    def call_count(self):
-        # TODO: document
-        return self._call_count
     
     ## ABSTRACT METHODS ##
     
