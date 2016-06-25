@@ -41,7 +41,7 @@ __all__ = [
 from builtins import range
 
 import numpy as np
-
+from scipy.misc import factorial
 from .utils import binomial_pdf
 
 from .abstract_model import Model, DifferentiableModel
@@ -118,10 +118,14 @@ class PoissonModel(Model):
        
         if len(modelparams.shape) == 1:
             modelparams = modelparams[..., np.newaxis]
+        
+        if len(outcomes.shape) == 1:
+            outcomes = outcomes[..., np.newaxis]
 
         lamb_da = modelparams[np.newaxis,...]
         outcomes = outcomes[:,np.newaxis,:]
-        return lamb_da**(outcomes)*np.exp(-lamb_da)/np.misc.factorial(outcomes)
+
+        return lamb_da**(outcomes)*np.exp(-lamb_da)/factorial(outcomes)
 
 
     def score(self, outcomes, modelparams, expparams, return_L=False):
@@ -135,7 +139,7 @@ class PoissonModel(Model):
         outcomes_reshaped = outcomes[np.newaxis,:,np.newaxis,np.newaxis]
         modelparams_reshaped = modelparams[:,np.newaxix,:,:]
         scr = (outcomes*np.pow(modelparams,outcomes-1)*np.exp(-modelparams)-\
-                modelparams*np.pow(modelparams,outcomes))/np.misc.factorial(outcomes)
+                modelparams*np.pow(modelparams,outcomes))/factorial(outcomes)
         
 
         
@@ -156,7 +160,7 @@ class PoissonModel(Model):
         for i in range(expparams.shape[0]):
             for j in range(modelparams.shape[0]):
                 outcomes[i,j] = np.random.poisson(modelparams[j][0],1)
-
+    
         return outcomes 
 
 class GaussianModel(DifferentiableModel):

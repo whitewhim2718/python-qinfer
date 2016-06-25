@@ -316,12 +316,10 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         
         return np.apply_along_axis(
             lambda vec: np.linalg.norm(vec, 1),
-            1,@property
-    def call_count(self):
-        # TODO: document
-        return self._call_count
-            self.Q * (a - b)
-        )
+            1,self.Q * (a - b))
+
+   
+            
         
     def update_timestep(self, modelparams, expparams):
         r"""

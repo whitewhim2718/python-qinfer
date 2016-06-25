@@ -344,7 +344,7 @@ class SMCUpdater(Distribution):
         # since NumPy broadcasting rules align on the right-most index.
         L = self.model.likelihood(outcomes, locs, expparams).transpose([0, 2, 1])
         hyp_weights = weights * L
-        
+
         # Sum up the weights to find the renormalization scale.
         norm_scale = np.sum(hyp_weights, axis=2)[..., np.newaxis]
         
@@ -362,10 +362,12 @@ class SMCUpdater(Distribution):
         fixed_norm_scale[np.abs(norm_scale) < np.spacing(1)] = 1
         
         # normalize
+
         norm_weights = hyp_weights / fixed_norm_scale
             # Note that newaxis is needed to align the two matrices.
             # This introduces a length-1 axis for the particle number,
             # so that the normalization is broadcast over all particles.
+
         if not return_likelihood:
             if not return_normalization:
                 return norm_weights
@@ -473,6 +475,7 @@ class SMCUpdater(Distribution):
         for idx_exp, (outcome, experiment) in enumerate(zip(iter(outcomes), iter(expparams))):
             self.update(outcome, experiment, check_for_resample=False)
             if (idx_exp + 1) % resample_interval == 0:
+    
                 self._maybe_resample()
 
     ## RESAMPLING METHODS #####################################################
