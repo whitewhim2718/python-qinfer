@@ -44,11 +44,11 @@ import numpy as np
 
 from .utils import binomial_pdf
 
-from .abstract_model import FiniteModel, Simulateable
+from .abstract_model import FiniteModel, Model
     
 ## CLASSES ###################################################################
 
-class PoissonModel(Simulateable):
+class PoissonModel(Model):
     r"""
     Describes the free evolution of a single qubit prepared in the
     :math:`\left|+\right\rangle` state under a Hamiltonian :math:`H = \omega \sigma_z / 2`,
