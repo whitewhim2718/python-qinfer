@@ -42,7 +42,7 @@ from __future__ import unicode_literals
 
 from builtins import range, map
 
-from qinfer import FiniteModel
+from qinfer import FiniteOutcomeModel
 
 import numpy as np
 
@@ -109,7 +109,7 @@ class TomographyModel(Model):
         
 #         return expparams
 
-class TomographyModel(FiniteModel):
+class TomographyModel(FiniteOutcomeModel):
     def __init__(self, basis, allow_subnormalized=False):
         self._dim = basis.dim
         self._basis = basis
@@ -223,7 +223,7 @@ class TomographyModel(FiniteModel):
         )
         np.clip(pr1, 0, 1, out=pr1)
 
-        return FiniteModel.pr0_to_likelihood_array(outcomes, 1 - pr1)
+        return FiniteOutcomeModel.pr0_to_likelihood_array(outcomes, 1 - pr1)
 
 class DiffusiveTomographyModel(TomographyModel):
     @property

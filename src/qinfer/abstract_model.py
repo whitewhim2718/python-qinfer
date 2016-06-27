@@ -32,9 +32,8 @@ from __future__ import division, unicode_literals
 ## EXPORTS ###################################################################
 
 __all__ = [
-    'Simulatable',
     'Model',
-    'FiniteModel',
+    'FiniteOutcomeModel',
     'DifferentiableModel'
 ]
 
@@ -93,7 +92,7 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         record type, such as ``[('time', 'float64'), ('axis', 'uint8')]``.
         
         This property is assumed by inference engines to be constant for
-        the lifetime of a FiniteModel instance.
+        the lifetime of a Model instance.
         """
         pass
 
@@ -106,7 +105,7 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         record type, such as ``[('time', 'float64'), ('axis', 'uint8')]``.
         
         This property is assumed by inference engines to be constant for
-        the lifetime of a FiniteModel instance.
+        the lifetime of a Model instance.
         """
         return int
         
@@ -417,7 +416,7 @@ class LinearCostModelMixin(Model):
     def experiment_cost(self, expparams):
         return expparams[self._field]
 
-class FiniteModel(Model):
+class FiniteOutcomeModel(Model):
     """
     Represents a system which can be simulated according to
     various model parameters and experimental control parameters
@@ -432,7 +431,7 @@ class FiniteModel(Model):
     
     ## INITIALIZERS ##
     def __init__(self):
-        super(FiniteModel, self).__init__()
+        super(FiniteOutcomeModel, self).__init__()
     
     ## CONCRETE PROPERTIES ##
 
@@ -496,7 +495,7 @@ class FiniteModel(Model):
         record type, such as ``[('time', 'float64'), ('axis', 'uint8')]``.
         
         This property is assumed by inference engines to be constant for
-        the lifetime of a FiniteModel instance.
+        the lifetime of a FiniteOutcomeModel instance.
         """
         return int
     
@@ -506,7 +505,7 @@ class FiniteModel(Model):
         
         # Call the superclass simulate_experiment, not recording the result.
         # This is used to count simulation calls.
-        super(FiniteModel, self).simulate_experiment(modelparams, expparams, repeat)
+        super(FiniteOutcomeModel, self).simulate_experiment(modelparams, expparams, repeat)
         
         if self.is_n_outcomes_constant:
             all_outcomes = np.arange(self.n_outcomes(expparams[0, np.newaxis]))

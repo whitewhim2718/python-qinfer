@@ -49,13 +49,13 @@ import numpy as np
 from scipy.stats import binom
 
 from qinfer.utils import binomial_pdf
-from qinfer.abstract_model import FiniteModel, DifferentiableModel
+from qinfer.abstract_model import Model, FiniteOutcomeModel, DifferentiableModel
 from qinfer._lib import enum # <- TODO: replace with flufl.enum!
 from qinfer.ale import binom_est_error
     
 ## CLASSES #####################################################################
 
-class DerivedModel(FiniteModel):
+class DerivedModel(Model):
     """
     Base class for any model that decorates another model.
     Provides passthroughs for modelparam_names, n_modelparams, etc.
@@ -115,10 +115,10 @@ class DerivedModel(FiniteModel):
 
 PoisonModes = enum.enum("ALE", "MLE")
 
-class PoisonedModel(DerivedModel):
+class PoisonedModel(DerivedModel, FiniteOutcomeModel):
     # TODO: refactor to use DerivedModel
     r"""
-    FiniteModel that simulates sampling error incurred by the MLE or ALE methods of
+    FiniteOutcomeModel that simulates sampling error incurred by the MLE or ALE methods of
     reconstructing likelihoods from sample data. The true likelihood given by an
     underlying model is perturbed by a normally distributed random variable
     :math:`\epsilon`, and then truncated to the interval :math:`[0, 1]`.
@@ -128,7 +128,7 @@ class PoisonedModel(DerivedModel):
     met), or as proportional to the variance of a possibly-hedged binomial
     estimator, to simulate MLE.
     
-    :param FiniteModel underlying_model: The "true" model to be poisoned.
+    :param FiniteOutcomeModel underlying_model: The "true" model to be poisoned.
     :param float tol: For ALE, specifies the given error tolerance to simulate.
     :param int n_samples: For MLE, specifies the number of samples collected.
     :param float hedge: For MLE, specifies the hedging used in estimating the
@@ -183,19 +183,19 @@ class PoisonedModel(DerivedModel):
         Simulates experimental data according to the original (unpoisoned)
         model. Note that this explicitly causes the simulated data and the
         likelihood function to disagree. This is, strictly speaking, a violation
-        of the assumptions made about `~qinfer.abstract_model.FiniteModel` subclasses.
+        of the assumptions made about `~qinfer.abstract_model.FiniteOutcomeModel` subclasses.
         This violation is by intention, and allows for testing the robustness
         of inference algorithms against errors in that assumption.
         """
         super(PoisonedModel, self).simulate_experiment(modelparams, expparams, repeat)
         return self.underlying_model.simulate_experiment(modelparams, expparams, repeat)
 
-class BinomialModel(DerivedModel):
+class BinomialModel(DerivedModel, FiniteOutcomeModel):
     """
-    FiniteModel representing finite numbers of iid samples from another model,
+    FiniteOutcomeModel representing finite numbers of iid samples from another model,
     using the binomial distribution to calculate the new likelihood function.
     
-    :param qinfer.abstract_model.FiniteModel underlying_model: An instance of a two-
+    :param qinfer.abstract_model.FiniteOutcomeModel underlying_model: An instance of a two-
         outcome model to be decorated by the binomial distribution.
         
     Note that a new experimental parameter field ``n_meas`` is added by this
@@ -238,7 +238,7 @@ class BinomialModel(DerivedModel):
         experiment is independent of the experiment being performed.
         
         This property is assumed by inference engines to be constant for
-        the lifetime of a FiniteModel instance.
+        the lifetime of a FiniteOutcomeModel instance.
         """
         return False
     
@@ -351,10 +351,10 @@ class MLEModel(DerivedModel):
 
 class RandomWalkModel(DerivedModel):
     r"""
-    FiniteModel such that after each time step, a random perturbation is added to
+    FiniteOutcomeModel such that after each time step, a random perturbation is added to
     each model parameter vector according to a given distribution.
     
-    :param FiniteModel underlying_model: FiniteModel representing the likelihood with no
+    :param FiniteOutcomeModel underlying_model: FiniteOutcomeModel representing the likelihood with no
         random walk added.
     :param Distribution step_distribution: Distribution over step vectors.
     """
