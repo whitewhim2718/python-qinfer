@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 ##
-# test_abstract_model.py: Checks that Model works properly.
+# test_abstract_model.py: Checks that FiniteModel works properly.
 ##
 # © 2014 Chris Ferrie (csferrie@gmail.com) and
 #        Christopher E. Granade (cgranade@gmail.com)
@@ -34,7 +34,7 @@ from numpy.testing import assert_equal, assert_almost_equal, assert_array_less
 
 from qinfer.tests.base_test import DerandomizedTestCase
 from qinfer.abstract_model import (
-    Model)
+    FiniteModel)
 from qinfer import ScoreMixin, SimplePrecessionModel, UniformDistribution
 
 from qinfer.smc import SMCUpdater,SMCUpdaterBCRB

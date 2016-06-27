@@ -89,7 +89,7 @@ class SMCUpdater(Distribution):
     Creates a new Sequential Monte carlo updater, using the algorithm of
     [GFWC12]_.
 
-    :param Model model: Model whose parameters are to be inferred.
+    :param qinfer.abstract_model.FiniteModel model: FiniteModel whose parameters are to be inferred.
     :param int n_particles: The number of particles to be used in the particle approximation.
     :param Distribution prior: A representation of the prior distribution.
     :param callable resampler: Specifies the resampling algorithm to be used. See :ref:`resamplers`
@@ -392,11 +392,11 @@ class SMCUpdater(Distribution):
         After updating, resamples the posterior distribution if necessary.
 
         :param int outcome: Label for the outcome that was observed, as defined
-            by the :class:`~qinfer.abstract_model.Model` instance under study.
+            by the :class:`~qinfer.abstract_model.FiniteModel` instance under study.
         :param expparams: Parameters describing the experiment that was
             performed.
         :type expparams: :class:`~numpy.ndarray` of dtype given by the
-            :attr:`~qinfer.abstract_model.Model.expparams_dtype` property
+            :attr:`~qinfer.abstract_model.FiniteModel.expparams_dtype` property
             of the underlying model
         :param bool check_for_resample: If :obj:`True`, after performing the
             update, the effective sample size condition will be checked and
@@ -447,6 +447,7 @@ class SMCUpdater(Distribution):
             self.particle_locations, expparams
         )[:, :, 0]
         
+        self.model.needs_resample = True
         # Resample if needed.
         if check_for_resample:
             self._maybe_resample()
@@ -631,11 +632,11 @@ class SMCUpdater(Distribution):
         r"""
         Calculates the Bayes risk for a hypothetical experiment, assuming the
         quadratic loss function defined by the current model's scale matrix
-        (see :attr:`qinfer.abstract_model.Simulatable.Q`).
+        (see :attr:`qinfer.abstract_model.Model.Q`).
         
         :param expparams: The experiment at which to compute the Bayes risk.
         :type expparams: :class:`~numpy.ndarray` of dtype given by the current
-            model's :attr:`~qinfer.abstract_model.Simulatable.expparams_dtype` property,
+            model's :attr:`~qinfer.abstract_model.Model.expparams_dtype` property,
             and of shape ``(1,)``
             
         :return float: The Bayes risk for the current posterior distribution
@@ -686,7 +687,7 @@ class SMCUpdater(Distribution):
         :param expparams: The experiment at which to compute expected
             information gain.
         :type expparams: :class:`~numpy.ndarray` of dtype given by the current
-            model's :attr:`~qinfer.abstract_model.Simulatable.expparams_dtype` property,
+            model's :attr:`~qinfer.abstract_model.Model.expparams_dtype` property,
             and of shape ``(1,)``
             
         :return float: The Bayes risk for the current posterior distribution
@@ -1154,9 +1155,9 @@ class MixedApproximateSMCUpdater(SMCUpdater):
     to be cheaper. This allows for approximate computation to be used on the
     lower-weight particles.
 
-    :param ~qinfer.abstract_model.Model good_model: The more expensive, but
+    :param ~qinfer.abstract_model.FiniteModel good_model: The more expensive, but
         complete model.
-    :param ~qinfer.abstract_model.Model approximate_model: The less expensive,
+    :param ~qinfer.abstract_model.FiniteModel approximate_model: The less expensive,
         but approximate model.
     :param float mixture_ratio: The ratio of the posterior weight that will
         be delegated to the good model in each update step.
@@ -1316,7 +1317,7 @@ class SMCUpdaterBCRB(SMCUpdater):
         })
         
         if not isinstance(self.model, DifferentiableModel):
-            raise ValueError("Model must be differentiable.")
+            raise ValueError("FiniteModel must be differentiable.")
         
         # TODO: fix distributions to make grad_log_pdf return the right
         #       shape, such that the indices are
@@ -1422,7 +1423,7 @@ class SMCUpdaterBCRB(SMCUpdater):
         :param expparams: Parameters describing the experiment that was
             performed.
         :type expparams: :class:`~numpy.ndarray` of dtype given by the
-            :attr:`~qinfer.abstract_model.Model.expparams_dtype` property
+            :attr:`~qinfer.abstract_model.FiniteModel.expparams_dtype` property
             of the underlying model
 
         :param n_samples int: Number of samples to draw from particle distribution,
@@ -1441,7 +1442,7 @@ class SMCUpdaterBCRB(SMCUpdater):
         :param expparams: Parameters describing the experiment that was
             performed.
         :type expparams: :class:`~numpy.ndarray` of dtype given by the
-            :attr:`~qinfer.abstract_model.Model.expparams_dtype` property
+            :attr:`~qinfer.abstract_model.FiniteModel.expparams_dtype` property
             of the underlying model
 
         """
@@ -1458,11 +1459,11 @@ class SMCUpdaterBCRB(SMCUpdater):
         After updating, resamples the posterior distribution if necessary.
 
         :param int outcome: Label for the outcome that was observed, as defined
-            by the :class:`~qinfer.abstract_model.Model` instance under study.
+            by the :class:`~qinfer.abstract_model.FiniteModel` instance under study.
         :param expparams: Parameters describing the experiment that was
             performed.
         :type expparams: :class:`~numpy.ndarray` of dtype given by the
-            :attr:`~qinfer.abstract_model.Model.expparams_dtype` property
+            :attr:`~qinfer.abstract_model.FiniteModel.expparams_dtype` property
             of the underlying model
         :param bool check_for_resample: If :obj:`True`, after performing the
             update, the effective sample size condition will be checked and

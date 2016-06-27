@@ -40,11 +40,11 @@ __all__ = [
 import numpy as np
 
 from qinfer.utils import binomial_pdf
-from qinfer.abstract_model import Model, DifferentiableModel
+from qinfer.abstract_model import FiniteModel, DifferentiableModel
 
 ## CLASSES ####################################################################
 
-class UnstructuredFrequencyModel(Model):
+class UnstructuredFrequencyModel(FiniteModel):
 	r"""
 	Represents estimating a likelihood function of the form
 

@@ -178,7 +178,7 @@ def perf_test(
     number of particles, a prior distribution and an experiment design
     heuristic.
 
-    :param qinfer.Model model: Model whose parameters are to
+    :param qinfer.FiniteModel model: FiniteModel whose parameters are to
         be estimated.
     :param int n_particles: Number of SMC particles to use.
     :param qinfer.Distribution prior: Prior to use in selecting
@@ -187,7 +187,7 @@ def perf_test(
         model.
     :param qinfer.Heuristic heuristic_class: Constructor function
         for the experiment design heuristic to be used.
-    :param qinfer.Model true_model: Model to be used in
+    :param qinfer.FiniteModel true_model: FiniteModel to be used in
         generating experimental data. If ``None``, assumed to be ``model``.
         Note that if the true and estimation models have different numbers
         of parameters, the loss will be calculated by aligning the

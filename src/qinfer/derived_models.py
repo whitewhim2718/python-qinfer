@@ -49,13 +49,13 @@ import numpy as np
 from scipy.stats import binom
 
 from qinfer.utils import binomial_pdf
-from qinfer.abstract_model import Model, DifferentiableModel
+from qinfer.abstract_model import FiniteModel, DifferentiableModel
 from qinfer._lib import enum # <- TODO: replace with flufl.enum!
 from qinfer.ale import binom_est_error
     
 ## CLASSES #####################################################################
 
-class DerivedModel(Model):
+class DerivedModel(FiniteModel):
     """
     Base class for any model that decorates another model.
     Provides passthroughs for modelparam_names, n_modelparams, etc.
@@ -118,7 +118,7 @@ PoisonModes = enum.enum("ALE", "MLE")
 class PoisonedModel(DerivedModel):
     # TODO: refactor to use DerivedModel
     r"""
-    Model that simulates sampling error incurred by the MLE or ALE methods of
+    FiniteModel that simulates sampling error incurred by the MLE or ALE methods of
     reconstructing likelihoods from sample data. The true likelihood given by an
     underlying model is perturbed by a normally distributed random variable
     :math:`\epsilon`, and then truncated to the interval :math:`[0, 1]`.
@@ -128,7 +128,7 @@ class PoisonedModel(DerivedModel):
     met), or as proportional to the variance of a possibly-hedged binomial
     estimator, to simulate MLE.
     
-    :param Model underlying_model: The "true" model to be poisoned.
+    :param FiniteModel underlying_model: The "true" model to be poisoned.
     :param float tol: For ALE, specifies the given error tolerance to simulate.
     :param int n_samples: For MLE, specifies the number of samples collected.
     :param float hedge: For MLE, specifies the hedging used in estimating the
@@ -183,7 +183,7 @@ class PoisonedModel(DerivedModel):
         Simulates experimental data according to the original (unpoisoned)
         model. Note that this explicitly causes the simulated data and the
         likelihood function to disagree. This is, strictly speaking, a violation
-        of the assumptions made about `~qinfer.abstract_model.Model` subclasses.
+        of the assumptions made about `~qinfer.abstract_model.FiniteModel` subclasses.
         This violation is by intention, and allows for testing the robustness
         of inference algorithms against errors in that assumption.
         """
@@ -192,10 +192,10 @@ class PoisonedModel(DerivedModel):
 
 class BinomialModel(DerivedModel):
     """
-    Model representing finite numbers of iid samples from another model,
+    FiniteModel representing finite numbers of iid samples from another model,
     using the binomial distribution to calculate the new likelihood function.
     
-    :param qinfer.abstract_model.Model underlying_model: An instance of a two-
+    :param qinfer.abstract_model.FiniteModel underlying_model: An instance of a two-
         outcome model to be decorated by the binomial distribution.
         
     Note that a new experimental parameter field ``n_meas`` is added by this
@@ -238,7 +238,7 @@ class BinomialModel(DerivedModel):
         experiment is independent of the experiment being performed.
         
         This property is assumed by inference engines to be constant for
-        the lifetime of a Model instance.
+        the lifetime of a FiniteModel instance.
         """
         return False
     
@@ -351,10 +351,10 @@ class MLEModel(DerivedModel):
 
 class RandomWalkModel(DerivedModel):
     r"""
-    Model such that after each time step, a random perturbation is added to
+    FiniteModel such that after each time step, a random perturbation is added to
     each model parameter vector according to a given distribution.
     
-    :param Model underlying_model: Model representing the likelihood with no
+    :param FiniteModel underlying_model: FiniteModel representing the likelihood with no
         random walk added.
     :param Distribution step_distribution: Distribution over step vectors.
     """
@@ -392,7 +392,7 @@ class RandomWalkModel(DerivedModel):
 if __name__ == "__main__":
     
     import operator as op
-    from .test_models import SimplePrecessionModel
+    from .finite_test_models import SimplePrecessionModel
     
     m = BinomialModel(SimplePrecessionModel())
     

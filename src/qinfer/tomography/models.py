@@ -42,7 +42,7 @@ from __future__ import unicode_literals
 
 from builtins import range, map
 
-from qinfer import Model
+from qinfer import FiniteModel
 
 import numpy as np
 
@@ -82,6 +82,34 @@ class TomographyModel(Model):
         that :math:`\Tr(\rho) = 1`. 
     """
 
+#     def __call__(self):
+#         expparams = np.zeros((1,), dtype=self._up.model.expparams_dtype)
+#         expparams['meas'][0, :] = self._basis.state_to_modelparams(
+#             np.random.choice(self._effects)
+#         )
+
+#         for field, value in self._other_fields.iteritems():
+#                 expparams[field] = value
+        
+#         return expparams
+
+# class RandomBasisHeuristic(Heuristic):
+#     # TODO: move this one!
+#     def __init__(self, updater, other_fields=None):
+#         self._up = updater
+#         self._other_fields = {} if other_fields is None else other_fields
+#         self._dim = updater.model.base_model.dim
+
+#     def __call__(self):
+#         expparams = np.zeros((1,), dtype=self._up.model.expparams_dtype)
+#         expparams['meas'][0, [0, 1 + np.random.randint(self._dim ** 2 - 1)]] = np.sqrt(self._dim)
+
+#         for field, value in self._other_fields.iteritems():
+#                 expparams[field] = value
+        
+#         return expparams
+
+class TomographyModel(FiniteModel):
     def __init__(self, basis, allow_subnormalized=False):
         self._dim = basis.dim
         self._basis = basis
@@ -161,16 +189,6 @@ class TomographyModel(Model):
         return modelparams
 
     def trunc_neg_eigs(self, particle):
-        """
-        Given a state represented as a model parameter vector,
-        returns a model parameter vector representing the same
-        state with any negative eigenvalues set to zero.
-
-        :param np.ndarray particle: Vector of length ``(dim ** 2, )``
-            representing a state.
-        :return: The same state with any negative eigenvalues
-            set to zero.
-        """
         arr = np.tensordot(particle, self._basis.data.conj(), 1)
         w, v = np.linalg.eig(arr)
         if np.all(w >= 0):
@@ -183,15 +201,6 @@ class TomographyModel(Model):
             return new_particle
 
     def renormalize(self, modelparams):
-        """
-        Renormalizes one or more states represented as model
-        parameter vectors, such that each state has trace 1.
-
-        :param np.ndarray modelparams: Array of shape ``(n_states,
-            dim ** 2)`` representing one or more states as 
-            model parameter vectors.
-        :return: The same state, normalized to trace one.
-        """
         # The 0th basis element (identity) should have
         # a value 1 / sqrt{dim}, since the trace of that basis
         # element is fixed to be sqrt{dim} by convention.
@@ -214,7 +223,7 @@ class TomographyModel(Model):
         )
         np.clip(pr1, 0, 1, out=pr1)
 
-        return Model.pr0_to_likelihood_array(outcomes, 1 - pr1)
+        return FiniteModel.pr0_to_likelihood_array(outcomes, 1 - pr1)
 
 class DiffusiveTomographyModel(TomographyModel):
     @property

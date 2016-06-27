@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 ##
-# test_abstract_model.py: Checks that Model works properly.
+# test_abstract_model.py: Checks that FiniteModel works properly.
 ##
 # © 2014 Chris Ferrie (csferrie@gmail.com) and
 #        Christopher E. Granade (cgranade@gmail.com)
@@ -35,12 +35,12 @@ from numpy.testing import assert_equal, assert_almost_equal
 
 from qinfer.tests.base_test import DerandomizedTestCase
 from qinfer.abstract_model import (
-    Model
+    FiniteModel
 )
     
 ## CLASSES ####################################################################
 
-class MockModel(Model):
+class MockModel(FiniteModel):
     """
     Two-outcome model whose likelihood is always 0.5, irrespective of
     model parameters, outcomes or experiment parameters.
@@ -69,7 +69,7 @@ class MockModel(Model):
     def likelihood(self, outcomes, modelparams, expparams):
         super(MockModel, self).likelihood(outcomes, modelparams, expparams)
         pr0 = np.ones((modelparams.shape[0], expparams.shape[0])) / 2
-        return Model.pr0_to_likelihood_array(outcomes, pr0)
+        return FiniteModel.pr0_to_likelihood_array(outcomes, pr0)
     
 
 class TestModel(DerandomizedTestCase):
@@ -80,7 +80,7 @@ class TestModel(DerandomizedTestCase):
 
     def test_pr0_shape(self):
         """
-        Model: Checks that pr0-based Model subtypes give the right shape.
+        FiniteModel: Checks that pr0-based FiniteModel subtypes give the right shape.
         """
         outcomes = np.array([0, 1], dtype=int)
         modelparams = np.random.random((3, 2))
@@ -90,7 +90,7 @@ class TestModel(DerandomizedTestCase):
         
     def test_simulate_experiment(self):
         """
-        Model: Checks that simulate_experiment behaves correctly.
+        FiniteModel: Checks that simulate_experiment behaves correctly.
         """
         modelparams = np.random.random((1, 2))
         expparams = np.zeros((1,), dtype=self.mock_model.expparams_dtype)

@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 ##
-# test_models.py: Simple models for testing inference engines.
+# finite_test_models.py: Simple models for testing inference engines.
 ##
 # © 2012 Chris Ferrie (csferrie@gmail.com) and
 #        Christopher E. Granade (cgranade@gmail.com)
@@ -45,7 +45,7 @@ import numpy as np
 
 from .utils import binomial_pdf
 
-from .abstract_model import Model, DifferentiableModel
+from .abstract_model import FiniteModel, DifferentiableModel
     
 ## CLASSES ###################################################################
 
@@ -88,7 +88,7 @@ class SimpleInversionModel(DifferentiableModel):
         experiment is independent of the experiment being performed.
         
         This property is assumed by inference engines to be constant for
-        the lifetime of a Model instance.
+        the lifetime of a FiniteModel instance.
         """
         return True
     
@@ -128,7 +128,7 @@ class SimpleInversionModel(DifferentiableModel):
         pr0[:, :] = np.cos(t * dw / 2) ** 2
         
         # Now we concatenate over outcomes.
-        return Model.pr0_to_likelihood_array(outcomes, pr0)
+        return FiniteModel.pr0_to_likelihood_array(outcomes, pr0)
 
     def score(self, outcomes, modelparams, expparams, return_L=False):
         if len(modelparams.shape) == 1:
@@ -189,7 +189,7 @@ class SimplePrecessionModel(SimpleInversionModel):
 
         return super(SimplePrecessionModel, self).score(outcomes, modelparams, new_eps, return_L)
            
-class NoisyCoinModel(Model):
+class NoisyCoinModel(FiniteModel):
     r"""
     Implements the "noisy coin" model of [FB12]_, where the model parameter
     :math:`p` is the probability of the noisy coin. This model has two
@@ -240,9 +240,9 @@ class NoisyCoinModel(Model):
         pr0 = modelparams * a + (1 - modelparams) * b
         
         # Concatenate over outcomes.
-        return Model.pr0_to_likelihood_array(outcomes, pr0)
+        return FiniteModel.pr0_to_likelihood_array(outcomes, pr0)
         
-class NDieModel(Model):
+class NDieModel(FiniteModel):
     
     ## PROPERTIES ##
     
@@ -261,14 +261,14 @@ class NDieModel(Model):
         experiment is independent of the experiment being performed.
         
         This property is assumed by inference engines to be constant for
-        the lifetime of a Model instance.
+        the lifetime of a FiniteModel instance.
         """
         return True
     
     ## METHODS ##
     def __init__(self, n = 6):
         self.n = n
-        Model.__init__(self)
+        FiniteModel.__init__(self)
 
     @staticmethod
     def are_models_valid(modelparams):
