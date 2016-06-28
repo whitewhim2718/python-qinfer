@@ -113,7 +113,10 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         """
         pass
 
-    @abc.abstractproperty
+            
+    ## CONCRETE PROPERTIES ##
+
+    @property
     def outcomes_dtype(self):
         """
         Returns the dtype of the outcomes parameter array. For a
@@ -126,8 +129,6 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         the lifetime of a Model instance.
         """
         return 'uint32'
-        
-    ## CONCRETE PROPERTIES ##
     
     @property
     def is_n_outcomes_constant(self):
