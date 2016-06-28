@@ -313,7 +313,7 @@ class ReferencedPoissonModel(DerivedModel):
         Note: This is incorrect as there are an infinite number of outcomes.
         We arbitrarily pick a number.
         """
-        return 42
+        return 1000
 
     def likelihood(self, outcomes, modelparams, expparams):
         # By calling the superclass implementation, we can consolidate
@@ -360,39 +360,46 @@ class ReferencedPoissonModel(DerivedModel):
 
                 # The likelihood of getting each of the outcomes for each of the modelparams
                 L[:,:,idx_ep] = poisson_pdf(ot, beta)
+            else:
+                raise(ValueError('Unknown mode detected in ReferencedPoissonModel.'))
 
         assert not np.any(np.isnan(L))
         return L
 
     def simulate_experiment(self, modelparams, expparams, repeat=1):
-        # FIXME: uncommenting causes a slowdown, but we need to call
-        #        to track sim counts.
-        #super(BinomialModel, self).simulate_experiment(modelparams, expparams)
+        super(ReferencedPoissonModel, self).simulate_experiment(modelparams, expparams)
 
-        # Start by getting the pr(1) for the underlying model.
-        pr1 = self.underlying_model.likelihood(
-            np.array([1], dtype='uint'),
-            modelparams,
-            expparams['p'] if self._expparams_scalar else expparams)
+        n_mps = modelparams.shape[0]
+        n_eps = expparams.shape[0]
+        outcomes = np.empty(size=(repeat, n_mps, n_eps))
 
-        dist = binom(
-            expparams['n_meas'].astype('int'), # ← Really, NumPy?
-            pr1[0, :, :]
-        )
-        sample = (
-            (lambda: dist.rvs()[np.newaxis, :, :])
-            if pr1.size != 1 else
-            (lambda: np.array([[[dist.rvs()]]]))
-        )
-        os = np.concatenate([
-            sample()
-            for idx in range(repeat)
-        ], axis=0)
-        return os[0,0,0] if os.size == 1 else os
+        for idx_ep, expparam in enumerate(expparams):
+            if expparam['mode'] == self.SIGNAL:
+                # Get the probability of outcome 1 for the underlying model.
+                pr1 = self.underlying_model.likelihood(
+                    np.array([1], dtype='uint'),
+                    modelparams[:,:-2],
+                    np.array([expparam['p']]) if self._expparams_scalar else expparam)[0,:,0]
+
+                # Reference Rate
+                alpha = modelparams[:, -2]
+                beta = modelparams[:, -1]
+
+                outcomes[:,:,idx_ep] = np.random.poisson(pr1 * alpha + (1 - pr1) * beta, size=(repeat, n_mps)
+            elif expparam['mode'] == self.BRIGHT:
+                alpha = modelparams[:, -2]
+                outcomes[:,:,idx_ep] = np.random.poisson(alpha, size=(repeat, n_mps)
+            elif expparam['mode'] == self.DARK:
+                beta = modelparams[:, -1]
+                outcomes[:,:,idx_ep] = np.random.poisson(beta, size=(repeat, n_mps)
+            else:
+                raise(ValueError('Unknown mode detected in ReferencedPoissonModel.'))
+
+        return outcomes[0,0,0] if outcomes.size == 1 else outcomes
 
     def update_timestep(self, modelparams, expparams):
         return self.underlying_model.update_timestep(modelparams,
-            expparams['p'] if self._expparams_scalar else expparams
+            np.array([expparam['p']]) if self._expparams_scalar else expparam)[0,:,0]
         )
 
 
