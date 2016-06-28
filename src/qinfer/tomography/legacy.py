@@ -41,7 +41,7 @@ from __future__ import division
 import numpy as np
 import scipy.linalg as la
 
-from qinfer.abstract_model import Model
+from qinfer.abstract_model import FiniteOutcomeModel
 from qinfer.distributions import Distribution, SingleSampleMixin
 
 try:
@@ -166,7 +166,7 @@ class BCSZQubitDistribution(SingleSampleMixin, Distribution):
             for x in modelparams
         ]
 
-class QubitStatePauliModel(Model):
+class QubitStatePauliModel(FiniteOutcomeModel):
     """
     Represents an experimental system with unknown quantum state,
     and a limited visibility projective measurement.
@@ -224,9 +224,9 @@ class QubitStatePauliModel(Model):
         pr0 = pr0[:,np.newaxis]
 
         # Now we concatenate over outcomes.
-        return Model.pr0_to_likelihood_array(outcomes, pr0)        
+        return FiniteOutcomeModel.pr0_to_likelihood_array(outcomes, pr0)        
 
-class RebitStatePauliModel(Model):
+class RebitStatePauliModel(FiniteOutcomeModel):
     """
     Represents an experimental system with unknown quantum state restricted
     to the X-Y in the Bloch sphere.
@@ -280,10 +280,10 @@ class RebitStatePauliModel(Model):
         pr0 = pr0[:,np.newaxis]
         
         # Now we concatenate over outcomes.
-        return Model.pr0_to_likelihood_array(outcomes, pr0)       
+        return FiniteOutcomeModel.pr0_to_likelihood_array(outcomes, pr0)       
 
 
-class MultiQubitStatePauliModel(Model):
+class MultiQubitStatePauliModel(FiniteOutcomeModel):
     """
     Represents an experimental system with unknown quantum state,
     and a limited visibility projective measurement.
@@ -334,9 +334,9 @@ class MultiQubitStatePauliModel(Model):
         pr0 = expparams['vis'] * pr0 + (1 - expparams['vis']) * 0.5
 
         # Now we concatenate over outcomes.
-        return Model.pr0_to_likelihood_array(outcomes, pr0)        
+        return FiniteOutcomeModel.pr0_to_likelihood_array(outcomes, pr0)        
         
-class HTCircuitModel(Model):
+class HTCircuitModel(FiniteOutcomeModel):
     
     def __init__(self, n_qubits, n_had, f):
         self.n_qubits = n_qubits
@@ -382,7 +382,7 @@ class HTCircuitModel(Model):
         pr0 = modelparams*count0/(2**m)+(1-modelparams)*count1/(2**m)
         
         #concatenate over outcomes
-        return Model.pr0_to_likelihood_array(outcomes, pr0)
+        return FiniteOutcomeModel.pr0_to_likelihood_array(outcomes, pr0)
     
     def simulate_experiment(self, modelparams, expparams, repeat=1, use_like = False):
         if use_like:

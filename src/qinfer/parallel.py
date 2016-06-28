@@ -35,7 +35,7 @@ __all__ = ['DirectViewParallelizedModel']
 ## IMPORTS ###################################################################
 
 import numpy as np
-from qinfer.abstract_model import Model
+from qinfer.abstract_model import FiniteOutcomeModel
 from qinfer.derived_models import DerivedModel
 
 import warnings
@@ -66,11 +66,11 @@ logger.addHandler(logging.NullHandler())
 
 class DirectViewParallelizedModel(DerivedModel):
     r"""
-    Given an instance of a :class:`Model`, parallelizes execution of that model's
+    Given an instance of a `Model`, parallelizes execution of that model's
     likelihood by breaking the ``modelparams`` array into segments and
     executing a segment on each member of a :class:`~ipyparallel.DirectView`.
     
-    This :class:`Model` assumes that it has ownership over the DirectView, such
+    This :ref:`Model` assumes that it has ownership over the DirectView, such
     that no other processes will send tasks during the lifetime of the Model.
     
     :param qinfer.Model serial_model: Model to be parallelized. This

@@ -45,7 +45,7 @@ import numpy as np
 
 from scipy.stats.distributions import binom
 
-from qinfer.abstract_model import Model, Simulatable
+from qinfer.abstract_model import FiniteOutcomeModel, Model
 from qinfer._exceptions import ApproximationWarning
 
 ## FUNCTIONS ##################################################################
@@ -75,12 +75,12 @@ def binom_est_error(p, N, hedge = float(0)):
 
 ## CLASSES ####################################################################
 
-class ALEApproximateModel(Model):
+class ALEApproximateModel(FiniteOutcomeModel):
     r"""
-    Given a :class:`~qinfer.abstract_model.Simulatable`, estiamtes the
+    Given a :class:`~qinfer.abstract_model.Model`, estiamtes the
     likelihood of that simulator by using adaptive likelihood estimation (ALE).
     
-    :param qinfer.abstract_model.Simulatable simulator: Simulator to estimate
+    :param qinfer.abstract_model.Model simulator: Simulator to estimate
         the likelihood function of.
     :param float error_tol: Allowed error in the estimated likelihood. Note that
         the simulation cost scales as :math:`O(\epsilon^{-2})`, where
@@ -102,8 +102,8 @@ class ALEApproximateModel(Model):
     ):
         
         ## INPUT VALIDATION ##
-        if not isinstance(simulator, Simulatable):
-            raise TypeError("Simulator must be an instance of Simulatable.")
+        if not isinstance(simulator, Model):
+            raise TypeError("Simulator must be an instance of Model.")
 
         if error_tol <= 0:
             raise ValueError("Error tolerance must be strictly positive.")
@@ -132,7 +132,7 @@ class ALEApproximateModel(Model):
         
     ## WRAPPED METHODS AND PROPERTIES ##
     # These methods and properties do nothing but pass along to the
-    # consumed Simulatable instance, and so we present them here in a
+    # consumed Model instance, and so we present them here in a
     # compressed form.
     
     @property
@@ -161,7 +161,7 @@ class ALEApproximateModel(Model):
         super(ALEApproximateModel, self).likelihood(outcomes, modelparams, expparams)
         # We will use the fact we have assumed a two-outcome model to make the
         # problem easier. As such, we will rely on the static method 
-        # Model.pr0_to_likelihood_array.
+        # FiniteOutcomeModel.pr0_to_likelihood_array.
         
         # Start off with min_samp samples.
         n = np.zeros((modelparams.shape[0], expparams.shape[0]))
@@ -174,5 +174,5 @@ class ALEApproximateModel(Model):
             error_est_p1 = binom_est_error(binom_est_p(n, N, self._adapt_hedge), N, self._adapt_hedge)
             if np.all(error_est_p1 < self._error_tol): break
             
-        return Model.pr0_to_likelihood_array(outcomes, 1 - binom_est_p(n, N, self._est_hedge))
+        return FiniteOutcomeModel.pr0_to_likelihood_array(outcomes, 1 - binom_est_p(n, N, self._est_hedge))
     
