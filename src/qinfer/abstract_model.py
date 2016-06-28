@@ -287,7 +287,7 @@ class Model(with_metaclass(abc.ABCMeta, object)):
             which data should be simulated.
         :param np.ndarray expparams: A shape ``(n_experiments, )`` array of
             experimental control settings, with ``dtype`` given by 
-            :attr:`~qinfer.Simulatable.expparams_dtype`, describing the
+            :attr:`~qinfer.Model.expparams_dtype`, describing the
             experiments whose outcomes should be simulated.
         :param int repeat: How many times the specified experiment should
             be repeated.
@@ -310,7 +310,7 @@ class Model(with_metaclass(abc.ABCMeta, object)):
             which the likelihood function is to be calculated.
         :param np.ndarray expparams: A shape ``(n_experiments, )`` array of
             experimental control settings, with ``dtype`` given by 
-            :attr:`~qinfer.Simulatable.expparams_dtype`, describing the
+            :attr:`~qinfer.Model.expparams_dtype`, describing the
             experiments from which the given outcomes were drawn.
         :rtype: np.ndarray
         :return: A three-index tensor ``L[i, j, k]``, where ``i`` is the outcome

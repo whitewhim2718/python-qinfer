@@ -47,7 +47,7 @@ class TestPoissonModel(DerandomizedTestCase):
     TEST_EXPPARAMS = np.arange(50000,dtype=np.float)
     PRIOR = UniformDistribution([[0.,100.]])
     N_PARTICLES = 10000
-
+    N_ONLINE = 50
     TEST_TARGET_COV = np.array([[0.1]])
 
     def setUp(self):
@@ -60,6 +60,9 @@ class TestPoissonModel(DerandomizedTestCase):
 
         self.updater = SMCUpdater(self.poisson_model,
                 TestPoissonModel.N_PARTICLES,TestPoissonModel.PRIOR)
+
+        self.updater_online = SMCUpdater(self.poisson_model,
+                TestPoissonModel.N_PARTICLES,TestPoissonModel.PRIOR)
     
 
     def test_poisson_model(self):
@@ -69,6 +72,12 @@ class TestPoissonModel(DerandomizedTestCase):
 
         assert_almost_equal(self.updater.est_mean(),TestPoissonModel.MODELPARAMS,2)
         assert_array_less(self.updater.est_covariance_mtx(),TestPoissonModel.TEST_TARGET_COV)
+
+    def test_bayes_risk_performance(self):
+
+        for i in N_ONLINE:
+            outcomes = self.poisson_model.simulate_experiment
+
 
 
 
