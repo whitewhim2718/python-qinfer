@@ -106,7 +106,7 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         Returns the dtype of an experiment parameter array. For a
         model with single-parameter control, this will likely be a scalar dtype,
         such as ``"float64"``. More generally, this can be an example of a
-        record type, such as ``[('time', 'float64'), ('axis', 'uint8')]``.
+        record type, such as ``[('time', py.'float64'), ('axis', 'uint8')]``.
         
         This property is assumed by inference engines to be constant for
         the lifetime of a Model instance.

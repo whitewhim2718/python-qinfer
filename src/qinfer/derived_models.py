@@ -46,6 +46,7 @@ from builtins import range
 from functools import reduce
 
 import numpy as np
+import scipy
 from scipy.stats import binom
 
 from qinfer.utils import binomial_pdf
@@ -192,11 +193,12 @@ class PoisonedModel(DerivedModel, FiniteOutcomeModel):
 
 class BinomialModel(DerivedModel, FiniteOutcomeModel):
     """
-    FiniteOutcomeModel representing finite numbers of iid samples from another model,
+    Model representing finite numbers of iid samples from another model,
     using the binomial distribution to calculate the new likelihood function.
     
     :param qinfer.abstract_model.FiniteOutcomeModel underlying_model: An instance of a two-
         outcome model to be decorated by the binomial distribution.
+        This underlying model must have ``n_outcomes_constant`` as ``True``.
         
     Note that a new experimental parameter field ``n_meas`` is added by this
     model. This parameter field represents how many times a measurement should
@@ -238,7 +240,7 @@ class BinomialModel(DerivedModel, FiniteOutcomeModel):
         experiment is independent of the experiment being performed.
         
         This property is assumed by inference engines to be constant for
-        the lifetime of a FiniteOutcomeModel instance.
+        the lifetime of a Model instance.
         """
         return False
     
@@ -302,6 +304,145 @@ class BinomialModel(DerivedModel, FiniteOutcomeModel):
         return self.underlying_model.update_timestep(modelparams,
             expparams['x'] if self._expparams_scalar else expparams
         )
+
+
+class MultinomialModel(DerivedModel):
+    """
+    Model representing finite numbers of iid samples from another model,
+    using the multinomial distribution to calculate the new likelihood function.
+    
+    :param qinfer.abstract_model.FiniteOutcomeModel underlying_model: An instance 
+        of a D-outcome model to be decorated by the multinomial distribution. 
+        This underlying model must have ``n_outcomes_constant`` as ``True``.
+        
+    Note that a new experimental parameter field ``n_meas`` is added by this
+    model. This parameter field represents how many times a measurement should
+    be made at a given set of experimental parameters. To ensure the correct
+    operation of this model, it is important that the decorated model does not
+    also admit a field with the name ``n_meas``.
+    """
+    
+    ## INITIALIZER ##
+
+    def __init__(self, underlying_model):
+        super(MultinomialModel, self).__init__(underlying_model)
+        
+        if not (underlying_model.is_n_outcomes_constant):
+            raise ValueError("Decorated model must have a finite and fixed number of outcomes, labeled by integers starting at 0.")
+        
+        self._n_sides = self.underlying_model.n_outcomes()
+
+        if isinstance(underlying_model.expparams_dtype, str):
+            # We default to calling the original experiment parameters "x".
+            self._expparams_scalar = True
+            self._expparams_dtype = [('x', underlying_model.expparams_dtype), ('n_meas', 'uint')]
+        else:
+            self._expparams_scalar = False
+            self._expparams_dtype = underlying_model.expparams_dtype + [('n_meas', 'uint')]
+
+    ## PROPERTIES ##
+    
+
+    @property
+    def decorated_model(self):
+        # Provided for backcompat only.
+        return self.underlying_model
+
+    @property
+    def n_sides(self):
+        """
+        Returns the number outcomes of the underlying model; the number of sides 
+        of the die we are rolling in this multinomial distribution.
+        """    
+        return self._n_sides
+
+    @property
+    def expparams_dtype(self):
+        return self._expparams_dtype
+
+    @property
+    def outcomes_dtype(self):
+        return np.dtype((np.uint32, (self.n_sides,)))
+    
+    
+    @property
+    def is_n_outcomes_constant(self):
+        """
+        Returns ``True`` if and only if the number of outcomes for each
+        experiment is independent of the experiment being performed.
+        
+        This property is assumed by inference engines to be constant for
+        the lifetime of a Model instance.
+        """
+        # Different values of n_meas result in different numbers of outcomes
+        return False
+    
+    ## METHODS ##
+    
+    def n_outcomes(self, expparams):
+        """
+        Returns an array of dtype ``uint`` describing the number of outcomes
+        for each experiment specified by ``expparams``.
+        
+        :param numpy.ndarray expparams: Array of experimental parameters. This
+            array must be of dtype agreeing with the ``expparams_dtype``
+            property.
+        """
+        # Equal to the number of possible tuples whose non-negative 
+        # integer entries sum to n_meas.
+        n = expparams['n_meas']
+        return scipy.special.binom(n + self.n_sides -1, self.n_sides - 1)
+    
+    def likelihood(self, outcomes, modelparams, expparams):
+        # By calling the superclass implementation, we can consolidate
+        # call counting there.
+        super(MultinomialModel, self).likelihood(outcomes, modelparams, expparams)
+        # We can save a wee bit of time by only calculating the likelihoods of outcomes 0,...,d-2
+        prs = self.underlying_model.likelihood(
+            np.arange(self.n_sides - 1, dtype='uint'),
+            modelparams,
+            expparams['x'] if self._expparams_scalar else expparams)
+        
+        # TODO: change this to multinomial pdf
+        L = np.concatenate([
+            binomial_pdf(expparams['n_meas'][np.newaxis, :], outcomes[idx], pr1)
+            for idx in range(outcomes.shape[0])
+            ]) 
+        assert not np.any(np.isnan(L))
+        return L
+
+    def simulate_experiment(self, modelparams, expparams, repeat=1):
+        #TODO: implement this. below was copied from BinomialModel.
+
+        # FIXME: uncommenting causes a slowdown, but we need to call
+        #        to track sim counts.
+        #super(BinomialModel, self).simulate_experiment(modelparams, expparams)
+        
+        # Start by getting the pr(1) for the underlying model.
+        pr1 = self.underlying_model.likelihood(
+            np.array([1], dtype='uint'),
+            modelparams,
+            expparams['x'] if self._expparams_scalar else expparams)
+            
+        dist = binom(
+            expparams['n_meas'].astype('int'), # ← Really, NumPy?
+            pr1[0, :, :]
+        )
+        sample = (
+            (lambda: dist.rvs()[np.newaxis, :, :])
+            if pr1.size != 1 else
+            (lambda: np.array([[[dist.rvs()]]]))
+        )
+        os = np.concatenate([
+            sample()
+            for idx in range(repeat)
+        ], axis=0)
+        return os[0,0,0] if os.size == 1 else os
+
+
+    def score(self, outcomes, modelparams, expparams, return_L=False):
+        # TODO: implement
+        pass
         
 class DifferentiableBinomialModel(BinomialModel, DifferentiableModel):
     """
