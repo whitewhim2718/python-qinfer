@@ -89,9 +89,9 @@ class SMCUpdater(Distribution):
     Creates a new Sequential Monte carlo updater, using the algorithm of
     [GFWC12]_.
 
-    :param qinfer.abstract_model.FiniteModel model: FiniteModel whose parameters are to be inferred.
+    :param qinfer.abstract_model.Model model: Model whose parameters are to be inferred.
     :param int n_particles: The number of particles to be used in the particle approximation.
-    :param qinfer.distributions.Distribution prior: A representation of the prior distribution.
+    :param Distribution prior: A representation of the prior distribution.
     :param callable resampler: Specifies the resampling algorithm to be used. See :ref:`resamplers`
         for more details.
     :param float resample_thresh: Specifies the threshold for :math:`N_{\text{ess}}` to decide when to resample.
@@ -175,7 +175,7 @@ class SMCUpdater(Distribution):
         Returns the number of particles currently used in the sequential Monte
         Carlo approximation.
         
-        :rtype: `int`
+        :type: `int`
         """
         return self.particle_locations.shape[0]
 
@@ -185,7 +185,7 @@ class SMCUpdater(Distribution):
         Returns the number of times that the updater has resampled the particle
         approximation.
         
-        :rtype: `int`
+        :type: `int`
         """
         # We wrap this in a property to prevent external resetting and to enable
         # a docstring.
@@ -196,6 +196,8 @@ class SMCUpdater(Distribution):
         """
         `True` if and only if there has been no data added since the last
         resampling, or if there has not yet been a resampling step.
+
+        :type: `bool`
         """
         return self._just_resampled
 
@@ -204,7 +206,7 @@ class SMCUpdater(Distribution):
         """
         Returns the normalization record.
         
-        :rtype: `float`
+        :type: `float`
         """
         # We wrap this in a property to prevent external resetting and to enable
         # a docstring.
@@ -219,7 +221,7 @@ class SMCUpdater(Distribution):
             
             np.sum(np.log(updater.normalization_record))
         
-        :rtype: `float`
+        :type: `float`
         """
         return np.sum(np.log(self.normalization_record))
         
@@ -229,7 +231,8 @@ class SMCUpdater(Distribution):
         Estimates the effective sample size (ESS) of the current distribution
         over model parameters.
 
-        :return float: The effective sample size, given by :math:`1/\sum_i w_i^2`.
+        :type: `float`
+        :return: The effective sample size, given by :math:`1/\sum_i w_i^2`.
         """
         return 1 / (np.sum(self.particle_weights**2))
 
@@ -237,6 +240,8 @@ class SMCUpdater(Distribution):
     def data_record(self):
         """
         List of outcomes given to :meth:`~SMCUpdater.update`.
+
+        :type: `list` of `int`
         """
         # We use [:] to force a new list to be made, decoupling
         # this property from the caller.
@@ -247,6 +252,8 @@ class SMCUpdater(Distribution):
         """
         List of KL divergences between the pre- and post-resampling
         distributions, if that is being tracked. Otherwise, `None`.
+
+        :type: `list` of `float` or `None`
         """
         return self._resampling_divergences
 
@@ -320,9 +327,9 @@ class SMCUpdater(Distribution):
 
         :param outcomes: Integer index of the outcome of the hypothetical
             experiment.
-            TODO: Fix this to take an array-like of ints as well.
         :type outcomes: int or an ndarray of dtype int.
-        :param expparams: TODO
+        :param numpy.ndarray expparams: Experiments to be used for the hypothetical
+            updates.
 
         :type weights: ndarray, shape (n_outcomes, n_expparams, n_particles)
         :param weights: Weights assigned to each particle in the posterior
@@ -344,7 +351,7 @@ class SMCUpdater(Distribution):
         # since NumPy broadcasting rules align on the right-most index.
         L = self.model.likelihood(outcomes, locs, expparams).transpose([0, 2, 1])
         hyp_weights = weights * L
-
+        
         # Sum up the weights to find the renormalization scale.
         norm_scale = np.sum(hyp_weights, axis=2)[..., np.newaxis]
         
@@ -362,12 +369,10 @@ class SMCUpdater(Distribution):
         fixed_norm_scale[np.abs(norm_scale) < np.spacing(1)] = 1
         
         # normalize
-
         norm_weights = hyp_weights / fixed_norm_scale
             # Note that newaxis is needed to align the two matrices.
             # This introduces a length-1 axis for the particle number,
             # so that the normalization is broadcast over all particles.
-
         if not return_likelihood:
             if not return_normalization:
                 return norm_weights
@@ -387,11 +392,11 @@ class SMCUpdater(Distribution):
         After updating, resamples the posterior distribution if necessary.
 
         :param int outcome: Label for the outcome that was observed, as defined
-            by the :class:`~qinfer.abstract_model.FiniteModel` instance under study.
+            by the :class:`~qinfer.abstract_model.Model` instance under study.
         :param expparams: Parameters describing the experiment that was
             performed.
         :type expparams: :class:`~numpy.ndarray` of dtype given by the
-            :attr:`~qinfer.abstract_model.FiniteModel.expparams_dtype` property
+            :attr:`~qinfer.abstract_model.Model.expparams_dtype` property
             of the underlying model
         :param bool check_for_resample: If :obj:`True`, after performing the
             update, the effective sample size condition will be checked and
@@ -475,13 +480,14 @@ class SMCUpdater(Distribution):
         for idx_exp, (outcome, experiment) in enumerate(zip(iter(outcomes), iter(expparams))):
             self.update(outcome, experiment, check_for_resample=False)
             if (idx_exp + 1) % resample_interval == 0:
-    
                 self._maybe_resample()
 
     ## RESAMPLING METHODS #####################################################
 
     def resample(self):
-        # TODO: add amended docstring.
+        """
+        Forces the updater to perform a resampling step immediately.
+        """
         
         if self.just_resampled:
             warnings.warn(
@@ -545,10 +551,21 @@ class SMCUpdater(Distribution):
     
     @property
     def n_rvs(self):
+        """
+        The number of random variables described by the posterior distribution. 
+
+        :type int:
+        """
         return self._model.n_modelparams
         
     def sample(self, n=1):
-        # TODO: cache this.
+        """
+        Returns samples from the current posterior distribution.
+
+        :param int n: The number of samples to draw.
+        :return: The sampled model parameter vectors.
+        :rtype: `~numpy.ndarray` of shape ``(n, updater.n_rvs)``.
+        """
         cumsum_weights = np.cumsum(self.particle_weights)
         return self.particle_locations[np.minimum(cumsum_weights.searchsorted(
             np.random.random((n,)),
@@ -697,6 +714,11 @@ class SMCUpdater(Distribution):
         return np.dot(tot_like, KLD)
         
     def est_entropy(self):
+        r"""
+        Estimates the entropy of the current posterior
+        as :math:`-\sum_i w_i \log w_i` where :math:`\{w_i\}`
+        is the set of particles with nonzero weight. 
+        """
         nz_weights = self.particle_weights[self.particle_weights > 0]
         return -np.sum(np.log(nz_weights) * nz_weights)
     
@@ -724,7 +746,13 @@ class SMCUpdater(Distribution):
         )  
         
     def est_kl_divergence(self, other, kernel=None, delta=1e-2):
-        # TODO: document.
+        """
+        Finds the KL divergence between this and another SMC-approximated
+        distribution by using a kernel density estimator to smooth over the
+        other distribution's particles.
+
+        :param SMCUpdater other: 
+        """
         return self._kl_divergence(
             other.particle_locations,
             other.particle_weights,
@@ -1127,9 +1155,9 @@ class MixedApproximateSMCUpdater(SMCUpdater):
     to be cheaper. This allows for approximate computation to be used on the
     lower-weight particles.
 
-    :param ~qinfer.abstract_model.FiniteModel good_model: The more expensive, but
+    :param ~qinfer.abstract_model.Model good_model: The more expensive, but
         complete model.
-    :param ~qinfer.abstract_model.FiniteModel approximate_model: The less expensive,
+    :param ~qinfer.abstract_model.Model approximate_model: The less expensive,
         but approximate model.
     :param float mixture_ratio: The ratio of the posterior weight that will
         be delegated to the good model in each update step.
@@ -1289,7 +1317,7 @@ class SMCUpdaterBCRB(SMCUpdater):
         })
         
         if not isinstance(self.model, DifferentiableModel):
-            raise ValueError("FiniteModel must be differentiable.")
+            raise ValueError("Model must be differentiable.")
         
         # TODO: fix distributions to make grad_log_pdf return the right
         #       shape, such that the indices are
@@ -1395,7 +1423,7 @@ class SMCUpdaterBCRB(SMCUpdater):
         :param expparams: Parameters describing the experiment that was
             performed.
         :type expparams: :class:`~numpy.ndarray` of dtype given by the
-            :attr:`~qinfer.abstract_model.FiniteModel.expparams_dtype` property
+            :attr:`~qinfer.abstract_model.Model.expparams_dtype` property
             of the underlying model
 
         :param n_samples int: Number of samples to draw from particle distribution,
@@ -1414,7 +1442,7 @@ class SMCUpdaterBCRB(SMCUpdater):
         :param expparams: Parameters describing the experiment that was
             performed.
         :type expparams: :class:`~numpy.ndarray` of dtype given by the
-            :attr:`~qinfer.abstract_model.FiniteModel.expparams_dtype` property
+            :attr:`~qinfer.abstract_model.Model.expparams_dtype` property
             of the underlying model
 
         """
@@ -1431,11 +1459,11 @@ class SMCUpdaterBCRB(SMCUpdater):
         After updating, resamples the posterior distribution if necessary.
 
         :param int outcome: Label for the outcome that was observed, as defined
-            by the :class:`~qinfer.abstract_model.FiniteModel` instance under study.
+            by the :class:`~qinfer.abstract_model.Model` instance under study.
         :param expparams: Parameters describing the experiment that was
             performed.
         :type expparams: :class:`~numpy.ndarray` of dtype given by the
-            :attr:`~qinfer.abstract_model.FiniteModel.expparams_dtype` property
+            :attr:`~qinfer.abstract_model.FiniteOutcomeModel.expparams_dtype` property
             of the underlying model
         :param bool check_for_resample: If :obj:`True`, after performing the
             update, the effective sample size condition will be checked and

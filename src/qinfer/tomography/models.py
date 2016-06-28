@@ -42,7 +42,7 @@ from __future__ import unicode_literals
 
 from builtins import range, map
 
-from qinfer import FiniteModel
+from qinfer import FiniteOutcomeModel
 
 import numpy as np
 
@@ -70,19 +70,17 @@ def heisenberg_weyl_operators(d=2):
 
 ## CLASSES ###################################################################
 
-# TODO: work from qt.ket2dm(np.random.choice(np.random.choice(heisenberg_weyl_operators(3)).eigenstates()[1])).
+class TomographyModel(Model):
+    r"""
+    Model for tomographically learning a quantum state using
+    two-outcome positive-operator valued measures (POVMs).
 
-# class RandomMeasurementHeuristic(Heuristic):
-#     """
-#     Samples state tomography experiments which measure against a randomly
-#     chosen measurement effect, drawn from a provided list.
-#     """
-#     def __init__(self, updater, measurment_effects, other_fields=None):
-#         self._up = updater
-#         self._effects = measurment_effects
-#         self._other_fields = {} if other_fields is None else other_fields
-#         self._dim = updater.model.base_model.dim
-#         self._basis = self.model.base_model.basis
+    :param TomographyBasis basis: Basis used in representing
+        states as model parameter vectors.
+    :param bool allow_subnormalized: If `False`, states
+        :math:`\rho` are constrained during resampling such
+        that :math:`\Tr(\rho) = 1`. 
+    """
 
 #     def __call__(self):
 #         expparams = np.zeros((1,), dtype=self._up.model.expparams_dtype)
@@ -111,7 +109,7 @@ def heisenberg_weyl_operators(d=2):
         
 #         return expparams
 
-class TomographyModel(FiniteModel):
+class TomographyModel(FiniteOutcomeModel):
     def __init__(self, basis, allow_subnormalized=False):
         self._dim = basis.dim
         self._basis = basis
@@ -120,11 +118,22 @@ class TomographyModel(FiniteModel):
 
     @property
     def dim(self):
+        """
+        Dimension of the Hilbert space on which density
+        operators learned by this model act.
+
+        :type: `int`
+        """
         return self._dim
     @property
     def basis(self):
-        return self._basis
-        
+        """
+        Basis used in converting between :class:`~qutip.Qobj` and
+        model parameter vector representations of states.
+
+        :type: `TomographyBasis`
+        """
+        return self._basis        
 
     @property
     def n_modelparams(self):
@@ -157,6 +166,21 @@ class TomographyModel(FiniteModel):
         return np.ones((modelparams.shape[0],), dtype=bool)
 
     def canonicalize(self, modelparams):
+        """
+        Truncates negative eigenvalues and from each
+        state represented by a tensor of model parameter
+        vectors, and renormalizes as appropriate.
+
+        :param np.ndarray modelparams: Array of shape
+            ``(n_states, dim**2)`` containing model parameter
+            representations of each of ``n_states`` different
+            states.
+        :return: The same model parameter tensor with all
+            states truncated to be positive operators. If
+            :attr:`~TomographyModel.allow_subnormalized` is
+            `False`, all states are also renormalized to trace
+            one. 
+        """
         modelparams = np.apply_along_axis(self.trunc_neg_eigs, 1, modelparams)
         # Renormalizes particles if allow_subnormalized=False.
         if not self._allow_subnormalied:
@@ -199,7 +223,7 @@ class TomographyModel(FiniteModel):
         )
         np.clip(pr1, 0, 1, out=pr1)
 
-        return FiniteModel.pr0_to_likelihood_array(outcomes, 1 - pr1)
+        return FiniteOutcomeModel.pr0_to_likelihood_array(outcomes, 1 - pr1)
 
 class DiffusiveTomographyModel(TomographyModel):
     @property

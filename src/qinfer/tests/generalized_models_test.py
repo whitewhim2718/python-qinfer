@@ -34,7 +34,7 @@ from numpy.testing import assert_equal, assert_almost_equal, assert_array_less
 
 from qinfer.tests.base_test import DerandomizedTestCase
 from qinfer.abstract_model import (
-    FiniteModel)
+    FiniteOutcomeModel)
 from qinfer import GaussianModel,PoissonModel,MultinomialModel,UniformDistribution
 
 from qinfer.smc import SMCUpdater

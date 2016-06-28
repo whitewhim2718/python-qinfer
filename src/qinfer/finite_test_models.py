@@ -45,11 +45,11 @@ import numpy as np
 
 from .utils import binomial_pdf
 
-from .abstract_model import FiniteModel, DifferentiableModel
+from .abstract_model import FiniteOutcomeModel, DifferentiableModel
     
 ## CLASSES ###################################################################
 
-class SimpleInversionModel(DifferentiableModel):
+class SimpleInversionModel(DifferentiableModel, FiniteOutcomeModel):
     r"""
     Describes the free evolution of a single qubit prepared in the
     :math:`\left|+\right\rangle` state under a Hamiltonian :math:`H = \omega \sigma_z / 2`,
@@ -88,7 +88,7 @@ class SimpleInversionModel(DifferentiableModel):
         experiment is independent of the experiment being performed.
         
         This property is assumed by inference engines to be constant for
-        the lifetime of a FiniteModel instance.
+        the lifetime of a FiniteOutcomeModel instance.
         """
         return True
     
@@ -128,7 +128,7 @@ class SimpleInversionModel(DifferentiableModel):
         pr0[:, :] = np.cos(t * dw / 2) ** 2
         
         # Now we concatenate over outcomes.
-        return FiniteModel.pr0_to_likelihood_array(outcomes, pr0)
+        return FiniteOutcomeModel.pr0_to_likelihood_array(outcomes, pr0)
 
     def score(self, outcomes, modelparams, expparams, return_L=False):
         if len(modelparams.shape) == 1:
@@ -154,7 +154,7 @@ class SimpleInversionModel(DifferentiableModel):
             return q
 
 
-class SimplePrecessionModel(SimpleInversionModel):
+class SimplePrecessionModel(SimpleInversionModel, FiniteOutcomeModel):
     r"""
     Describes the free evolution of a single qubit prepared in the
     :math:`\left|+\right\rangle` state under a Hamiltonian :math:`H = \omega \sigma_z / 2`,
@@ -162,8 +162,11 @@ class SimplePrecessionModel(SimpleInversionModel):
 
     :param float min_freq: Minimum value for :math:`\omega` to accept as valid.
         This is used for testing techniques that mitigate the effects of
-        degenerate models; there is no "good" reason to ever set this other
-        than zero, other than to test with an explicitly broken model.
+        degenerate models; there is no "good" reason to ever set this to be
+        less than zero, other than to test with an explicitly broken model.
+
+    :modelparam omega: The precession frequency :math:`\omega`.
+    :scalar-expparam float: The evolution time :math:`t`.
     """
         
     @property
@@ -186,7 +189,7 @@ class SimplePrecessionModel(SimpleInversionModel):
 
         return super(SimplePrecessionModel, self).score(outcomes, modelparams, new_eps, return_L)
            
-class NoisyCoinModel(FiniteModel):
+class NoisyCoinModel(FiniteOutcomeModel):
     r"""
     Implements the "noisy coin" model of [FB12]_, where the model parameter
     :math:`p` is the probability of the noisy coin. This model has two
@@ -199,6 +202,10 @@ class NoisyCoinModel(FiniteModel):
     parameters not because we expect to design over those values, but because
     a specification of each is necessary to honestly describe an experiment
     that was performed.
+
+    :modelparam p: "Heads" probability :math:`p`.
+    :expparam float alpha: Visibility parameter :math:`\alpha`.
+    :expparam float beta: Visibility parameter :math:`\beta`.
     """
         
     ## PROPERTIES ##
@@ -233,9 +240,9 @@ class NoisyCoinModel(FiniteModel):
         pr0 = modelparams * a + (1 - modelparams) * b
         
         # Concatenate over outcomes.
-        return FiniteModel.pr0_to_likelihood_array(outcomes, pr0)
+        return FiniteOutcomeModel.pr0_to_likelihood_array(outcomes, pr0)
         
-class NDieModel(FiniteModel):
+class NDieModel(FiniteOutcomeModel):
     
     ## PROPERTIES ##
     
@@ -254,14 +261,14 @@ class NDieModel(FiniteModel):
         experiment is independent of the experiment being performed.
         
         This property is assumed by inference engines to be constant for
-        the lifetime of a FiniteModel instance.
+        the lifetime of a FiniteOutcomeModel instance.
         """
         return True
     
     ## METHODS ##
     def __init__(self, n = 6):
         self.n = n
-        FiniteModel.__init__(self)
+        FiniteOutcomeModel.__init__(self)
 
     @staticmethod
     def are_models_valid(modelparams):

@@ -33,7 +33,7 @@ from __future__ import division, unicode_literals
 
 __all__ = [
     'Model',
-    'FiniteModel',
+    'FiniteOutcomeModel',
     'DifferentiableModel'
 ]
 
@@ -51,31 +51,22 @@ from qinfer.utils import safe_shape
 ## CLASSES ###################################################################
 
 class Model(with_metaclass(abc.ABCMeta, object)):
+    """
+    Represents a system which can be simulated according to
+    various model parameters and experimental control parameters
+    in order to produce representative data.
 
-    # TODO: docstring!
-    
-    def __init__(self,always_resample_outcomes=False,initial_outcomes = None):
-        """
-        Initialize Model model
+    See :ref:`models_guide` for more details.
 
-        :param bool always_resample_outcomes: Resample outcomes stochastically with 
-                    each outcome call.
+    :param bool always_resample_outcomes: Resample outcomes stochastically with 
+            each outcome call.
 
-        :param :class:`~numpy.ndarray` initial_outcomes: Initial set of outcomes 
-                    that may be supplied. Otherwise initial outcomes default to 
-                    zeros. 
-        """
+    :param :class:`~numpy.ndarray` initial_outcomes: Initial set of outcomes 
+            that may be supplied. Otherwise initial outcomes default to 
+            zeros. 
+    """
         self._sim_count = 0
-        self._call_count = 0
-        if initial_outcomes is not None:
-            #verify that the supplied outcomes are of the correct length
-            assert initial_outcomes.dtype== self.outcomes_dtype
-            self._outcomes = initial_outcomes
-        else:
-            #otherwise initialize all outcomes to zero at start
-            self._outcomes = np.empty(None,self.outcomes_dtype)
-
-        self.needs_resample = False
+        
         # Initialize a default scale matrix.
         self._Q = np.ones((self.n_modelparams,))
         
@@ -100,7 +91,7 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         record type, such as ``[('time', 'float64'), ('axis', 'uint8')]``.
         
         This property is assumed by inference engines to be constant for
-        the lifetime of a FiniteModel instance.
+        the lifetime of a Model instance.
         """
         pass
 
@@ -109,13 +100,14 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         """
         Returns the dtype of the outcomes parameter array. For a
         model with single-parameter outcomes, this will likely be a scalar dtype,
-        such as ``"int64"`` for finite models or ``"float64"`` for continuous models. More generally, this can be an example of a
-        record type, such as ``[('time', 'float64'), ('axis', 'uint8')]``.
+        such as ``"int64"`` for finite models or ``"float64"`` for continuous models. 
+        More generally, this can be an example of a record type, such as 
+        ``[('outcome x', 'uint8'), ('outcome y', 'uint8')]``.
         
         This property is assumed by inference engines to be constant for
-        the lifetime of a FiniteModel instance.
+        the lifetime of a Model instance.
         """
-        return int
+        return 'uint32'
         
     ## CONCRETE PROPERTIES ##
     
@@ -159,6 +151,12 @@ class Model(with_metaclass(abc.ABCMeta, object)):
     
     @property
     def sim_count(self):
+        """
+        Returns the number of data samples that have been produced by
+        this simulator.
+
+        :rtype: int
+        """
         return self._sim_count
         
     @property
@@ -169,8 +167,9 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         the quadratic loss for this Model is defined as:
         
         .. math::
-            L_{\matr{Q}}(\vec{x}, \hat{\vec{x}}) = (\vec{x} - \hat{\vec{x}})^\T \matr{Q} (\vec{x} - \hat{\vec{x}})
-            
+            L_{\matr{Q}}(\vec{x}, \hat{\vec{x}}) =
+            (\vec{x} - \hat{\vec{x}})^\T \matr{Q} (\vec{x} - \hat{\vec{x}})
+
         If a subclass does not explicitly define the scale matrix, it is taken
         to be the identity matrix of appropriate dimension.
         
@@ -188,23 +187,25 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         return list(map("x_{{{}}}".format, range(self.n_modelparams)))
 
     @property
-    def needs_resample(self):
+    def needs_outcome_resample(self):
         """
-        Determines whether the outcomes need to be resampled during call to :func:`~abstract_model.Model.outcomes`
+        Determines whether the outcomes needs to be resampled during call 
+        to :func:`~abstract_model.Model.outcomes`
         .
         :return: Resampling state 
         :rtype: bool 
         """
-        return self._needs_resample
+        return self._needs_outcome_resample
 
-    @needs_resample.setter
-    def needs_resample(self,needs_resample):
+    @needs_outcome_resample.setter
+    def needs_outcome_resample(self, needs_outcome_resample):
         """
-        Set resampling value
+        Set outcome resampling flag.
 
-        :param bool needs_resample: Whether to resample or not in call to :func:`~abstract_model.Model.outcomes`.
+        :param bool needs_outcome_resample: Whether to resample or not in call 
+        to :func:`~abstract_model.Model.outcomes`.
         """
-        self._needs_resample = needs_resample
+        self._needs_outcome_resample = needs_outcome_resample
 
     @property
     def call_count(self):
@@ -223,7 +224,7 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         )
         if not suppress_base and self.model_chain:
             s += r"""<br>
-            <p>FiniteModel chain:</p>
+            <p>Model chain:</p>
             <ul>{}
             </ul>
             """.format(r"\n".join(
@@ -239,6 +240,8 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         """
         Returns an array of dtype ``uint`` describing the number of outcomes
         for each experiment specified by ``expparams``.
+        If there are an infinite (or intractibly large) number of outcomes, 
+        this value specifies the number of outcomes to randomly sample
         
         :param numpy.ndarray expparams: Array of experimental parameters. This
             array must be of dtype agreeing with the ``expparams_dtype``
@@ -257,13 +260,27 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         
     @abc.abstractmethod
     def simulate_experiment(self, modelparams, expparams, repeat=1):
-        # TODO: document
-        self._sim_count += modelparams.shape[0] * expparams.shape[0] * repeat
-    
+        """
+        Produces data according to the given model parameters and experimental
+        parameters, structured as a NumPy array.
 
-    @abc.abstractmethod
-    def likelihood(self, outcomes, modelparams, expparams):
-        # TODO: document
+        :param np.ndarray modelparams: A shape ``(n_models, n_modelparams)``
+            array of model parameter vectors describing the hypotheses under
+            which data should be simulated.
+        :param np.ndarray expparams: A shape ``(n_experiments, )`` array of
+            experimental control settings, with ``dtype`` given by 
+            :attr:`~qinfer.Simulatable.expparams_dtype`, describing the
+            experiments whose outcomes should be simulated.
+        :param int repeat: How many times the specified experiment should
+            be repeated.
+        :rtype: np.ndarray
+        :return: A three-index tensor ``data[i, j, k]``, where ``i`` is the repetition,
+            ``j`` indexes which vector of model parameters was used, and where
+            ``k`` indexes which experimental parameters where used. If ``repeat == 1``,
+            ``len(modelparams) == 1`` and ``len(expparams) == 1``, then a scalar
+            datum is returned instead.
+        """
+        self._sim_count += modelparams.shape[0] * expparams.shape[0] * repeat
         
         # Count the number of times the inner-most loop is called.
         self._call_count += (
@@ -273,7 +290,6 @@ class Model(with_metaclass(abc.ABCMeta, object)):
 
     ## CONCRETE METHODS ##
     
-
     def clear_cache(self):
         """
         Tells the model to clear any internal caches used in computing
@@ -316,10 +332,9 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         
         return np.apply_along_axis(
             lambda vec: np.linalg.norm(vec, 1),
-            1,self.Q * (a - b))
-
-   
-            
+            1,
+            self.Q * (a - b)
+        )
         
     def update_timestep(self, modelparams, expparams):
         r"""
@@ -361,45 +376,41 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         """
         return modelparams
 
-    def resample_outcomes(self,weights,modelparams,expparams):
+    def _resample_outcomes(self, weights, modelparams, expparams):
         """
-        Sample points from the prior distribution, and then use these sampled points (model parameters) to sample outcomes from
-        the likelihood function. Ie. sample 
+        Randomly sample modelparams according to the given weights, and then use these 
+        sampled points to sample outcomes from the likelihood function. Ie. sample 
         :math:`n` points from 
         .. :math::
             \vec{x_i} ~ \pi(\vec{x})
              y_i ~ L(\vec{x_i};\vec{C}) 
 
-        Where :math:`\vec{x_i}` is a sampled point from the particle distribution, and :math:`y_i` is the sampled outcome from this
-        point. In the limit of infinite samples the binned sampled outcomes should be proportional to the outcome likelihood distribution
-        under the prior probability function. 
+        where :math:`\vec{x_i}` is a sampled point from the given particle distribution, 
+        and :math:`y_i` is the sampled outcome from this point. In the limit of 
+        infinite samples the binned outcomes should be proportional to 
+        the outcome likelihood distribution under the prior probability function. 
 
 
         :param np.ndarray weights: Set of weights with a weight
             corresponding to every modelparam. 
-        :param np.ndarray modelparams: Set of model parameter vectors (particles) to samples outcomes from.
+        :param np.ndarray modelparams: Set of model parameter vectors (particles) 
+            to samples outcomes from.
         :param np.ndarray expparams: An experiment parameter array describing
             the experiments that outcomes should be sampled for.
-
-        :return np.ndarray: Array of shape 
-            ``(n_outcomes,n_expparams,outcomes_length)`` describing the sampled outcomes if outcomes are arrays,
-            otherwise shape of ``(n_outcomes,n_expparams)``
-        :rtype: :class:`~numpy.ndarray`
         """
 
         sampled_points = modelparams[np.random.choice(np.shape(modelparams)[0],size=self.n_outcomes,p=weights)]
         outcomes = self.simulate_experiment(sample_points,expparams)
 
-        
         assert outcomes.dtype == self.outcomes_dtype
         self._outcomes =  outcomes.reshape(sampled_points.shape[0],expparams.shape[0])
 
-
-
-    def outcomes(self,weights,modelparams,expparams,resample=False):
+    def outcomes(self, weights, modelparams, expparams, resample=False):
         """
-        Supplies array of outcomes sampled from the particle filter prior distribution/model likelihood function. 
-        Only resamples if ``needs_resample``,``resample``, or ``self.always_resample_outcomes`` is ``True``.
+        Randomly sample modelparams according to the given weights, and then use these 
+        sampled points to sample outcomes from the likelihood function.
+        Only resamples if ``needs_outcome_resample``,``resample``, or ``self.always_resample_outcomes`` 
+        is ``True``, otherwise returns the cached value.
 
         :param np.ndarray weights: Set of weights with a weight
             corresponding to every modelparam. 
@@ -407,18 +418,15 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         :param np.ndarray expparams: An experiment parameter array describing
             the experiments that outcomes should be sampled for.
         :param bool resample: Force resampling of outcomes 
-
-        :return np.ndarray: Array of shape 
-            ``(n_outcomes,n_expparams,outcomes_length)`` describing the sampled outcomes if outcomes are arrays,
-            otherwise shape of ``(n_outcomes,n_expparams)``
-        :rtype: :class:`~numpy.ndarray` 
-
+        :return np.ndarray: Array of shape ``(n_outcomes,n_expparams)`` listing the 
+        sampled outcomes, of type ``outcomes_dtype``.
         """
-        if self.needs_resample or resample or self.always_resample_outcomes:
-            self.resample_outcomes(weights,modelparams,expparams)
+        if self.needs_outcome_resample or resample or self.always_resample_outcomes:
+            self._resample_outcomes(weights,modelparams,expparams)
 
         return self._outcomes
 
+        
         
 class LinearCostModelMixin(Model):
     # FIXME: move this mixin to a new module.
@@ -433,20 +441,69 @@ class LinearCostModelMixin(Model):
     def experiment_cost(self, expparams):
         return expparams[self._field]
 
-class FiniteModel(Model):
-    # TODO: now that FiniteModel is a subclass of Model, FiniteModel may no longer
-    #       be the best name. Maybe rename to SimulatableModel and
-    #       ExplicitModel?
+class FiniteOutcomeModel(Model):
+    """
+    Represents a system which can be simulated according to
+    various model parameters and experimental control parameters
+    in order to produce the probability of a hypothetical data
+    record. As opposed to :class:`~qinfer.Simulatable`, instances
+    of :class:`~qinfer.Model` not only produce data consistent
+    with the description of a system, but also evaluate the probability
+    of that data arising from the system.
+
+    See :ref:`models_guide` for more details.
+    """
     
     ## INITIALIZERS ##
     def __init__(self):
-        super(FiniteModel, self).__init__()
+        super(FiniteOutcomeModel, self).__init__()
     
     ## CONCRETE PROPERTIES ##
+
+    @property
+    def call_count(self):
+        """
+        Returns the number of points at which
+        the probability of this model has been evaluated,
+        where a point consists of a hypothesis about the model (a vector of
+        model parameters), an experimental control setting (expparams) and
+        a hypothetical or actual datum.
+
+        :rtype: int
+        """
+        return self._call_count
     
     ## ABSTRACT METHODS ##
     
-    
+    @abc.abstractmethod
+    def likelihood(self, outcomes, modelparams, expparams):
+        r"""
+        Calculates the probability of each given outcome, conditioned on each
+        given model parameter vector and each given experimental control setting.
+
+        :param np.ndarray modelparams: A shape ``(n_models, n_modelparams)``
+            array of model parameter vectors describing the hypotheses for
+            which the likelihood function is to be calculated.
+        :param np.ndarray expparams: A shape ``(n_experiments, )`` array of
+            experimental control settings, with ``dtype`` given by 
+            :attr:`~qinfer.Simulatable.expparams_dtype`, describing the
+            experiments from which the given outcomes were drawn.
+        :rtype: np.ndarray
+        :return: A three-index tensor ``L[i, j, k]``, where ``i`` is the outcome
+            being considered, ``j`` indexes which vector of model parameters was used,
+            and where ``k`` indexes which experimental parameters where used.
+            Each element ``L[i, j, k]`` then corresponds to the likelihood
+            :math:`\Pr(d_i | \vec{x}_j; e_k)`.
+        """
+        
+        # Count the number of times the inner-most loop is called.
+        self._call_count += (
+            safe_shape(outcomes) * safe_shape(modelparams) * safe_shape(expparams)
+        )
+                
+    ## CONCRETE METHODS ##
+    # These methods depend on the abstract methods, and thus their behaviors
+    # change in each inheriting class.
     
     def is_model_valid(self, modelparams):
         """
@@ -455,25 +512,13 @@ class FiniteModel(Model):
         """
         return self.are_models_valid(modelparams[np.newaxis, :])[0]
 
-    def outcomes_dtype(self):
-        """
-        Returns the dtype of the outcomes parameter array. For a
-        model with single-parameter outcomes, this will likely be a scalar dtype,
-        such as ``"int64"`` for finite models or ``"float64"`` for continuous models. More generally, this can be an example of a
-        record type, such as ``[('time', 'float64'), ('axis', 'uint8')]``.
-        
-        This property is assumed by inference engines to be constant for
-        the lifetime of a FiniteModel instance.
-        """
-        return int
-    
     def simulate_experiment(self, modelparams, expparams, repeat=1):
         # NOTE: implements abstract method of Model.
         # TODO: document
         
         # Call the superclass simulate_experiment, not recording the result.
         # This is used to count simulation calls.
-        super(FiniteModel, self).simulate_experiment(modelparams, expparams, repeat)
+        super(FiniteOutcomeModel, self).simulate_experiment(modelparams, expparams, repeat)
         
         if self.is_n_outcomes_constant:
             all_outcomes = np.arange(self.n_outcomes(expparams[0, np.newaxis]))
