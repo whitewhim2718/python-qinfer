@@ -84,7 +84,7 @@ class PoissonModel(DifferentiableModel):
             :attr:`~qinfer.Model.expparams_dtype`, describing the
             experiments from which the given outcomes were drawn.
         :rtype: np.ndarray
-        :return: A two-index tensor ``f[i, j]``, where ``i`` indexes which experimental parameters where used
+        :return: A two-index tensor ``f[i, j]``, where ``i`` indexes which experimental parameters are
             being considered, ``j`` indexes which vector of model parameters was used.   
         """
         pass
@@ -92,7 +92,20 @@ class PoissonModel(DifferentiableModel):
     @abstractmethod
     def model_function_derivative(self,modelparams,expparams):
         """
-        Return model functions derivatives :math:`\nabla_{\vec{x}}`in form [idx_modelparam,idx_expparams,idx_modelparams]
+        Return model functions derivatives :math:`\nabla_{\vec{x}}f(\vec{x};\vec{c})`
+        in form [idx_modelparam,idx_expparams,idx_modelparams].
+
+        :param np.ndarray modelparams: A shape ``(n_models, n_modelparams)``
+        array of model parameter vectors describing the hypotheses for
+        which the likelihood function is to be calculated.
+        :param np.ndarray expparams: A shape ``(n_experiments, )`` array of
+            experimental control settings, with ``dtype`` given by 
+            :attr:`~qinfer.Model.expparams_dtype`, describing the
+            experiments from which the given outcomes were drawn.
+        :rtype: np.ndarray
+        :return: A three-index tensor ``f[i, j,k]``, where ``i`` indexes which model parameter the derivative was taken with respect to,
+            ``j`` indexes which experimental parameters are being considered, 
+            and ``k`` indexes which vector of model parameters was used.   
         """
         pass
 
@@ -105,11 +118,24 @@ class PoissonModel(DifferentiableModel):
     
     @abstractproperty
     def modelparam_names(self):
+        """
+        Returns the names of the various model parameters admitted by this
+        model, formatted as LaTeX strings.
+        """
         pass
 
 
     @abstractproperty
     def expparams_dtype(self):
+        """
+        Returns the dtype of an experiment parameter array. For a
+        model with single-parameter control, this will likely be a scalar dtype,
+        such as ``"float64"``. More generally, this can be an example of a
+        record type, such as ``[('time', 'float64'), ('axis', 'uint8')]``.
+        
+        This property is assumed by inference engines to be constant for
+        the lifetime of a Model instance.
+        """
         pass
     ## PROPERTIES ##
     
