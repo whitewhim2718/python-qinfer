@@ -32,8 +32,7 @@ from __future__ import division # Ensures that a/b is always a float.
 
 __all__ = [
     'PoissonModel',
-    'GaussianModel',
-    'MultinomialModel'
+    'GaussianModel'
 ]
 
 ## IMPORTS ###################################################################
