@@ -41,7 +41,7 @@ __all__ = [
 from builtins import range
 
 import numpy as np
-from scipy.misc import factorial
+from scipy.special import gammaln
 from .utils import binomial_pdf
 
 from .abstract_model import Model, DifferentiableModel
@@ -124,8 +124,7 @@ class PoissonModel(Model):
 
         lamb_da = modelparams[np.newaxis,...]
         outcomes = outcomes[:,np.newaxis,:]
-
-        return lamb_da**(outcomes)*np.exp(-lamb_da)/factorial(outcomes)
+        return np.exp(outcomes*np.log(lamb_da)-gammaln(outcomes+1)-lamb_da)
 
 
     def score(self, outcomes, modelparams, expparams, return_L=False):
@@ -141,12 +140,12 @@ class PoissonModel(Model):
         scr = (outcomes*np.pow(modelparams,outcomes-1)*np.exp(-modelparams)-\
                 modelparams*np.pow(modelparams,outcomes))/factorial(outcomes)
         
-
+        scr = outcomes/lamb_da-1
         
         if return_L:
-            return q, self.likelihood(outcomes, modelparams, expparams)
+            return scr, self.likelihood(outcomes, modelparams, expparams)
         else:
-            return q
+            return scr
 
 
     def simulate_experiment(self,modelparams,expparams,repeat=1):
@@ -154,13 +153,11 @@ class PoissonModel(Model):
         super(PoissonModel, self).simulate_experiment(modelparams, expparams, repeat)
 
         if len(modelparams.shape) == 1:
-            modelparams = modelparams[:, np.newaxis]
+            modelparams = modelparams[:, np.newaxis]    
+        
+        modelparams = modelparams.reshape(-1)
+        outcomes = np.random.poisson(modelparams,(expparams.shape[0],modelparams.shape[0]))
 
-        outcomes = np.empty((expparams.shape[0],modelparams.shape[0]),dtype=int)
-        for i in range(expparams.shape[0]):
-            for j in range(modelparams.shape[0]):
-                outcomes[i,j] = np.random.poisson(modelparams[j][0],1)
-    
         return outcomes 
 
 class GaussianModel(DifferentiableModel):

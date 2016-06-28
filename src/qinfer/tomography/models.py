@@ -70,44 +70,6 @@ def heisenberg_weyl_operators(d=2):
 
 ## CLASSES ###################################################################
 
-class TomographyModel(Model):
-    r"""
-    Model for tomographically learning a quantum state using
-    two-outcome positive-operator valued measures (POVMs).
-
-    :param TomographyBasis basis: Basis used in representing
-        states as model parameter vectors.
-    :param bool allow_subnormalized: If `False`, states
-        :math:`\rho` are constrained during resampling such
-        that :math:`\Tr(\rho) = 1`. 
-    """
-
-#     def __call__(self):
-#         expparams = np.zeros((1,), dtype=self._up.model.expparams_dtype)
-#         expparams['meas'][0, :] = self._basis.state_to_modelparams(
-#             np.random.choice(self._effects)
-#         )
-
-#         for field, value in self._other_fields.iteritems():
-#                 expparams[field] = value
-        
-#         return expparams
-
-# class RandomBasisHeuristic(Heuristic):
-#     # TODO: move this one!
-#     def __init__(self, updater, other_fields=None):
-#         self._up = updater
-#         self._other_fields = {} if other_fields is None else other_fields
-#         self._dim = updater.model.base_model.dim
-
-#     def __call__(self):
-#         expparams = np.zeros((1,), dtype=self._up.model.expparams_dtype)
-#         expparams['meas'][0, [0, 1 + np.random.randint(self._dim ** 2 - 1)]] = np.sqrt(self._dim)
-
-#         for field, value in self._other_fields.iteritems():
-#                 expparams[field] = value
-        
-#         return expparams
 
 class TomographyModel(FiniteOutcomeModel):
     def __init__(self, basis, allow_subnormalized=False):

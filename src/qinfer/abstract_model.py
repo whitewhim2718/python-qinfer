@@ -65,8 +65,26 @@ class Model(with_metaclass(abc.ABCMeta, object)):
             that may be supplied. Otherwise initial outcomes default to 
             zeros. 
     """
+    def __init__(self,always_resample_outcomes=False,initial_outcomes = None):
+        """
+        Initialize Model model
+        :param bool always_resample_outcomes: Resample outcomes stochastically with 
+                    each outcome call.
+        :param :class:`~numpy.ndarray` initial_outcomes: Initial set of outcomes 
+                    that may be supplied. Otherwise initial outcomes default to 
+                    zeros. 
+        """
         self._sim_count = 0
-        
+        self._call_count = 0
+        if initial_outcomes is not None:
+            #verify that the supplied outcomes are of the correct length
+            assert initial_outcomes.dtype== self.outcomes_dtype
+            self._outcomes = initial_outcomes
+        else:
+            #otherwise initialize all outcomes to zero at start
+            self._outcomes = np.empty(None,self.outcomes_dtype)
+
+        self.needs_resample = False
         # Initialize a default scale matrix.
         self._Q = np.ones((self.n_modelparams,))
         
@@ -281,12 +299,31 @@ class Model(with_metaclass(abc.ABCMeta, object)):
             datum is returned instead.
         """
         self._sim_count += modelparams.shape[0] * expparams.shape[0] * repeat
+    
+    @abc.abstractmethod
+    def likelihood(self, outcomes, modelparams, expparams):
+        r"""
+        Calculates the probability of each given outcome, conditioned on each
+        given model parameter vector and each given experimental control setting.
+        :param np.ndarray modelparams: A shape ``(n_models, n_modelparams)``
+            array of model parameter vectors describing the hypotheses for
+            which the likelihood function is to be calculated.
+        :param np.ndarray expparams: A shape ``(n_experiments, )`` array of
+            experimental control settings, with ``dtype`` given by 
+            :attr:`~qinfer.Simulatable.expparams_dtype`, describing the
+            experiments from which the given outcomes were drawn.
+        :rtype: np.ndarray
+        :return: A three-index tensor ``L[i, j, k]``, where ``i`` is the outcome
+            being considered, ``j`` indexes which vector of model parameters was used,
+            and where ``k`` indexes which experimental parameters where used.
+            Each element ``L[i, j, k]`` then corresponds to the likelihood
+            :math:`\Pr(d_i | \vec{x}_j; e_k)`.
+        """
         
         # Count the number of times the inner-most loop is called.
         self._call_count += (
             safe_shape(outcomes) * safe_shape(modelparams) * safe_shape(expparams)
         )
-                
 
     ## CONCRETE METHODS ##
     
@@ -474,32 +511,6 @@ class FiniteOutcomeModel(Model):
         return self._call_count
     
     ## ABSTRACT METHODS ##
-    
-    @abc.abstractmethod
-    def likelihood(self, outcomes, modelparams, expparams):
-        r"""
-        Calculates the probability of each given outcome, conditioned on each
-        given model parameter vector and each given experimental control setting.
-
-        :param np.ndarray modelparams: A shape ``(n_models, n_modelparams)``
-            array of model parameter vectors describing the hypotheses for
-            which the likelihood function is to be calculated.
-        :param np.ndarray expparams: A shape ``(n_experiments, )`` array of
-            experimental control settings, with ``dtype`` given by 
-            :attr:`~qinfer.Simulatable.expparams_dtype`, describing the
-            experiments from which the given outcomes were drawn.
-        :rtype: np.ndarray
-        :return: A three-index tensor ``L[i, j, k]``, where ``i`` is the outcome
-            being considered, ``j`` indexes which vector of model parameters was used,
-            and where ``k`` indexes which experimental parameters where used.
-            Each element ``L[i, j, k]`` then corresponds to the likelihood
-            :math:`\Pr(d_i | \vec{x}_j; e_k)`.
-        """
-        
-        # Count the number of times the inner-most loop is called.
-        self._call_count += (
-            safe_shape(outcomes) * safe_shape(modelparams) * safe_shape(expparams)
-        )
                 
     ## CONCRETE METHODS ##
     # These methods depend on the abstract methods, and thus their behaviors
