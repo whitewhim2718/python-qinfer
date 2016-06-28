@@ -32,7 +32,8 @@ from __future__ import division # Ensures that a/b is always a float.
 
 __all__ = [
     'PoissonModel',
-    'GaussianModel'
+    'GaussianModel',
+    'BasicPoissonModel'
 ]
 
 ## IMPORTS ###################################################################
@@ -73,7 +74,7 @@ class PoissonModel(DifferentiableModel):
     def model_function(self,modelparams,expparams):
         """
         Return model function :math:`f(\vec{x};\vec{c})` with unknown parameters :math:`\vec{x}` 
-        and experimental parameters :math:`\vec{c}` in the form [idx_expparams,idx_modelparams].
+        and experimental parameters :math:`\vec{c}` in the form [idx_modelparams,idx_expparams].
 
         :param np.ndarray modelparams: A shape ``(n_models, n_modelparams)``
             array of model parameter vectors describing the hypotheses for
@@ -83,8 +84,8 @@ class PoissonModel(DifferentiableModel):
             :attr:`~qinfer.Model.expparams_dtype`, describing the
             experiments from which the given outcomes were drawn.
         :rtype: np.ndarray
-        :return: A two-index tensor ``f[i, j]``, where ``i`` indexes which experimental parameters are
-            being considered, ``j`` indexes which vector of model parameters was used.   
+        :return: A two-index tensor ``f[i, j]``, where ``i`` indexes which model parameters are
+            being considered, ``j`` indexes which experimental parameters was used.   
         """
         pass
 
@@ -103,8 +104,8 @@ class PoissonModel(DifferentiableModel):
             experiments from which the given outcomes were drawn.
         :rtype: np.ndarray
         :return: A three-index tensor ``f[i, j,k]``, where ``i`` indexes which model parameter the derivative was taken with respect to,
-            ``j`` indexes which experimental parameters are being considered, 
-            and ``k`` indexes which vector of model parameters was used.   
+            ``j`` indexes which model parameters are being considered, 
+            and ``k`` indexes which experimental parameters was used.   
         """
         pass
 
@@ -183,9 +184,8 @@ class PoissonModel(DifferentiableModel):
         
         if len(outcomes.shape) == 1:
             outcomes = outcomes[..., np.newaxis]
-
         lamb_da = self.model_function(modelparams,expparams)[np.newaxis,...]
-        outcomes = outcomes[:,np.newaxis,:]
+        outcomes = outcomes[np.newaxis,:,:]
         return np.exp(outcomes*np.log(lamb_da)-gammaln(outcomes+1)-lamb_da)
 
 
@@ -195,10 +195,15 @@ class PoissonModel(DifferentiableModel):
         
         return super(PoissonModel, self).score(outcomes, modelparams, expparams, return_L) 
 
-        outcomes_reshaped = outcomes[np.newaxis,:,np.newaxis,np.newaxis]
-        modelparams_reshaped = modelparams[:,np.newaxix,:,:]
+        if len(modelparams.shape) == 1:
+            modelparams = modelparams[..., np.newaxis]
+        
+        if len(outcomes.shape) == 1:
+            outcomes = outcomes[..., np.newaxis]
 
+        lamb_da = self.model_function(modelparams,expparams)[np.newaxis,np.newaxis,...]
         fns_deriv = self.model_function_derivative(modelparams,expparams)[:,np.newaxis,:,:]
+        outcomes = outcomes[np.newaxis,:,:,np.newaxis]
         
         scr = (outcomes/lamb_da-1)*fns_deriv
         
@@ -224,9 +229,12 @@ class PoissonModel(DifferentiableModel):
 class BasicPoissonModel(PoissonModel):
     """
     The basic Poisson model consisting of a single model parameter :math:`\lambda`,
-    and no experiment parameters.
+    and no experimental parameters.
     """
-    @abstractmethod
+    @property 
+    def n_modelparams(self):
+        return 1
+
     def model_function(self,modelparams,expparams):
         """
         Return model functions in form [idx_expparams,idx_modelparams]. The model function 
@@ -234,30 +242,26 @@ class BasicPoissonModel(PoissonModel):
         to satisfy the requirements of the abstract method. The shape of `expparams` therefore signifies 
         the number of experiments that will be performed.
         """
-        return np.tile(modelparams,expparams.shape[0]).transpose()
-
-    @abstractmethod
+        return np.tile(modelparams,expparams.shape[0])
+    
     def model_function_derivative(self,modelparams,expparams):
         """
         Return model functions derivatives in form [idx_modelparam,idx_expparams,idx_modelparams]
         """
-        return np.ones(1,expparams.shape[0],modelparams.shape[0])
+        return np.ones((1,expparams.shape[0],modelparams.shape[0]))
 
 
-    @abstractmethod
+    
     def are_models_valid(self, modelparams):
-        pass
+        return np.all(modelparams >= 0, axis=1)
 
     ## ABSTRACT PROPERTIES ##
     
-    @abstractproperty
     def modelparam_names(self):
-        pass
-
-
-    @abstractproperty
+        return [r'\lambda']
+    
     def expparams_dtype(self):
-        pass
+        []
 
 class GaussianModel(DifferentiableModel):
     r"""
