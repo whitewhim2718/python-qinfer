@@ -57,15 +57,14 @@ class Model(with_metaclass(abc.ABCMeta, object)):
     in order to produce representative data.
 
     See :ref:`models_guide` for more details.
+
+    :param bool always_resample_outcomes: Resample outcomes stochastically with 
+            each outcome call.
+
+    :param :class:`~numpy.ndarray` initial_outcomes: Initial set of outcomes 
+            that may be supplied. Otherwise initial outcomes default to 
+            zeros. 
     """
-
-        :param bool always_resample_outcomes: Resample outcomes stochastically with 
-                    each outcome call.
-
-        :param :class:`~numpy.ndarray` initial_outcomes: Initial set of outcomes 
-                    that may be supplied. Otherwise initial outcomes default to 
-                    zeros. 
-        """
         self._sim_count = 0
         
         # Initialize a default scale matrix.
@@ -101,13 +100,14 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         """
         Returns the dtype of the outcomes parameter array. For a
         model with single-parameter outcomes, this will likely be a scalar dtype,
-        such as ``"int64"`` for finite models or ``"float64"`` for continuous models. More generally, this can be an example of a
-        record type, such as ``[('time', 'float64'), ('axis', 'uint8')]``.
+        such as ``"int64"`` for finite models or ``"float64"`` for continuous models. 
+        More generally, this can be an example of a record type, such as 
+        ``[('outcome x', 'uint8'), ('outcome y', 'uint8')]``.
         
         This property is assumed by inference engines to be constant for
         the lifetime of a Model instance.
         """
-        return int
+        return 'uint32'
         
     ## CONCRETE PROPERTIES ##
     
@@ -187,23 +187,25 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         return list(map("x_{{{}}}".format, range(self.n_modelparams)))
 
     @property
-    def needs_resample(self):
+    def needs_outcome_resample(self):
         """
-        Determines whether the outcomes need to be resampled during call to :func:`~abstract_model.Model.outcomes`
+        Determines whether the outcomes needs to be resampled during call 
+        to :func:`~abstract_model.Model.outcomes`
         .
         :return: Resampling state 
         :rtype: bool 
         """
-        return self._needs_resample
+        return self._needs_outcome_resample
 
-    @needs_resample.setter
-    def needs_resample(self,needs_resample):
+    @needs_outcome_resample.setter
+    def needs_outcome_resample(self, needs_outcome_resample):
         """
-        Set resampling value
+        Set outcome resampling flag.
 
-        :param bool needs_resample: Whether to resample or not in call to :func:`~abstract_model.Model.outcomes`.
+        :param bool needs_outcome_resample: Whether to resample or not in call 
+        to :func:`~abstract_model.Model.outcomes`.
         """
-        self._needs_resample = needs_resample
+        self._needs_outcome_resample = needs_outcome_resample
 
     @property
     def call_count(self):
@@ -238,6 +240,8 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         """
         Returns an array of dtype ``uint`` describing the number of outcomes
         for each experiment specified by ``expparams``.
+        If there are an infinite (or intractibly large) number of outcomes, 
+        this value specifies the number of outcomes to randomly sample
         
         :param numpy.ndarray expparams: Array of experimental parameters. This
             array must be of dtype agreeing with the ``expparams_dtype``
@@ -372,34 +376,55 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         """
         return modelparams
 
-    def resample_outcomes(self,weights,modelparams,expparams):
+    def _resample_outcomes(self, weights, modelparams, expparams):
         """
-        Sample points from the prior distribution, and then use these sampled points (model parameters) to sample outcomes from
-        the likelihood function. Ie. sample 
+        Randomly sample modelparams according to the given weights, and then use these 
+        sampled points to sample outcomes from the likelihood function. Ie. sample 
         :math:`n` points from 
         .. :math::
             \vec{x_i} ~ \pi(\vec{x})
              y_i ~ L(\vec{x_i};\vec{C}) 
 
-        Where :math:`\vec{x_i}` is a sampled point from the particle distribution, and :math:`y_i` is the sampled outcome from this
-        point. In the limit of infinite samples the binned sampled outcomes should be proportional to the outcome likelihood distribution
-        under the prior probability function. 
+        where :math:`\vec{x_i}` is a sampled point from the given particle distribution, 
+        and :math:`y_i` is the sampled outcome from this point. In the limit of 
+        infinite samples the binned outcomes should be proportional to 
+        the outcome likelihood distribution under the prior probability function. 
 
+
+        :param np.ndarray weights: Set of weights with a weight
+            corresponding to every modelparam. 
+        :param np.ndarray modelparams: Set of model parameter vectors (particles) 
+            to samples outcomes from.
+        :param np.ndarray expparams: An experiment parameter array describing
+            the experiments that outcomes should be sampled for.
+        """
+
+        sampled_points = modelparams[np.random.choice(np.shape(modelparams)[0],size=self.n_outcomes,p=weights)]
+        outcomes = self.simulate_experiment(sample_points,expparams)
+
+        assert outcomes.dtype == self.outcomes_dtype
+        self._outcomes =  outcomes.reshape(sampled_points.shape[0],expparams.shape[0])
+
+    def outcomes(self, weights, modelparams, expparams, resample=False):
+        """
+        Randomly sample modelparams according to the given weights, and then use these 
+        sampled points to sample outcomes from the likelihood function.
+        Only resamples if ``needs_outcome_resample``,``resample``, or ``self.always_resample_outcomes`` 
+        is ``True``, otherwise returns the cached value.
 
         :param np.ndarray weights: Set of weights with a weight
             corresponding to every modelparam. 
         :param np.ndarray modelparams: Set of model parameter vectors (particles) to samples outcomes from.
         :param np.ndarray expparams: An experiment parameter array describing
             the experiments that outcomes should be sampled for.
-
-        :return np.ndarray: Array of shape 
-            ``(n_outcomes,n_expparams,outcomes_length)`` describing the sampled outcomes if outcomes are arrays,
-            otherwise shape of ``(n_outcomes,n_expparams)``
-        :rtype: :class:`~numpy.ndarray`
+        :param bool resample: Force resampling of outcomes 
+        :return np.ndarray: Array of shape ``(n_outcomes,n_expparams)`` listing the 
+        sampled outcomes, of type ``outcomes_dtype``.
         """
+        if self.needs_outcome_resample or resample or self.always_resample_outcomes:
+            self._resample_outcomes(weights,modelparams,expparams)
 
-        sampled_points = modelparams[np.random.choice(np.shape(modelparams)[0],size=self.n_outcomes,p=weights)]
-        outcomes = self.simulate_experiment(sample_points,expparams)
+        return self._outcomes
 
         
         
@@ -487,18 +512,6 @@ class FiniteOutcomeModel(Model):
         """
         return self.are_models_valid(modelparams[np.newaxis, :])[0]
 
-    def outcomes_dtype(self):
-        """
-        Returns the dtype of the outcomes parameter array. For a
-        model with single-parameter outcomes, this will likely be a scalar dtype,
-        such as ``"int64"`` for finite models or ``"float64"`` for continuous models. More generally, this can be an example of a
-        record type, such as ``[('time', 'float64'), ('axis', 'uint8')]``.
-        
-        This property is assumed by inference engines to be constant for
-        the lifetime of a FiniteOutcomeModel instance.
-        """
-        return int
-    
     def simulate_experiment(self, modelparams, expparams, repeat=1):
         # NOTE: implements abstract method of Model.
         # TODO: document
