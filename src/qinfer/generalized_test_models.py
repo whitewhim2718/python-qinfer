@@ -44,7 +44,7 @@ import numpy as np
 from abc import ABCMeta,abstractmethod,abstractproperty
 from scipy.special import gammaln
 from .utils import binomial_pdf
-
+from functools import wraps 
 from .abstract_model import Model, DifferentiableModel
     
 ## CLASSES ###################################################################
@@ -204,7 +204,7 @@ class PoissonModel(DifferentiableModel):
         lamb_da = self.model_function(modelparams,expparams)[np.newaxis,np.newaxis,...]
         fns_deriv = self.model_function_derivative(modelparams,expparams)[:,np.newaxis,:,:]
         outcomes = outcomes[np.newaxis,:,:,np.newaxis]
-        
+
         scr = (outcomes/lamb_da-1)*fns_deriv
         
         if return_L:
@@ -265,35 +265,129 @@ class BasicPoissonModel(PoissonModel):
 
 class GaussianModel(DifferentiableModel):
     r"""
-    Describes the free evolution of a single qubit prepared in the
-    :math:`\left|+\right\rangle` state under a Hamiltonian :math:`H = \omega \sigma_z / 2`,
-    using the interactive QLE model proposed by [WGFC13a]_.
+    Abstract Gaussian model class that describes a Gaussian model with likelihood form 
 
-    :param float min_freq: Minimum value for :math:`\omega` to accept as valid.
-        This is used for testing techniques that mitigate the effects of
-        degenerate models; there is no "good" reason to ever set this other
-        than zero, other than to test with an explicitly broken model.
+    :math:`\Pr(y|\mu,\sigma,f(\vec{x};\vec{c}))= \frac{1}{\sqrt{2\sigma^2\pi}}e^(-\frac{(x-\mu)^2}{2\sigma^2}`
+
+    Where :math:`y` is the observed outcome, and :math:`f(\vec{x};\vec{c})`
+    is some underlying model function with unknown parameters :math:`\vec{x}` and experimental 
+    parameters :math:`\vec{c}`. The distribution is defined by the mean :math:`\mu` and the variance,
+    :math:`\sigma^2`. These may be either unknown model parameters to be learned, or fixed parameters. 
+
+    Can optionally add model parameters for unknown :math:`\mu`, and :math:`\sigma` you should not use these
+    as modelparameter names. 
     """
+
+    __metaclass__ = ABCMeta
     
     ## INITIALIZER ##
 
-    def __init__(self, num_outcome_samples=400):
-        super(PoissonModel, self).__init__()
+    def __init__(self, sigma=None, num_outcome_samples=500):
+        super(GaussianModel, self).__init__()
         self.num_outcome_samples = num_outcome_samples
 
+      
+        if sigma is None:
+            self.n_modelparams = _add_modelparam_decorator(self.n_modelparams)
+            self.modelparam_names = _add_modelparam_name_decorator(self.modelparam_names,r'\sigma')
+        else: 
+            self._sigma = sigma
+        ## Decorators ##
+    
+
+        def _add_modelparam_decorator(f):
+            @wraps(f)
+            def add_modelparam():
+                return f()+1
+
+            return add_params
+        
+        
+        def _add_modelparam_name_decorator(f,name):
+            @wraps(f)
+            def add_modelparam_name():
+                return f + name
+
+            return add_modelparam_name
+
+    ## ABSTRACT METHODS##
+
+    @abstractmethod
+    def model_function(self,modelparams,expparams):
+        """
+        Return model function :math:`f(\vec{x};\vec{c})` with unknown parameters :math:`\vec{x}` 
+        and experimental parameters :math:`\vec{c}` in the form [idx_modelparams,idx_expparams].
+
+        :param np.ndarray modelparams: A shape ``(n_models, n_modelparams)``
+            array of model parameter vectors describing the hypotheses for
+            which the likelihood function is to be calculated.
+        :param np.ndarray expparams: A shape ``(n_experiments, )`` array of
+            experimental control settings, with ``dtype`` given by 
+            :attr:`~qinfer.Model.expparams_dtype`, describing the
+            experiments from which the given outcomes were drawn.
+        :rtype: np.ndarray
+        :return: A two-index tensor ``f[i, j]``, where ``i`` indexes which model parameters are
+            being considered, ``j`` indexes which experimental parameters was used.   
+        """
+        pass
+
+    @abstractmethod
+    def model_function_derivative(self,modelparams,expparams):
+        """
+        Return model functions derivatives :math:`\nabla_{\vec{x}}f(\vec{x};\vec{c})`
+        in form [idx_modelparam,idx_expparams,idx_modelparams].
+
+        :param np.ndarray modelparams: A shape ``(n_models, n_modelparams)``
+        array of model parameter vectors describing the hypotheses for
+        which the likelihood function is to be calculated.
+        :param np.ndarray expparams: A shape ``(n_experiments, )`` array of
+            experimental control settings, with ``dtype`` given by 
+            :attr:`~qinfer.Model.expparams_dtype`, describing the
+            experiments from which the given outcomes were drawn.
+        :rtype: np.ndarray
+        :return: A three-index tensor ``f[i, j,k]``, where ``i`` indexes which model parameter the derivative was taken with respect to,
+            ``j`` indexes which model parameters are being considered, 
+            and ``k`` indexes which experimental parameters was used.   
+        """
+        pass
+
+
+    @abstractmethod
+    def are_models_valid(self, modelparams):
+        pass
+
+    ## ABSTRACT PROPERTIES ##
+    
+    @abstractproperty
+    def modelparam_names(self):
+        """
+        Returns the names of the various model parameters admitted by this
+        model, formatted as LaTeX strings.
+        """
+        pass
+
+
+    @abstractproperty
+    def expparams_dtype(self):
+        """
+        Returns the dtype of an experiment parameter array. For a
+        model with single-parameter control, this will likely be a scalar dtype,
+        such as ``"float64"``. More generally, this can be an example of a
+        record type, such as ``[('time', 'float64'), ('axis', 'uint8')]``.
+        
+        This property is assumed by inference engines to be constant for
+        the lifetime of a Model instance.
+        """
+        pass
     ## PROPERTIES ##
     
-    @property
-    def n_modelparams(self):
-        return 1
+  
+        
+    
     
     @property
-    def modelparam_names(self):
-        return [r'\lambda']
-        
-    @property
-    def expparams_dtype(self):
-        return []
+    def outcomes_dtype(self):
+        return 'float32'
     
     @property
     def is_n_outcomes_constant(self):
@@ -306,8 +400,7 @@ class GaussianModel(DifferentiableModel):
     
     ## METHODS ##
     
-    def are_models_valid(self, modelparams):
-        return np.all(modelparams >= 0, axis=1)
+
     
     def n_outcomes(self, expparams):
         """
@@ -320,45 +413,99 @@ class GaussianModel(DifferentiableModel):
         """
         return self.num_outcome_samples
     
+
     def likelihood(self, outcomes, modelparams, expparams):
         # By calling the superclass implementation, we can consolidate
         # call counting there.
 
-        super(PoissonModel, self).likelihood(outcomes, modelparams, expparams)
+        super(GaussianModel, self).likelihood(outcomes, modelparams, expparams)
 
        
         if len(modelparams.shape) == 1:
             modelparams = modelparams[..., np.newaxis]
+        
+        if len(outcomes.shape) == 1:
+            outcomes = outcomes[..., np.newaxis]
 
-        lamb_da = modelparams[np.newaxis,...]
-        outcomes = outcomes[:,np.newaxis,:]
-        return lamb_da**(outcomes)*np.exp(-lamb_da)/np.misc.factorial(outcomes)
+        # Check to see if sigma/mu are model parameters, and if 
+        # so remove from model parameter array 
+        if self._sigma is None:
+            sigma_index = self.modelparam_names.index[r'\sigma']
+            sigma = modelparams[:,ind][np.newaxis,:,np.newaxis]
+            modelparams = np.delete(modelparams,sigma_index,1)
+        else: 
+            sigma = np.empty((1,modelparams.shape[0],1))
+            sigma[...] = self._sigma
+
+
+        x = self.model_function(modelparams,expparams)[np.newaxis,...]
+        outcomes = outcomes[np.newaxis,:,:]
+        return 1/(np.sqrt(2*np.pi)*sigma)*np.exp(-(outcomes-x)**2/(2*sigma**2))
 
 
     def score(self, outcomes, modelparams, expparams, return_L=False):
         if len(modelparams.shape) == 1:
             modelparams = modelparams[:, np.newaxis]
-            
-        t = expparams['t']
-        dw = modelparams - expparams['w_']
+        
+        return super(GaussianModel, self).score(outcomes, modelparams, expparams, return_L) 
 
-        outcomes = outcomes.reshape((outcomes.shape[0], 1, 1))
+        if len(modelparams.shape) == 1:
+            modelparams = modelparams[..., np.newaxis]
+        
+        if len(outcomes.shape) == 1:
+            outcomes = outcomes[..., np.newaxis]
 
-        arg = dw * t / 2        
-        q = (
-            np.power( t / np.tan(arg), outcomes) *
-            np.power(-t * np.tan(arg), 1 - outcomes)
-        )[np.newaxis, ...]
 
-        assert q.ndim == 4
+        if self._sigma is None:
+            sigma_index = self.modelparam_names.index[r'\sigma']
+            sigma = modelparams[:,ind][np.newaxis,:,np.newaxis]
+            modelparams = np.delete(modelparams,sigma_index,1)
+        else: 
+            sigma = np.empty((1,modelparams.shape[0],1))
+            sigma[...] = self._sigma
+
+
+        x = self.model_function(modelparams,expparams)[np.newaxis,np.newaxis,...]
+        fns_deriv = self.model_function_derivative(modelparams,expparams)[:,np.newaxis,:,:]
+        
+        outcomes = outcomes[np.newaxis,:,:,np.newaxis]
+        scr = ((outcomes-x)/self.sigma**2)*fns_deriv
+
+
+        # make room in array for sigma and mu derivatives
+        scr.pad(fns_deriv,((0,self.n_modelparams-modelparams.shape[0]),(0,0),(0,0)),model='constant',constant_values=0)
+        
+        if self._sigma is None:
+            scr[sigma_index] = (outcomes-x)**2/np.pow(sigma,3) - 1/sigma
+
+
+        
+        
         
         
         if return_L:
-            return q, self.likelihood(outcomes, modelparams, expparams)
+            return scr, self.likelihood(outcomes, modelparams, expparams)
         else:
-            return q
+            return scr
 
 
+    def simulate_experiment(self,modelparams,expparams,repeat=1):
 
-    
+        super(GaussianModel, self).simulate_experiment(modelparams, expparams, repeat)
+
+        if len(modelparams.shape) == 1:
+            modelparams = modelparams[:, np.newaxis]    
         
+        x = self.model_function(modelparams,expparams)
+
+        if self._sigma is None:
+            sigma_index = self.modelparam_names.index[r'\sigma']
+            sigma = modelparams[:,ind]
+            modelparams = np.delete(modelparams,sigma_index,1)
+        else: 
+            sigma = np.empty(modelparams.shape[0])
+            sigma[...] = self._sigma
+
+        outcomes = np.random.normal(x.transpose(),sigma).transpose()
+
+        return outcomes 
