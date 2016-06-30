@@ -35,10 +35,52 @@ from numpy.testing import assert_equal, assert_almost_equal, assert_array_less
 from qinfer.tests.base_test import DerandomizedTestCase
 from qinfer.abstract_model import (
     FiniteOutcomeModel)
-from qinfer import GaussianModel,BasicPoissonModel,MultinomialModel,UniformDistribution
+from qinfer import BasicGaussianModel,BasicPoissonModel,MultinomialModel,UniformDistribution
 
 from qinfer.smc import SMCUpdater
 
+
+
+class TestGaussianModel(DerandomizedTestCase):
+    # True model parameter for test
+    MODELPARAMS = np.array([79,3])
+    TEST_EXPPARAMS = np.linspace(1.,10.,10000,dtype=np.float)
+    PRIOR_NO_SIGMA_PARAM = UniformDistribution([[0,100]])
+    PRIOR_SIGMA_PARAM = UniformDistribution([[0,100],[0,10]])
+    N_PARTICLES = 10000
+
+    TEST_TARGET_COV_NO_SIGMA_PARAM = np.array([[0.1]])
+    TEST_TARGET_COV_SIGMA_PARAM = np.array([[0.1,0.1],[0.1,0.1]])
+
+    def setUp(self):
+
+        super(TestGaussianModel,self).setUp()
+        sigma = TestGaussianModel.MODELPARAMS[1]
+        self.gaussian_model_no_sigma_param = BasicGaussianModel(sigma=sigma)
+        self.gaussian_model_sigma_param = BasicGaussianModel()
+        self.expparams = TestGaussianModel.TEST_EXPPARAMS.reshape(-1,1)
+        self.outcomes_no_sigma_param = self.gaussian_model_no_sigma_param.simulate_experiment(TestGaussianModel.MODELPARAMS[:1],
+                TestGaussianModel.TEST_EXPPARAMS,repeat=1 ).reshape(-1,1)
+        self.outcomes_sigma_param = self.gaussian_model_sigma_param.simulate_experiment(TestGaussianModel.MODELPARAMS,
+                TestGaussianModel.TEST_EXPPARAMS,repeat=1 ).reshape(-1,1)
+
+        self.updater_no_sigma_param = SMCUpdater(self.gaussian_model_no_sigma_param,
+                TestGaussianModel.N_PARTICLES,TestGaussianModel.PRIOR_NO_SIGMA_PARAM)
+
+        self.updater_sigma_param = SMCUpdater(self.gaussian_model_sigma_param,
+                TestGaussianModel.N_PARTICLES,TestGaussianModel.PRIOR_SIGMA_PARAM)
+
+
+    def test_gaussian_model_fitting(self):
+
+        self.updater_no_sigma_param.batch_update(self.outcomes_no_sigma_param,self.expparams,5)
+        self.updater_sigma_param.batch_update(self.outcomes_sigma_param,self.expparams,5)
+
+        assert_almost_equal(self.updater_no_sigma_param.est_mean(),TestGaussianModel.MODELPARAMS[:1],0)
+        assert_almost_equal(self.updater_sigma_param.est_mean(),TestGaussianModel.MODELPARAMS,0)
+
+        assert_array_less(self.updater_no_sigma_param.est_covariance_mtx(),TestGaussianModel.TEST_TARGET_COV_NO_SIGMA_PARAM)
+        assert_array_less(self.updater_sigma_param.est_covariance_mtx(),TestGaussianModel.TEST_TARGET_COV_SIGMA_PARAM)
 
 
 class TestPoissonModel(DerandomizedTestCase):
@@ -65,7 +107,7 @@ class TestPoissonModel(DerandomizedTestCase):
                 TestPoissonModel.N_PARTICLES,TestPoissonModel.PRIOR)
     
 
-    def test_poisson_model(self):
+    def test_poisson_model_fitting(self):
 
         self.updater.batch_update(self.outcomes,self.expparams,5)
 
@@ -81,46 +123,7 @@ class TestPoissonModel(DerandomizedTestCase):
 
 
 
-class TestGaussianModel(DerandomizedTestCase):
-    # True model parameter for test
-    MODELPARAMS = np.array([1,])
-    TEST_EXPPARAMS = np.linspace(1.,10.,100,dtype=np.float)
-    PRIOR = UniformDistribution([[0,2]])
-    N_PARTICLES = 10000
-
-    TEST_TARGET_COV = np.array([[0.01]])
-
-    def setUp(self):
-
-        super(TestGaussianModel,self).setUp()
-        self.gaussian_model = GaussianModel()
-        self.expparams = TestGaussianModel.TEST_EXPPARAMS.reshape(-1,1)
-        self.outcomes = self.gaussian_model.simulate_experiment(TestGaussianModel.MODELPARAMS,
-                TestGaussianModel.TEST_EXPPARAMS,repeat=1 ).reshape(-1,1)
-
-        self.updater = SMCUpdater(self.gaussian_model,
-                TestGaussianModel.N_PARTICLES,TestGaussianModel.PRIOR)
 
 
 
 
-
-class TestMultinomialModel(DerandomizedTestCase):
-    # True model parameter for test
-    MODELPARAMS = np.array([1,])
-    TEST_EXPPARAMS = np.linspace(1.,10.,100,dtype=np.float)
-    PRIOR = UniformDistribution([[0,2]])
-    N_PARTICLES = 10000
-
-    TEST_TARGET_COV = np.array([[0.01]])
-
-    def setUp(self):
-
-        super(TestMultinomialModel,self).setUp()
-        self.multinomial_model = MultinomialModel()
-        self.expparams = MultinomialModel.TEST_EXPPARAMS.reshape(-1,1)
-        self.outcomes = self.multinomial_model.simulate_experiment(TestMultinomialModel.MODELPARAMS,
-                MultinomialModel.TEST_EXPPARAMS,repeat=1 ).reshape(-1,1)
-
-        self.updater = SMCUpdater(self.multinomial_model,
-                TestMultinomialModel.N_PARTICLES,TestMultinomialModel.PRIOR)

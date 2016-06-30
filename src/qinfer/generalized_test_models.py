@@ -33,7 +33,8 @@ from __future__ import division # Ensures that a/b is always a float.
 __all__ = [
     'PoissonModel',
     'GaussianModel',
-    'BasicPoissonModel'
+    'BasicPoissonModel',
+    'BasicGaussianModel'
 ]
 
 ## IMPORTS ###################################################################
@@ -117,12 +118,25 @@ class PoissonModel(DifferentiableModel):
     ## ABSTRACT PROPERTIES ##
     
     @abstractproperty
-    def modelparam_names(self):
+    def n_model_function_params(self):
         """
-        Returns the names of the various model parameters admitted by this
-        model, formatted as LaTeX strings.
+        Returns the number of real model function parameters admitted by this GaussianModel's,
+        model function.
+        
+        This property is assumed by inference engines to be constant for
+        the lifetime of a :class:`Model` instance.       
+
+        :rtype: int 
         """
-        pass
+
+    @abstractproperty
+    def model_function_param_names(self):
+        """
+        Returns the names of the various model function parameters admitted by this
+        model, formatted as LaTeX strings.    
+
+        :rtype: list
+        """
 
 
     @abstractproperty
@@ -140,7 +154,13 @@ class PoissonModel(DifferentiableModel):
     ## PROPERTIES ##
     
   
-        
+    @property
+    def modelparam_names(self):
+        return self.model_function_param_names
+
+    @property
+    def n_modelparams(self):
+        return self.n_model_function_params   
     
     
     @property
@@ -180,7 +200,7 @@ class PoissonModel(DifferentiableModel):
 
        
         if len(modelparams.shape) == 1:
-            modelparams = modelparams[..., np.newaxis]
+            modelparams = modelparams[np.newaxis, ...]
         
         if len(outcomes.shape) == 1:
             outcomes = outcomes[..., np.newaxis]
@@ -191,12 +211,12 @@ class PoissonModel(DifferentiableModel):
 
     def score(self, outcomes, modelparams, expparams, return_L=False):
         if len(modelparams.shape) == 1:
-            modelparams = modelparams[:, np.newaxis]
+            modelparams = modelparams[np.newaxis, :]
         
         return super(PoissonModel, self).score(outcomes, modelparams, expparams, return_L) 
 
         if len(modelparams.shape) == 1:
-            modelparams = modelparams[..., np.newaxis]
+            modelparams = modelparams[np.newaxis, ...]
         
         if len(outcomes.shape) == 1:
             outcomes = outcomes[..., np.newaxis]
@@ -218,7 +238,7 @@ class PoissonModel(DifferentiableModel):
         super(PoissonModel, self).simulate_experiment(modelparams, expparams, repeat)
 
         if len(modelparams.shape) == 1:
-            modelparams = modelparams[:, np.newaxis]    
+            modelparams = modelparams[np.newaxis, :]    
         
         lamb_das = self.model_function(modelparams,expparams)
         outcomes = np.random.poisson(lamb_das)
@@ -232,7 +252,7 @@ class BasicPoissonModel(PoissonModel):
     and no experimental parameters.
     """
     @property 
-    def n_modelparams(self):
+    def n_model_function_params(self):
         return 1
 
     def model_function(self,modelparams,expparams):
@@ -257,7 +277,7 @@ class BasicPoissonModel(PoissonModel):
 
     ## ABSTRACT PROPERTIES ##
     
-    def modelparam_names(self):
+    def model_function_param_names(self):
         return [r'\lambda']
     
     def expparams_dtype(self):
@@ -283,32 +303,16 @@ class GaussianModel(DifferentiableModel):
     ## INITIALIZER ##
 
     def __init__(self, sigma=None, num_outcome_samples=500):
-        super(GaussianModel, self).__init__()
-        self.num_outcome_samples = num_outcome_samples
 
-      
-        if sigma is None:
-            self.n_modelparams = _add_modelparam_decorator(self.n_modelparams)
-            self.modelparam_names = _add_modelparam_name_decorator(self.modelparam_names,r'\sigma')
-        else: 
-            self._sigma = sigma
-        ## Decorators ##
+        self.num_outcome_samples = num_outcome_samples
+        self._sigma = sigma
+
+        super(GaussianModel, self).__init__()
+
+
     
 
-        def _add_modelparam_decorator(f):
-            @wraps(f)
-            def add_modelparam():
-                return f()+1
-
-            return add_params
         
-        
-        def _add_modelparam_name_decorator(f,name):
-            @wraps(f)
-            def add_modelparam_name():
-                return f + name
-
-            return add_modelparam_name
 
     ## ABSTRACT METHODS##
 
@@ -357,7 +361,7 @@ class GaussianModel(DifferentiableModel):
         pass
 
     ## ABSTRACT PROPERTIES ##
-    
+
     @abstractproperty
     def modelparam_names(self):
         """
@@ -379,6 +383,28 @@ class GaussianModel(DifferentiableModel):
         the lifetime of a Model instance.
         """
         pass
+
+
+    @abstractproperty
+    def n_model_function_params(self):
+        """
+        Returns the number of real model function parameters admitted by this GaussianModel's,
+        model function.
+        
+        This property is assumed by inference engines to be constant for
+        the lifetime of a :class:`Model` instance.       
+
+        :rtype: int 
+        """
+
+    @abstractproperty
+    def model_function_param_names(self):
+        """
+        Returns the names of the various model function parameters admitted by this
+        model, formatted as LaTeX strings.    
+
+        :rtype: list
+        """
     ## PROPERTIES ##
     
   
@@ -397,6 +423,22 @@ class GaussianModel(DifferentiableModel):
 
         """
         return True
+
+    
+    @property
+    def modelparam_names(self):
+        if self._sigma is None:
+            return self.model_function_param_names+[r'\sigma']
+        else:
+            return self.model_function_param_names
+
+    @property
+    def n_modelparams(self):
+        if self._sigma is None:
+            return self.n_model_function_params+1
+        else:
+            return self.n_model_function_params
+    
     
     ## METHODS ##
     
@@ -422,7 +464,7 @@ class GaussianModel(DifferentiableModel):
 
        
         if len(modelparams.shape) == 1:
-            modelparams = modelparams[..., np.newaxis]
+            modelparams = modelparams[np.newaxis, ...]
         
         if len(outcomes.shape) == 1:
             outcomes = outcomes[..., np.newaxis]
@@ -430,8 +472,8 @@ class GaussianModel(DifferentiableModel):
         # Check to see if sigma/mu are model parameters, and if 
         # so remove from model parameter array 
         if self._sigma is None:
-            sigma_index = self.modelparam_names.index[r'\sigma']
-            sigma = modelparams[:,ind][np.newaxis,:,np.newaxis]
+            sigma_index = self.modelparam_names.index(r'\sigma')
+            sigma = modelparams[:,sigma_index][np.newaxis,:,np.newaxis]
             modelparams = np.delete(modelparams,sigma_index,1)
         else: 
             sigma = np.empty((1,modelparams.shape[0],1))
@@ -445,20 +487,20 @@ class GaussianModel(DifferentiableModel):
 
     def score(self, outcomes, modelparams, expparams, return_L=False):
         if len(modelparams.shape) == 1:
-            modelparams = modelparams[:, np.newaxis]
+            modelparams = modelparams[np.newaxis, :]
         
         return super(GaussianModel, self).score(outcomes, modelparams, expparams, return_L) 
 
         if len(modelparams.shape) == 1:
-            modelparams = modelparams[..., np.newaxis]
+            modelparams = modelparams[np.newaxis, ...]
         
         if len(outcomes.shape) == 1:
             outcomes = outcomes[..., np.newaxis]
 
 
         if self._sigma is None:
-            sigma_index = self.modelparam_names.index[r'\sigma']
-            sigma = modelparams[:,ind][np.newaxis,:,np.newaxis]
+            sigma_index = self.modelparam_names.index(r'\sigma')
+            sigma = modelparams[:,sigma_index][np.newaxis,:,np.newaxis]
             modelparams = np.delete(modelparams,sigma_index,1)
         else: 
             sigma = np.empty((1,modelparams.shape[0],1))
@@ -494,18 +536,60 @@ class GaussianModel(DifferentiableModel):
         super(GaussianModel, self).simulate_experiment(modelparams, expparams, repeat)
 
         if len(modelparams.shape) == 1:
-            modelparams = modelparams[:, np.newaxis]    
+            modelparams = modelparams[np.newaxis, :]    
         
-        x = self.model_function(modelparams,expparams)
-
+        
         if self._sigma is None:
-            sigma_index = self.modelparam_names.index[r'\sigma']
-            sigma = modelparams[:,ind]
+            sigma_index = self.modelparam_names.index(r'\sigma')
+            sigma = modelparams[:,sigma_index]
             modelparams = np.delete(modelparams,sigma_index,1)
         else: 
             sigma = np.empty(modelparams.shape[0])
             sigma[...] = self._sigma
 
+        x = self.model_function(modelparams,expparams)
         outcomes = np.random.normal(x.transpose(),sigma).transpose()
 
         return outcomes 
+
+
+
+class BasicGaussianModel(GaussianModel):
+    """
+    The basic Gaussian model consisting of a single model parameter :math:`\mu`,
+    and no experimental parameters.
+    """
+
+    @property 
+    def n_model_function_params(self):
+        return 1
+
+    def model_function(self,modelparams,expparams):
+        """
+        Return model functions in form [idx_expparams,idx_modelparams]. The model function 
+        therefore returns the plain model parameters, but tiles them over the number of experiments 
+        to satisfy the requirements of the abstract method. The shape of `expparams` therefore signifies 
+        the number of experiments that will be performed.
+        """
+        return np.tile(modelparams,expparams.shape[0])
+    
+    def model_function_derivative(self,modelparams,expparams):
+        """
+        Return model functions derivatives in form [idx_modelparam,idx_expparams,idx_modelparams]
+        """
+        return np.ones((1,expparams.shape[0],modelparams.shape[0]))
+
+
+    
+    def are_models_valid(self, modelparams):
+        return np.ones(modelparams.shape[0],dtype=bool)
+
+    ## ABSTRACT PROPERTIES ##
+    
+    @property
+    def model_function_param_names(self):
+        return [r'\mu']
+    
+    def expparams_dtype(self):
+        []
+
