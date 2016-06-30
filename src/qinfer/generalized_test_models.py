@@ -94,7 +94,7 @@ class PoissonModel(DifferentiableModel):
     def model_function_derivative(self,modelparams,expparams):
         """
         Return model functions derivatives :math:`\nabla_{\vec{x}}f(\vec{x};\vec{c})`
-        in form [idx_modelparam,idx_expparams,idx_modelparams].
+        in form [idx_modelparam,idx_modelparams,idx_expparams].
 
         :param np.ndarray modelparams: A shape ``(n_models, n_modelparams)``
         array of model parameter vectors describing the hypotheses for
@@ -205,15 +205,14 @@ class PoissonModel(DifferentiableModel):
         if len(outcomes.shape) == 1:
             outcomes = outcomes[..., np.newaxis]
         lamb_da = self.model_function(modelparams,expparams)[np.newaxis,...]
-        outcomes = outcomes[np.newaxis,:,:]
+        outcomes = outcomes[:,np.newaxis,:]
         return np.exp(outcomes*np.log(lamb_da)-gammaln(outcomes+1)-lamb_da)
 
 
     def score(self, outcomes, modelparams, expparams, return_L=False):
-        if len(modelparams.shape) == 1:
-            modelparams = modelparams[np.newaxis, :]
         
-        return super(PoissonModel, self).score(outcomes, modelparams, expparams, return_L) 
+        
+        super(PoissonModel, self).score(outcomes, modelparams, expparams, return_L) 
 
         if len(modelparams.shape) == 1:
             modelparams = modelparams[np.newaxis, ...]
@@ -221,11 +220,11 @@ class PoissonModel(DifferentiableModel):
         if len(outcomes.shape) == 1:
             outcomes = outcomes[..., np.newaxis]
 
-        lamb_da = self.model_function(modelparams,expparams)[np.newaxis,np.newaxis,...]
+        lamb_da = self.model_function(modelparams,expparams)[np.newaxis,np.newaxis,:,:]
         fns_deriv = self.model_function_derivative(modelparams,expparams)[:,np.newaxis,:,:]
-        outcomes = outcomes[np.newaxis,:,:,np.newaxis]
+        outcomes_rs = outcomes[np.newaxis,:,np.newaxis,:]
 
-        scr = (outcomes/lamb_da-1)*fns_deriv
+        scr = (outcomes_rs/lamb_da-1)*fns_deriv
         
         if return_L:
             return scr, self.likelihood(outcomes, modelparams, expparams)
@@ -268,7 +267,7 @@ class BasicPoissonModel(PoissonModel):
         """
         Return model functions derivatives in form [idx_modelparam,idx_expparams,idx_modelparams]
         """
-        return np.ones((1,expparams.shape[0],modelparams.shape[0]))
+        return np.ones((1,modelparams.shape[0],expparams.shape[0]))
 
 
     
@@ -481,15 +480,13 @@ class GaussianModel(DifferentiableModel):
 
 
         x = self.model_function(modelparams,expparams)[np.newaxis,...]
-        outcomes = outcomes[np.newaxis,:,:]
+        outcomes = outcomes[:,np.newaxis,:]
         return 1/(np.sqrt(2*np.pi)*sigma)*np.exp(-(outcomes-x)**2/(2*sigma**2))
 
 
     def score(self, outcomes, modelparams, expparams, return_L=False):
-        if len(modelparams.shape) == 1:
-            modelparams = modelparams[np.newaxis, :]
         
-        return super(GaussianModel, self).score(outcomes, modelparams, expparams, return_L) 
+        super(GaussianModel, self).score(outcomes, modelparams, expparams, return_L) 
 
         if len(modelparams.shape) == 1:
             modelparams = modelparams[np.newaxis, ...]
@@ -501,24 +498,26 @@ class GaussianModel(DifferentiableModel):
         if self._sigma is None:
             sigma_index = self.modelparam_names.index(r'\sigma')
             sigma = modelparams[:,sigma_index][np.newaxis,:,np.newaxis]
-            modelparams = np.delete(modelparams,sigma_index,1)
+            modelparams_rs = np.delete(modelparams,sigma_index,1)
         else: 
             sigma = np.empty((1,modelparams.shape[0],1))
             sigma[...] = self._sigma
+            modelparams_rs = modelparams
 
 
-        x = self.model_function(modelparams,expparams)[np.newaxis,np.newaxis,...]
-        fns_deriv = self.model_function_derivative(modelparams,expparams)[:,np.newaxis,:,:]
+        x = self.model_function(modelparams_rs,expparams)[np.newaxis,np.newaxis,:,:]
+        fns_deriv = self.model_function_derivative(modelparams_rs,expparams)[:,np.newaxis,:,:]
         
-        outcomes = outcomes[np.newaxis,:,:,np.newaxis]
-        scr = ((outcomes-x)/self.sigma**2)*fns_deriv
+        outcomes_rs = outcomes[np.newaxis,:,np.newaxis,:]
+   
+        scr = ((outcomes_rs-x)/sigma**2)*fns_deriv
 
-
+  
         # make room in array for sigma and mu derivatives
-        scr.pad(fns_deriv,((0,self.n_modelparams-modelparams.shape[0]),(0,0),(0,0)),model='constant',constant_values=0)
+        scr = np.pad(scr,((0,self.n_modelparams-scr.shape[0]),(0,0),(0,0),(0,0)),mode='constant',constant_values=0)
         
         if self._sigma is None:
-            scr[sigma_index] = (outcomes-x)**2/np.pow(sigma,3) - 1/sigma
+            scr[sigma_index] = (outcomes_rs-x)**2/np.power(sigma,3) - 1/sigma
 
 
         
@@ -577,7 +576,7 @@ class BasicGaussianModel(GaussianModel):
         """
         Return model functions derivatives in form [idx_modelparam,idx_expparams,idx_modelparams]
         """
-        return np.ones((1,expparams.shape[0],modelparams.shape[0]))
+        return np.ones((1,modelparams.shape[0],expparams.shape[0]))
 
 
     
