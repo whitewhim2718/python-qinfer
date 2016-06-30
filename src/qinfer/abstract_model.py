@@ -59,13 +59,16 @@ class Model(with_metaclass(abc.ABCMeta, object)):
     See :ref:`models_guide` for more details.
 
     :param bool always_resample_outcomes: Resample outcomes stochastically with 
-            each outcome call.
-
+        each outcome call.
     :param :class:`~numpy.ndarray` initial_outcomes: Initial set of outcomes 
-            that may be supplied. Otherwise initial outcomes default to 
-            zeros. 
+        that may be supplied. Otherwise initial outcomes default to 
+        zeros. 
+    :param bool allow_identical_outcomes: Whether the method ``outcomes`` should 
+        be allowed to return multiple identical outcomes for a given ``expparam``.
+        It will be more efficient to set this to ``True`` whenever it is likely 
+        that multiple identical outcomes will occur.
     """
-    def __init__(self,always_resample_outcomes=False,initial_outcomes = None):
+    def __init__(self, always_resample_outcomes=False, initial_outcomes = None, allow_identical_outcomes=False):
         """
         Initialize Model model
         :param bool always_resample_outcomes: Resample outcomes stochastically with 
@@ -76,6 +79,7 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         """
         self._sim_count = 0
         self._call_count = 0
+        self._allow_identical_outcomes = allow_identical_outcomes
         if initial_outcomes is not None:
             #verify that the supplied outcomes are of the correct length
             assert initial_outcomes.dtype== self.outcomes_dtype
@@ -227,6 +231,32 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         self._needs_outcome_resample = needs_outcome_resample
 
     @property
+    def allow_identical_outcomes(self):
+        """
+        Whether the method ``outcomes`` should be allowed to return multiple 
+        identical outcomes for a given ``expparam``.
+        It will be more efficient to set this to ``True`` whenever it is likely 
+        that multiple identical outcomes will occur.
+
+        :return: Flag state.
+        :rtype: bool
+        """
+        return self._allow_identical_outcomes
+
+    @allow_identical_outcomes.setter
+    def allow_identical_outcomes(self, value):
+        """
+        Whether the method ``outcomes`` should be allowed to return multiple 
+        identical outcomes for a given ``expparam``.
+        It will be more efficient to set this to ``True`` whenever it is likely 
+        that multiple identical outcomes will occur.
+
+        :param bool allow_identical_outcomes: Value of flag.
+        """
+        self._allow_identical_outcomes = value
+    
+
+    @property
     def call_count(self):
         # TODO: document
         return self._call_count
@@ -255,7 +285,7 @@ class Model(with_metaclass(abc.ABCMeta, object)):
     ## ABSTRACT METHODS ##
     
     @abc.abstractmethod
-    def n_outcomes(self, expparams=None):
+    def n_outcomes(self, expparams):
         """
         Returns an array of dtype ``uint`` describing the number of outcomes
         for each experiment specified by ``expparams``.
@@ -416,55 +446,96 @@ class Model(with_metaclass(abc.ABCMeta, object)):
 
     def _resample_outcomes(self, weights, modelparams, expparams):
         """
-        Randomly sample modelparams according to the given weights, and then use these 
-        sampled points to sample outcomes from the likelihood function. Ie. sample 
-        :math:`n` points from 
-        .. :math::
-            \vec{x_i} ~ \pi(\vec{x})
-             y_i ~ L(\vec{x_i};\vec{C}) 
-
-        where :math:`\vec{x_i}` is a sampled point from the given particle distribution, 
-        and :math:`y_i` is the sampled outcome from this point. In the limit of 
-        infinite samples the binned outcomes should be proportional to 
-        the outcome likelihood distribution under the prior probability function. 
-
+        For each given expparam, randomly samples outcomes marginalized 
+        over the distribution defined by the weights and modelparams.
+        Only returns new outcomes if ``needs_outcome_resample``,``resample``, or ``self.always_resample_outcomes`` 
+        is ``True``, otherwise returns the cached values.
 
         :param np.ndarray weights: Set of weights with a weight
             corresponding to every modelparam. 
-        :param np.ndarray modelparams: Set of model parameter vectors (particles) 
-            to samples outcomes from.
+        :param np.ndarray modelparams: Set of model parameters (particles).
         :param np.ndarray expparams: An experiment parameter array describing
             the experiments that outcomes should be sampled for.
+
+        Note: that the idea of outcome weights exists for two reasons: 1) to be
+        compatible with ``FiniteOutcomeModel``, where it is possible to enumerate 
+        all possible outcomes, in which case the weights are related 
+        to the likelihood conditional on a particle, and 2) for efficiency in the 
+        case where some of the same outcomes will be output many times, so that 
+        the return value can contain each of these outcomes only once, but with 
+        a higher weight.
+
+        Note: The outcomes and outcome weights can be used to compute generic 
+        quantities which are averaged over data being marginalized over 
+        a distribution of model parameters. See ``~qinfer.SMCUpdater.bayes_risk()` 
+        as an example.
         """
 
-        sampled_points = modelparams[np.random.choice(np.shape(modelparams)[0],size=self.n_outcomes,p=weights)]
-        outcomes = self.simulate_experiment(sample_points,expparams)
+        self._outcomes = []
+        self._outcome_weights = []
 
-        assert outcomes.dtype == self.outcomes_dtype
-        self._outcomes =  outcomes.reshape(sampled_points.shape[0],expparams.shape[0])
+        # We have to loop over expparams only because each one, unfortunately, might have 
+        # a different number of outcomes.
+        for expparam in expparams:
+
+            n_outcomes = self.n_outcomes[expparam]
+            # TODO: unless n_outcomes << modelparams.shape, we are probably duplicating effort.
+            sampled_points = modelparams[np.random.choice(modelparams.shape[0], size=n_outcomes, p=weights)]
+            os = self.simulate_experiment(sample_points, expparam, repeat=1)[0,:,0]
+            assert outcomes.dtype == self.outcomes_dtype
+
+            # The same outcome is likely to have resulted multiple times in the case that outcomes 
+            # are discrete values and the modelparam distribution is not too wide. If each outcome
+            # were unique, they would all be assigned equal weight. However, we must count 
+            # how many of each outcome we ended up with to correctly weight them. This step 
+            # can likely be skipped for models with continuous output.
+            if self.allow_identical_outcomes:
+                self._outcome_weights += np.ones((n_outcomes,), dtype='float64') / n_outcomes
+            else:
+                os, ow = np.unique(os, return_counts=True)
+                self._outcome_weights = ow.astype('float64') / n_outcomes
+
+            self._outcomes += [os]
+
 
     def outcomes(self, weights, modelparams, expparams, resample=False):
         """
-        Randomly sample modelparams according to the given weights, and then use these 
-        sampled points to sample outcomes from the likelihood function.
-        Only resamples if ``needs_outcome_resample``,``resample``, or ``self.always_resample_outcomes`` 
-        is ``True``, otherwise returns the cached value.
+        For each given expparam, randomly samples outcomes marginalized 
+        over the distribution defined by the weights and modelparams.
+        Only returns new outcomes if ``needs_outcome_resample``,``resample``, or ``self.always_resample_outcomes`` 
+        is ``True``, otherwise returns the cached values.
 
         :param np.ndarray weights: Set of weights with a weight
             corresponding to every modelparam. 
-        :param np.ndarray modelparams: Set of model parameter vectors (particles) to samples outcomes from.
+        :param np.ndarray modelparams: Set of model parameters (particles).
         :param np.ndarray expparams: An experiment parameter array describing
             the experiments that outcomes should be sampled for.
-        :param bool resample: Force resampling of outcomes 
-        :return np.ndarray: Array of shape ``(n_outcomes,n_expparams)`` listing the 
-        sampled outcomes, of type ``outcomes_dtype``.
+        :param bool resample: Force resampling of outcomes and weights.
+
+        :return (list, np.ndarray): A pair of outcomes ``(outcome_weights, outcomes)`` where 
+        ``outcomes`` is list of ``np.ndarrays`` of type ``outcomes_dtype`` corresponding to 
+        outcomes of ``expparam``, and where ``outcome_weights`` is a list of ``np.ndarrays`` 
+        specifying corresponding weights of each outcome.
+
+
+        Note: that the idea of outcome weights exists for two reasons: 1) to be
+        compatible with ``FiniteOutcomeModel``, where it is possible to enumerate 
+        all possible outcomes, in which case the weights are related 
+        to the likelihood conditional on a particle, and 2) for efficiency in the 
+        case where some of the same outcomes will be output many times, so that 
+        the return value can contain each of these outcomes only once, but with 
+        a higher weight.
+
+        Note: The outcomes and outcome weights can be used to compute generic 
+        quantities which are averaged over data being marginalized over 
+        a distribution of model parameters. See ``~qinfer.SMCUpdater.bayes_risk()` 
+        as an example.
         """
         if self.needs_outcome_resample or resample or self.always_resample_outcomes:
-            self._resample_outcomes(weights,modelparams,expparams)
+            self._resample_outcomes(weights, modelparams, expparams)
 
-        return self._outcomes
+        return self._outcomes_weights, self._outcomes
 
-        
         
 class LinearCostModelMixin(Model):
     # FIXME: move this mixin to a new module.
