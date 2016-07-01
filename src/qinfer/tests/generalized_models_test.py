@@ -35,10 +35,88 @@ from numpy.testing import assert_equal, assert_almost_equal, assert_array_less
 from qinfer.tests.base_test import DerandomizedTestCase
 from qinfer.abstract_model import (
     FiniteOutcomeModel)
-from qinfer import BasicGaussianModel,BasicPoissonModel,MultinomialModel,UniformDistribution
+from qinfer import (GaussianModel,BasicGaussianModel,PoissonModel,BasicPoissonModel,
+                    UniformDistribution)
 
 from qinfer.smc import SMCUpdater,SMCUpdaterBCRB
 
+class ExponentialGaussianModel(GaussianModel):
+    """
+    The basic Gaussian model consisting of a single model parameter :math:`\mu`,
+    and no experimental parameters.
+    """
+
+    @property 
+    def n_model_function_params(self):
+        return 1
+
+    def model_function(self,modelparams,expparams):
+        """
+        Return model functions in form [idx_expparams,idx_modelparams]. The model function 
+        therefore returns the plain model parameters, but tiles them over the number of experiments 
+        to satisfy the requirements of the abstract method. The shape of `expparams` therefore signifies 
+        the number of experiments that will be performed.
+        """
+        return 1-np.exp(expparams/modelparams)
+    
+    def model_function_derivative(self,modelparams,expparams):
+        """
+        Return model functions derivatives in form [idx_modelparam,idx_expparams,idx_modelparams]
+        """
+        return (expparams/modelparams**2)*np.exp(expparams/modelparams)
+
+
+    
+    def are_models_valid(self, modelparams):
+        return np.ones(modelparams.shape[0]>0,dtype=bool)
+
+    ## ABSTRACT PROPERTIES ##
+    
+    @property
+    def model_function_param_names(self):
+        return [r'T1']
+    
+    def expparams_dtype(self):
+        return [('tau','float')]
+
+class ExponentialPoissonModel(PoissonModel):
+    """
+    The basic Gaussian model consisting of a single model parameter :math:`\mu`,
+    and no experimental parameters.
+    """
+
+    @property 
+    def n_model_function_params(self):
+        return 1
+
+    def model_function(self,modelparams,expparams):
+        """
+        Return model functions in form [idx_expparams,idx_modelparams]. The model function 
+        therefore returns the plain model parameters, but tiles them over the number of experiments 
+        to satisfy the requirements of the abstract method. The shape of `expparams` therefore signifies 
+        the number of experiments that will be performed.
+        """
+        return 1-np.exp(expparams/modelparams)
+    
+    def model_function_derivative(self,modelparams,expparams):
+        """
+        Return model functions derivatives in form [idx_modelparam,idx_expparams,idx_modelparams]
+        """
+        return (expparams/modelparams**2)*np.exp(expparams/modelparams)
+
+
+    
+    def are_models_valid(self, modelparams):
+        return np.ones(modelparams.shape[0]>0,dtype=bool)
+
+    ## ABSTRACT PROPERTIES ##
+    
+    @property
+    def model_function_param_names(self):
+        return [r'T1']
+    
+    def expparams_dtype(self):
+        return [('tau','float')]
 
 
 class TestGaussianModel(DerandomizedTestCase):
@@ -49,20 +127,27 @@ class TestGaussianModel(DerandomizedTestCase):
     PRIOR_SIGMA_PARAM = UniformDistribution([[0,100],[0,10]])
     N_PARTICLES = 10000
     N_BIM = 1000
+    N_ONLINE = 50
+    N_GUESSES = 30
     TEST_TARGET_COV_NO_SIGMA_PARAM = np.array([[0.1]])
     TEST_TARGET_COV_SIGMA_PARAM = np.array([[0.1,0.1],[0.1,0.1]])
+
 
     def setUp(self):
 
         super(TestGaussianModel,self).setUp()
         sigma = TestGaussianModel.MODELPARAMS[1]
+        
         self.gaussian_model_no_sigma_param = BasicGaussianModel(sigma=sigma)
         self.gaussian_model_sigma_param = BasicGaussianModel()
+        self.exponential_gaussian_model = ExponentialGaussianModel(sigma=sigma)
+
         self.expparams = TestGaussianModel.TEST_EXPPARAMS.reshape(-1,1)
         self.outcomes_no_sigma_param = self.gaussian_model_no_sigma_param.simulate_experiment(TestGaussianModel.MODELPARAMS[:1],
                 TestGaussianModel.TEST_EXPPARAMS,repeat=1 ).reshape(-1,1)
         self.outcomes_sigma_param = self.gaussian_model_sigma_param.simulate_experiment(TestGaussianModel.MODELPARAMS,
                 TestGaussianModel.TEST_EXPPARAMS,repeat=1 ).reshape(-1,1)
+
 
         self.updater_no_sigma_param = SMCUpdater(self.gaussian_model_no_sigma_param,
                 TestGaussianModel.N_PARTICLES,TestGaussianModel.PRIOR_NO_SIGMA_PARAM)
@@ -75,6 +160,13 @@ class TestGaussianModel(DerandomizedTestCase):
 
         self.updater_bayes_sigma_param = SMCUpdaterBCRB(self.gaussian_model_sigma_param,
                 TestGaussianModel.N_PARTICLES,TestGaussianModel.PRIOR_SIGMA_PARAM,adaptive=True)
+
+        self.exponential_updater_one_guess = SMCUpdater(self.gaussian_model_no_sigma_param,
+                TestGaussianModel.N_PARTICLES,TestGaussianModel.PRIOR_NO_SIGMA_PARAM)
+
+        self.exponential_updater_many_guess = SMCUpdater(self.gaussian_model_no_sigma_param,
+                TestGaussianModel.N_PARTICLES,TestGaussianModel.PRIOR_NO_SIGMA_PARAM)
+
 
     def test_gaussian_model_fitting(self):
 
@@ -125,6 +217,37 @@ class TestGaussianModel(DerandomizedTestCase):
         assert_almost_equal(self.updater_bayes_sigma_param.est_covariance_mtx(),
             np.linalg.inv(self.updater_bayes_sigma_param.adaptive_bim),1)
 
+
+    def test_bayes_risk(self):
+        opt_exps_risk = []
+        opt_exps_ig = []
+        for i in range(TestGaussianModel.N_ONLINE):
+            guesses = np.random.uniform(low=0.,high=TestGaussianModel.max_expparam,
+                size=TestGaussianModel.N_GUESSES).reshape(-1,1).astype(
+                        self.exponential_gaussian_model.expparams_dtype)
+            
+
+            
+            
+            risks = self.exponential_updater_many_guess.bayes_risk(guesses)
+            igs = self.exponential_updater_many_guess.expected_information_gain(guesses)
+            one_guess_exp = guesses[0]
+            many_guesses_exp = guesses[np.argmin(risks)]
+            many_guesses_exp_ig = guesses[np.argmin(igs)]
+            outcome_one_guess = self.gaussian_model_no_sigma_param.simulate_experiment(TestGaussianModel.MODELPARAMS[:1],
+                one_guess_exp,repeat=1 )[0]
+            outcome_many_guess = self.gaussian_model_no_sigma_param.simulate_experiment(TestGaussianModel.MODELPARAMS[:1],
+                many_guess_exp,repeat=1 )[0]
+
+            self.exponential_updater_one_guess.update(outcome_one_guess,one_guess_exp)
+            self.exponential_updater_many_guess.update(outcome_many_guess,many_guess_exp)
+
+
+        assert_almost_equal(self.exponential_updater_many_guess.est_mean(),TestGaussianModel.MODELPARAMS[:1],0)
+        assert_array_less(self.exponential_updater_many_guess.est_covariance_mtx(),
+                            self.exponential_updater_one_guess.est_covariance_mtx())
+
+
 class TestPoissonModel(DerandomizedTestCase):
     # True model parameter for test
     MODELPARAMS = np.array([79.,])
@@ -132,13 +255,15 @@ class TestPoissonModel(DerandomizedTestCase):
     PRIOR = UniformDistribution([[0.,100.]])
     N_PARTICLES = 10000
     N_ONLINE = 50
-    TEST_TARGET_COV = np.array([[0.1]])
     N_BIM = 1000
+    TEST_TARGET_COV = np.array([[0.1]])
 
     def setUp(self):
 
         super(TestPoissonModel,self).setUp()
         self.poisson_model = BasicPoissonModel()
+        self.exponential_poisson_model = ExponentialPoissonModel()
+
         self.expparams = TestPoissonModel.TEST_EXPPARAMS.reshape(-1,1)
         self.outcomes = self.poisson_model.simulate_experiment(TestPoissonModel.MODELPARAMS,
                 TestPoissonModel.TEST_EXPPARAMS,repeat=1 ).reshape(-1,1)
@@ -146,13 +271,12 @@ class TestPoissonModel(DerandomizedTestCase):
         self.updater = SMCUpdater(self.poisson_model,
                 TestPoissonModel.N_PARTICLES,TestPoissonModel.PRIOR)
 
-        self.updater_online = SMCUpdater(self.poisson_model,
-                TestPoissonModel.N_PARTICLES,TestPoissonModel.PRIOR)
-        
         self.updater_bayes = SMCUpdaterBCRB(self.poisson_model,
                 TestPoissonModel.N_PARTICLES,TestPoissonModel.PRIOR,adaptive=True)
 
-
+        self.updater_exponential = SMCUpdater(self.exponential_poisson_model,
+                TestPoissonModel.N_PARTICLES,TestPoissonModel.PRIOR)
+        
     def test_poisson_model_fitting(self):
 
         self.updater.batch_update(self.outcomes,self.expparams,5)
@@ -183,7 +307,6 @@ class TestPoissonModel(DerandomizedTestCase):
         #verify that BCRB is approximately reached 
         assert_almost_equal(self.updater_bayes.est_covariance_mtx(),np.linalg.inv(self.updater_bayes.current_bim),1)
         assert_almost_equal(self.updater_bayes.est_covariance_mtx(),np.linalg.inv(self.updater_bayes.adaptive_bim),1)
-
 
 
 
