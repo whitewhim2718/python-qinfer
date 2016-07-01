@@ -231,15 +231,17 @@ class TestGaussianModel(DerandomizedTestCase):
                 size=TestGaussianModel.N_GUESSES).reshape(-1,1).astype(
                         self.exponential_gaussian_model.expparams_dtype)
             
+            risks = []
+            igs = []
+            for i,g in enumerate(guesses):
+                risks.append(self.exponential_updater_many_guess.bayes_risk(guesses[i]))
+                igs.append(self.exponential_updater_many_guess.expected_information_gain(guesses[i]))
 
-            
-            import pdb
-            pdb.set_trace()
-            risks = self.exponential_updater_many_guess.bayes_risk(guesses)
-            igs = self.exponential_updater_many_guess.expected_information_gain(guesses)
+            risks = np.array(risks)
+            igs = np.array(igs)
             one_guess_exp = guesses[0]
-            many_guesses_exp = guesses[np.argmin(risks)]
-            many_guesses_exp_ig = guesses[np.argmin(igs)]
+            many_guess_exp = guesses[np.argmin(risks)]
+            many_guess_exp_ig = guesses[np.argmin(igs)]
 
             outcome_one_guess = self.exponential_gaussian_model.simulate_experiment(TestGaussianModel.MODELPARAMS[:1],
                 one_guess_exp,repeat=1 )[0]
