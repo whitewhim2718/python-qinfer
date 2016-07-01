@@ -240,7 +240,8 @@ class PoissonModel(DifferentiableModel):
             modelparams = modelparams[np.newaxis, :]    
         
         lamb_das = self.model_function(modelparams,expparams)
-        outcomes = np.random.poisson(lamb_das)
+        outcomes = np.asarray(np.random.poisson(np.tile(lamb_das[np.newaxis,...],(repeat,1,1)))
+                    ).reshape(repeat,modelparams.shape[0],expparams.shape[0])
 
         return outcomes 
 
@@ -275,10 +276,11 @@ class BasicPoissonModel(PoissonModel):
         return np.all(modelparams >= 0, axis=1)
 
     ## ABSTRACT PROPERTIES ##
-    
+    @property
     def model_function_param_names(self):
         return [r'\lambda']
     
+    @property
     def expparams_dtype(self):
         []
 
@@ -535,8 +537,10 @@ class GaussianModel(DifferentiableModel):
         super(GaussianModel, self).simulate_experiment(modelparams, expparams, repeat)
 
         if len(modelparams.shape) == 1:
-            modelparams = modelparams[np.newaxis, :]    
+            modelparams = modelparams = modelparams[np.newaxis, ...]  
         
+        if len(expparams.shape) == 1:
+            expparams = expparams[..., np.newaxis]
         
         if self._sigma is None:
             sigma_index = self.modelparam_names.index(r'\sigma')
@@ -546,9 +550,10 @@ class GaussianModel(DifferentiableModel):
             sigma = np.empty(modelparams.shape[0])
             sigma[...] = self._sigma
 
+       
         x = self.model_function(modelparams,expparams)
-        outcomes = np.random.normal(x.transpose(),sigma).transpose()
-
+        outcomes = np.asarray(np.random.normal(x,np.tile(sigma[np.newaxis,:,np.newaxis],(repeat,1,1)))).reshape(
+            repeat,modelparams.shape[0],expparams.shape[0])
         return outcomes 
 
 
@@ -589,6 +594,7 @@ class BasicGaussianModel(GaussianModel):
     def model_function_param_names(self):
         return [r'\mu']
     
+    @property
     def expparams_dtype(self):
         []
 
