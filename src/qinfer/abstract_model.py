@@ -68,7 +68,7 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         It will be more efficient to set this to ``True`` whenever it is likely 
         that multiple identical outcomes will occur.
     """
-    def __init__(self, always_resample_outcomes=False, initial_outcomes = None, allow_identical_outcomes=False):
+    def __init__(self, always_resample_outcomes=False, initial_outcomes = None,initial_weights=None, allow_identical_outcomes=False):
         """
         Initialize Model model
         :param bool always_resample_outcomes: Resample outcomes stochastically with 
@@ -88,7 +88,16 @@ class Model(with_metaclass(abc.ABCMeta, object)):
             #otherwise initialize all outcomes to zero at start
             self._outcomes = np.empty(None,self.outcomes_dtype)
 
-        self.needs_resample = False
+        if initial_weights is not None:
+            #verify that the supplied outcomes are of the correct length
+            assert initial_outcomes.shape == self._outcomes.shape
+            self._outcome_weights = initial_weights
+        else:
+            #otherwise initialize all outcomes to zero at start
+            self._outcome_weights = np.ones(None,self.outcomes_dtype)
+
+        self._always_resample_outcomes = always_resample_outcomes
+        self.needs_outcome_resample = True
         # Initialize a default scale matrix.
         self._Q = np.ones((self.n_modelparams,))
         
@@ -119,7 +128,17 @@ class Model(with_metaclass(abc.ABCMeta, object)):
 
             
     ## CONCRETE PROPERTIES ##
+    @property
+    def always_resample_outcomes(self):
+        """
+        Return ``True`` if the ``always_resample_outcomes`` flag was set during
+        model initialization. Determines if the outcomes should be resampled with 
+        every call of :func:`~abstract_model.Model.outcomes`
+        :rtype: bool
 
+        """
+        return self._always_resample_outcomes
+    
     @property
     def outcomes_dtype(self):
         """
@@ -471,32 +490,36 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         as an example.
         """
 
-        self._outcomes = []
-        self._outcome_weights = []
+        outcomes = []
+        outcome_weights = []
 
         # We have to loop over expparams only because each one, unfortunately, might have 
         # a different number of outcomes.
-        for expparam in expparams:
-
-            n_outcomes = self.n_outcomes[expparam]
+        for i in range(expparams.shape[0]):
+            # So that expparam is a numpy array when extracted
+            expparam = expparams[i:i+1]
+            n_outcomes = self.n_outcomes(expparam)
             # TODO: unless n_outcomes << modelparams.shape, we are probably duplicating effort.
             sampled_points = modelparams[np.random.choice(modelparams.shape[0], size=n_outcomes, p=weights)]
-            os = self.simulate_experiment(sample_points, expparam, repeat=1)[0,:,0]
-            assert outcomes.dtype == self.outcomes_dtype
+            os = self.simulate_experiment(sampled_points, expparam, repeat=1)[0,:,0]
+            assert os.dtype == self.outcomes_dtype
 
             # The same outcome is likely to have resulted multiple times in the case that outcomes 
             # are discrete values and the modelparam distribution is not too wide. If each outcome
             # were unique, they would all be assigned equal weight. However, we must count 
-            # how many of each outcome we ended up with to correctly weight them. This step 
+            # how many of each outcome we ended up with to correctly weight them. This s tep 
             # can likely be skipped for models with continuous output.
+    
             if self.allow_identical_outcomes:
-                self._outcome_weights += np.ones((n_outcomes,), dtype='float64') / n_outcomes
+                outcome_weights.append(np.ones((n_outcomes,modelparams.shape[0]), dtype='float64') / n_outcomes)
             else:
                 os, ow = np.unique(os, return_counts=True)
-                self._outcome_weights = ow.astype('float64') / n_outcomes
+                outcome_weights.append(np.tile(ow.astype('float64') / ow.shape[0],(modelparams.shape[0],1)).transpose())
 
-            self._outcomes += [os]
+            outcomes.append(os)
 
+        self._outcomes = outcomes 
+        self._outcome_weights = outcome_weights
 
     def outcomes(self, weights, modelparams, expparams, resample=False):
         """
@@ -534,7 +557,7 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         if self.needs_outcome_resample or resample or self.always_resample_outcomes:
             self._resample_outcomes(weights, modelparams, expparams)
 
-        return self._outcomes_weights, self._outcomes
+        return self._outcome_weights, self._outcomes
 
         
 class LinearCostModelMixin(Model):

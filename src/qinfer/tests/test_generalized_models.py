@@ -57,6 +57,7 @@ class ExponentialGaussianModel(GaussianModel):
         to satisfy the requirements of the abstract method. The shape of `expparams` therefore signifies 
         the number of experiments that will be performed.
         """
+   
         return 1-np.exp(-expparams['tau']/modelparams)
     
     def model_function_derivative(self,modelparams,expparams):
@@ -67,7 +68,7 @@ class ExponentialGaussianModel(GaussianModel):
         return -(expparams['tau']/modelparams**2)*np.exp(-expparams['tau']/modelparams)
 
     def are_models_valid(self, modelparams):
-        return np.ones(modelparams.shape[0]>0,dtype=bool)
+        return np.logical_not(np.any(modelparams<0,axis=1))
 
     ## ABSTRACT PROPERTIES ##
     
@@ -78,6 +79,7 @@ class ExponentialGaussianModel(GaussianModel):
     @property
     def expparams_dtype(self):
         return [('tau','float')]
+
 
 class ExponentialPoissonModel(PoissonModel):
     """
@@ -96,6 +98,7 @@ class ExponentialPoissonModel(PoissonModel):
         to satisfy the requirements of the abstract method. The shape of `expparams` therefore signifies 
         the number of experiments that will be performed.
         """
+
         return 1-np.exp(-expparams['tau']/modelparams)
     
     def model_function_derivative(self,modelparams,expparams):
@@ -120,18 +123,21 @@ class ExponentialPoissonModel(PoissonModel):
     def expparams_dtype(self):
         return [('tau','float')]
 
+    
+
 
 class TestGaussianModel(DerandomizedTestCase):
     # True model parameter for test
     MODELPARAMS = np.array([79,3],dtype=np.float)
     ONLINE_SIGMA = 0.2
-    TEST_EXPPARAMS = np.linspace(1.,10.,10000,dtype=np.float)
+    TEST_EXPPARAMS = np.linspace(1.,500.,10000,dtype=np.float)
     PRIOR_NO_SIGMA_PARAM = UniformDistribution([[0,100]])
     PRIOR_SIGMA_PARAM = UniformDistribution([[0,100],[0,10]])
     N_PARTICLES = 10000
     N_BIM = 1000
     N_ONLINE = 50
-    N_GUESSES = 30
+    TEST_EXPPARAMS_RISK = np.linspace(1.,500.,N_ONLINE,dtype=np.float)
+    N_GUESSES = 100
     MAX_EXPPARAM = 500.,
     TEST_TARGET_COV_NO_SIGMA_PARAM = np.array([[0.1]])
     TEST_TARGET_COV_SIGMA_PARAM = np.array([[0.1,0.1],[0.1,0.1]])
@@ -147,10 +153,15 @@ class TestGaussianModel(DerandomizedTestCase):
         self.exponential_gaussian_model = ExponentialGaussianModel(sigma=TestGaussianModel.ONLINE_SIGMA)
 
         self.expparams = TestGaussianModel.TEST_EXPPARAMS.reshape(-1,1)
+        self.expparams_risk = TestGaussianModel.TEST_EXPPARAMS_RISK.reshape(-1,1)
         self.outcomes_no_sigma_param = self.gaussian_model_no_sigma_param.simulate_experiment(TestGaussianModel.MODELPARAMS[:1],
                 TestGaussianModel.TEST_EXPPARAMS,repeat=1 ).reshape(-1,1)
         self.outcomes_sigma_param = self.gaussian_model_sigma_param.simulate_experiment(TestGaussianModel.MODELPARAMS,
                 TestGaussianModel.TEST_EXPPARAMS,repeat=1 ).reshape(-1,1)
+
+        self.outcomes_exponential = self.exponential_gaussian_model.simulate_experiment(TestGaussianModel.MODELPARAMS[:1],
+                TestGaussianModel.TEST_EXPPARAMS_RISK.astype(self.exponential_gaussian_model.expparams_dtype),
+                repeat=1 ).reshape(-1,1)
 
 
         self.updater_no_sigma_param = SMCUpdater(self.gaussian_model_no_sigma_param,
@@ -165,10 +176,13 @@ class TestGaussianModel(DerandomizedTestCase):
         self.updater_bayes_sigma_param = SMCUpdaterBCRB(self.gaussian_model_sigma_param,
                 TestGaussianModel.N_PARTICLES,TestGaussianModel.PRIOR_SIGMA_PARAM,adaptive=True)
 
-        self.exponential_updater_one_guess = SMCUpdater(self.gaussian_model_no_sigma_param,
+        self.exponential_updater_one_guess = SMCUpdater(self.exponential_gaussian_model,
                 TestGaussianModel.N_PARTICLES,TestGaussianModel.PRIOR_NO_SIGMA_PARAM)
 
-        self.exponential_updater_many_guess = SMCUpdater(self.gaussian_model_no_sigma_param,
+        self.exponential_updater_many_guess = SMCUpdater(self.exponential_gaussian_model,
+                TestGaussianModel.N_PARTICLES,TestGaussianModel.PRIOR_NO_SIGMA_PARAM)
+
+        self.exponential_updater_sweep = SMCUpdater(self.exponential_gaussian_model,
                 TestGaussianModel.N_PARTICLES,TestGaussianModel.PRIOR_NO_SIGMA_PARAM)
 
 
@@ -223,8 +237,15 @@ class TestGaussianModel(DerandomizedTestCase):
 
 
     def test_bayes_risk(self):
-        opt_exps_risk = []
-        opt_exps_ig = []
+        opt_exps_one_guess = []
+        opt_exps_risk_many_guess = []
+        opt_exps_ig_many_guess = []
+
+        # classic sweep to check against
+   
+        self.exponential_updater_sweep.batch_update(self.outcomes_exponential,self.expparams_risk.astype(
+            self.exponential_gaussian_model.expparams_dtype),5)
+
         for i in range(TestGaussianModel.N_ONLINE):
 
             guesses = np.random.uniform(low=0.,high=TestGaussianModel.MAX_EXPPARAM,
@@ -235,13 +256,17 @@ class TestGaussianModel(DerandomizedTestCase):
             igs = []
             for i,g in enumerate(guesses):
                 risks.append(self.exponential_updater_many_guess.bayes_risk(guesses[i]))
-                igs.append(self.exponential_updater_many_guess.expected_information_gain(guesses[i]))
+                #igs.append(self.exponential_updater_many_guess.expected_information_gain(guesses[i]))
 
             risks = np.array(risks)
-            igs = np.array(igs)
+            #igs = np.array(igs)
             one_guess_exp = guesses[0]
             many_guess_exp = guesses[np.argmin(risks)]
             many_guess_exp_ig = guesses[np.argmin(igs)]
+
+            opt_exps_one_guess.append(one_guess_exp)
+            opt_exps_risk_many_guess.append(many_guess_exp)
+            #opt_exps_ig_many_guess.append(many_guess_exp_ig)
 
             outcome_one_guess = self.exponential_gaussian_model.simulate_experiment(TestGaussianModel.MODELPARAMS[:1],
                 one_guess_exp,repeat=1 )[0]
@@ -250,8 +275,8 @@ class TestGaussianModel(DerandomizedTestCase):
 
             self.exponential_updater_one_guess.update(outcome_one_guess,one_guess_exp)
             self.exponential_updater_many_guess.update(outcome_many_guess,many_guess_exp)
-
-
+        import pdb
+        pdb.set_trace()
         assert_almost_equal(self.exponential_updater_many_guess.est_mean(),TestGaussianModel.MODELPARAMS[:1],0)
         assert_array_less(self.exponential_updater_many_guess.est_covariance_mtx(),
                             self.exponential_updater_one_guess.est_covariance_mtx())

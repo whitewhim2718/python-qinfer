@@ -651,10 +651,18 @@ class SMCUpdater(Distribution):
         # Q = np array(Nmodelparams), which contains the diagonal part of the
         #     rescaling matrix.  Non-diagonal could also be considered, but
         #     for the moment this is not implemented.
-        nout = self.model.n_outcomes(expparams) # This is a vector so this won't work
-        w, L = self.hypothetical_update(np.arange(nout), expparams, return_likelihood=True)
+
+        w_outcomes,outcomes = self.model.outcomes(self.particle_weights,self.particle_locations,
+                            expparams)
+
+
+        #method currently assumes single experiment
+        outcomes = outcomes[0]
+        w_outcomes = w_outcomes[0]
+        w = self.hypothetical_update(outcomes, expparams, return_likelihood=False)
+
         w = w[:, 0, :] # Fix w.shape == (n_outcomes, n_particles).
-        L = L[:, :, 0] # Fix L.shape == (n_outcomes, n_particles).
+        
 
         xs = self.particle_locations.transpose([1, 0]) # shape (n_mp, n_particles).
         
@@ -677,7 +685,7 @@ class SMCUpdater(Distribution):
 
         rescale_var = np.sum(self.model.Q * var, axis=1)
         # Q has shape (n_mp,), therefore rescale_var has shape (n_outcomes,).
-        tot_like = np.sum(L, axis=1)
+        tot_like = np.sum(w_outcomes, axis=1)
         return np.dot(tot_like.T, rescale_var)
         
     def expected_information_gain(self, expparams):
@@ -694,10 +702,17 @@ class SMCUpdater(Distribution):
             of the hypothetical experiment ``expparams``.
         """
 
-        nout = self.model.n_outcomes(expparams)
-        w, L = self.hypothetical_update(np.arange(nout), expparams, return_likelihood=True)
+        w_outcomes,outcomes = self.model.outcomes(self.particle_weights,self.particle_locations,
+                            expparams)
+
+
+        #method currently assumes single experiment
+        outcomes = outcomes[0]
+        w_outcomes = w_outcomes[0]
+        w = self.hypothetical_update(outcomes, expparams, return_likelihood=False)
+
         w = w[:, 0, :] # Fix w.shape == (n_outcomes, n_particles).
-        L = L[:, :, 0] # Fix L.shape == (n_outcomes, n_particles).
+
         
         # This is a special case of the KL divergence estimator (see below),
         # in which the other distribution is guaranteed to share support.
@@ -710,7 +725,7 @@ class SMCUpdater(Distribution):
             axis=1 # Sum over particles.
         )
         
-        tot_like = np.sum(L, axis=1)
+        tot_like = np.sum(w_outcomes, axis=1)
         return np.dot(tot_like, KLD)
         
     def est_entropy(self):
