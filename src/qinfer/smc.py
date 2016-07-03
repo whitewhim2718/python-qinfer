@@ -660,45 +660,25 @@ class SMCUpdater(Distribution):
         w_outcomes = w_outcomes[0]
         sampled_modelparams = sampled_modelparams[0]
 
-       
         w = self.hypothetical_update(outcomes, expparams, return_likelihood=False)
         w = w[:, 0, :] # Fix w.shape == (n_outcomes, n_particles).
         
-      
-
         xs = self.particle_locations.transpose([1, 0]) # shape (n_mp, n_particles).
         
         # In the following, we will use the subscript convention that
         # "o" refers to an outcome, "p" to a particle, and
         # "i" to a model parameter.
         # Thus, mu[o,i] is the sum over all particles of w[o,p] * x[i,p].
-        
-      
-
+    
         mu = np.transpose(np.tensordot(w,xs,axes=(1,1)))
-
-      
-        var = (
-            # This sum is a reduction over the particle index and thus
-            # represents an expectation value over the diagonal of the
-            # outer product $x . x^T$.
-            
-            np.transpose(np.tensordot(w,xs**2,axes=(1,1)))
-            # We finish by subracting from the above expectation value
-            # the diagonal of the outer product $mu . mu^T$.
-            - mu**2).T
-
 
         var = (sampled_modelparams-mu.transpose([1,0]))**2
 
         rescale_var = np.sum(self.model.Q * var, axis=1)
         # Q has shape (n_mp,), therefore rescale_var has shape (n_outcomes,).
 
-      
         tot_like = np.sum(w_outcomes, axis=1)
 
-
-   
         return np.dot(tot_like.T, rescale_var)
         
     def expected_information_gain(self, expparams):
@@ -715,15 +695,15 @@ class SMCUpdater(Distribution):
             of the hypothetical experiment ``expparams``.
         """
 
-        w_outcomes,outcomes = self.model.outcomes(self.particle_weights,self.particle_locations,
+        w_outcomes,_,outcomes = self.model.outcomes(self.particle_weights,self.particle_locations,
                             expparams)
 
 
         #method currently assumes single experiment
         outcomes = outcomes[0]
         w_outcomes = w_outcomes[0]
-        w = self.hypothetical_update(outcomes, expparams, return_likelihood=False)
 
+        w = self.hypothetical_update(outcomes, expparams, return_likelihood=False)
         w = w[:, 0, :] # Fix w.shape == (n_outcomes, n_particles).
 
         
@@ -732,7 +712,7 @@ class SMCUpdater(Distribution):
         #
         # KLD[idx_outcome] = Sum over particles(self * log(self / other[idx_outcome])
         # Est. KLD = E[KLD[idx_outcome] | outcomes].
-        
+  
         KLD = np.sum(
             self.particle_weights * np.log(self.particle_weights / w),
             axis=1 # Sum over particles.

@@ -263,17 +263,17 @@ class TestGaussianModel(DerandomizedTestCase):
             igs = []
             for i,g in enumerate(guesses):
                 risks.append(self.exponential_updater_many_guess.bayes_risk(guesses[i]))
-                #igs.append(self.exponential_updater_many_guess.expected_information_gain(guesses[i]))
+                igs.append(self.exponential_updater_many_guess.expected_information_gain(guesses[i]))
 
             risks = np.array(risks)
-            #igs = np.array(igs)
+            igs = np.array(igs)
             one_guess_exp = guesses[0]
             many_guess_exp = guesses[np.argmin(risks)]
-            #many_guess_exp_ig = guesses[np.argmin(igs)]
+            many_guess_exp_ig = guesses[np.argmin(igs)]
 
             opt_exps_one_guess.append(one_guess_exp)
             opt_exps_risk_many_guess.append(many_guess_exp)
-            #opt_exps_ig_many_guess.append(many_guess_exp_ig)
+            opt_exps_ig_many_guess.append(many_guess_exp_ig)
 
             outcome_one_guess = self.exponential_gaussian_model.simulate_experiment(TestGaussianModel.MODELPARAMS[:1],
                 one_guess_exp,repeat=1 )[0]
@@ -392,17 +392,17 @@ class TestPoissonModel(DerandomizedTestCase):
             igs = []
             for i,g in enumerate(guesses):
                 risks.append(self.exponential_updater_many_guess.bayes_risk(guesses[i]))
-                #igs.append(self.exponential_updater_many_guess.expected_information_gain(guesses[i]))
+                igs.append(self.exponential_updater_many_guess.expected_information_gain(guesses[i]))
            
             risks = np.array(risks)
-            #igs = np.array(igs)
+            igs = np.array(igs)
             one_guess_exp = guesses[0]
             many_guess_exp = guesses[np.argmin(risks)]
-            #many_guess_exp_ig = guesses[np.argmin(igs)]
+            many_guess_exp_ig = guesses[np.argmin(igs)]
 
             opt_exps_one_guess.append(one_guess_exp)
             opt_exps_risk_many_guess.append(many_guess_exp)
-            #opt_exps_ig_many_guess.append(many_guess_exp_ig)
+            opt_exps_ig_many_guess.append(many_guess_exp_ig)
 
             outcome_one_guess = self.exponential_poisson_model.simulate_experiment(TestPoissonModel.MODELPARAMS_RISK,
                 one_guess_exp,repeat=1 )[0]
