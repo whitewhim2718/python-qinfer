@@ -65,7 +65,7 @@ class PoissonModel(DifferentiableModel):
     
     ## INITIALIZER ##
 
-    def __init__(self, num_outcome_samples=500):
+    def __init__(self, num_outcome_samples=10000):
         super(PoissonModel, self).__init__()
         self.num_outcome_samples = num_outcome_samples
 
@@ -303,7 +303,7 @@ class GaussianModel(DifferentiableModel):
     
     ## INITIALIZER ##
 
-    def __init__(self, sigma=None, num_outcome_samples=500):
+    def __init__(self, sigma=None, num_outcome_samples=10000):
 
         self.num_outcome_samples = num_outcome_samples
         self._sigma = sigma

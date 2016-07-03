@@ -655,7 +655,7 @@ class SMCUpdater(Distribution):
         w_outcomes,outcomes = self.model.outcomes(self.particle_weights,self.particle_locations,
                             expparams)
 
-
+        
         #method currently assumes single experiment
         outcomes = outcomes[0]
         w_outcomes = w_outcomes[0]

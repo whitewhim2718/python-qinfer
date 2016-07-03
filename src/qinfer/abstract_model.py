@@ -513,8 +513,10 @@ class Model(with_metaclass(abc.ABCMeta, object)):
             if self.allow_identical_outcomes:
                 outcome_weights.append(np.ones((n_outcomes,modelparams.shape[0]), dtype='float64') / n_outcomes)
             else:
+                os_shape = os.shape[0]
                 os, ow = np.unique(os, return_counts=True)
-                outcome_weights.append(np.tile(ow.astype('float64') / ow.shape[0],(modelparams.shape[0],1)).transpose())
+                outcome_weights.append(np.tile(ow.astype('float64') / (os_shape*modelparams.shape[0]),
+                    (modelparams.shape[0],1)).transpose())
 
             outcomes.append(os)
 

@@ -87,6 +87,10 @@ class ExponentialPoissonModel(PoissonModel):
     and no experimental parameters.
     """
 
+    def __init__(self,max_rate=100, num_outcome_samples=10000):
+        super(ExponentialPoissonModel, self).__init__(num_outcome_samples=num_outcome_samples)
+        self.max_rate = max_rate
+
     @property 
     def n_model_function_params(self):
         return 1
@@ -99,19 +103,19 @@ class ExponentialPoissonModel(PoissonModel):
         the number of experiments that will be performed.
         """
 
-        return 1-np.exp(-expparams['tau']/modelparams)
+        return self.max_rate*(1-np.exp(-expparams['tau']/modelparams))
     
     def model_function_derivative(self,modelparams,expparams):
         """
         Return model functions derivatives in form [idx_modelparam,idx_expparams,idx_modelparams]
         """
 
-        return -(expparams['tau']/modelparams**2)*np.exp(-expparams['tau']/modelparams)
+        return -self.max_rate*(expparams['tau']/modelparams**2)*np.exp(-expparams['tau']/modelparams)
 
 
     
     def are_models_valid(self, modelparams):
-        return np.ones(modelparams.shape[0]>0,dtype=bool)
+        return np.logical_not(np.any(modelparams<0,axis=1))
 
     ## ABSTRACT PROPERTIES ##
     
@@ -135,7 +139,8 @@ class TestGaussianModel(DerandomizedTestCase):
     PRIOR_SIGMA_PARAM = UniformDistribution([[0,100],[0,10]])
     N_PARTICLES = 10000
     N_BIM = 1000
-    N_ONLINE = 50
+    N_ONLINE = 50  
+    N_OUTCOME_SAMPLES = N_PARTICLES
     TEST_EXPPARAMS_RISK = np.linspace(1.,500.,N_ONLINE,dtype=np.float)
     N_GUESSES = 50
     MAX_EXPPARAM = 500.,
@@ -148,9 +153,11 @@ class TestGaussianModel(DerandomizedTestCase):
         super(TestGaussianModel,self).setUp()
         sigma = TestGaussianModel.MODELPARAMS[1]
         
-        self.gaussian_model_no_sigma_param = BasicGaussianModel(sigma=sigma)
-        self.gaussian_model_sigma_param = BasicGaussianModel()
-        self.exponential_gaussian_model = ExponentialGaussianModel(sigma=TestGaussianModel.ONLINE_SIGMA)
+        self.gaussian_model_no_sigma_param = BasicGaussianModel(sigma=sigma,
+                                            num_outcome_samples=TestGaussianModel.N_OUTCOME_SAMPLES)
+        self.gaussian_model_sigma_param = BasicGaussianModel(num_outcome_samples=TestGaussianModel.N_OUTCOME_SAMPLES)
+        self.exponential_gaussian_model = ExponentialGaussianModel(sigma=TestGaussianModel.ONLINE_SIGMAm,
+                                            num_outcome_samples=TestGaussianModel.N_OUTCOME_SAMPLES)
 
         self.expparams = TestGaussianModel.TEST_EXPPARAMS.reshape(-1,1)
         self.expparams_risk = TestGaussianModel.TEST_EXPPARAMS_RISK.reshape(-1,1)
@@ -288,22 +295,35 @@ class TestGaussianModel(DerandomizedTestCase):
 class TestPoissonModel(DerandomizedTestCase):
     # True model parameter for test
     MODELPARAMS = np.array([79.,])
+    MODELPARAMS_RISK = np.array([79.,])
     TEST_EXPPARAMS = np.arange(50000,dtype=np.float)
-    PRIOR = UniformDistribution([[0.,100.]])
+    PRIOR = UniformDistribution([[0.,200.]])
     N_PARTICLES = 10000
     N_ONLINE = 50
+    N_GUESSES = 50
+    N_OUTCOME_SAMPLES = N_PARTICLES
+    MAX_EXPPARAM = 500.
+    TEST_EXPPARAMS_RISK = np.linspace(1.,MAX_EXPPARAM,N_ONLINE,dtype=np.float)
     N_BIM = 1000
     TEST_TARGET_COV = np.array([[0.1]])
 
     def setUp(self):
 
         super(TestPoissonModel,self).setUp()
-        self.poisson_model = BasicPoissonModel()
-        self.exponential_poisson_model = ExponentialPoissonModel()
+        self.poisson_model = BasicPoissonModel(num_outcome_samples=TestPoissonModel.N_OUTCOME_SAMPLES)
+        self.exponential_poisson_model = ExponentialPoissonModel(num_outcome_samples=TestPoissonModel.N_OUTCOME_SAMPLES)
+
 
         self.expparams = TestPoissonModel.TEST_EXPPARAMS.reshape(-1,1)
+        self.expparams_risk = TestPoissonModel.TEST_EXPPARAMS_RISK.reshape(-1,1)
+
         self.outcomes = self.poisson_model.simulate_experiment(TestPoissonModel.MODELPARAMS,
                 TestPoissonModel.TEST_EXPPARAMS,repeat=1 ).reshape(-1,1)
+
+        self.outcomes_exponential = self.exponential_poisson_model.simulate_experiment(TestPoissonModel.MODELPARAMS_RISK,
+                TestPoissonModel.TEST_EXPPARAMS_RISK.astype(self.exponential_poisson_model.expparams_dtype),
+                repeat=1 ).reshape(-1,1)
+
 
         self.updater = SMCUpdater(self.poisson_model,
                 TestPoissonModel.N_PARTICLES,TestPoissonModel.PRIOR)
@@ -311,7 +331,13 @@ class TestPoissonModel(DerandomizedTestCase):
         self.updater_bayes = SMCUpdaterBCRB(self.poisson_model,
                 TestPoissonModel.N_PARTICLES,TestPoissonModel.PRIOR,adaptive=True)
 
-        self.updater_exponential = SMCUpdater(self.exponential_poisson_model,
+        self.exponential_updater_one_guess = SMCUpdater(self.exponential_poisson_model,
+                TestPoissonModel.N_PARTICLES,TestPoissonModel.PRIOR)
+
+        self.exponential_updater_many_guess = SMCUpdater(self.exponential_poisson_model,
+                TestPoissonModel.N_PARTICLES,TestPoissonModel.PRIOR)
+
+        self.exponential_updater_sweep = SMCUpdater(self.exponential_poisson_model,
                 TestPoissonModel.N_PARTICLES,TestPoissonModel.PRIOR)
         
     def test_poisson_model_fitting(self):
@@ -346,6 +372,53 @@ class TestPoissonModel(DerandomizedTestCase):
         assert_almost_equal(self.updater_bayes.est_covariance_mtx(),np.linalg.inv(self.updater_bayes.adaptive_bim),1)
 
 
+    def test_bayes_risk(self):
+        opt_exps_one_guess = []
+        opt_exps_risk_many_guess = []
+        opt_exps_ig_many_guess = []
+
+        # classic sweep to check against
+   
+        self.exponential_updater_sweep.batch_update(self.outcomes_exponential,self.expparams_risk.astype(
+            self.exponential_poisson_model.expparams_dtype),5)
+
+        for i in range(TestPoissonModel.N_ONLINE):
+
+            guesses = np.random.uniform(low=0.,high=TestPoissonModel.MAX_EXPPARAM,
+                size=TestPoissonModel.N_GUESSES).reshape(-1,1).astype(
+                        self.exponential_poisson_model.expparams_dtype)
+            
+            risks = []
+            igs = []
+            for i,g in enumerate(guesses):
+                risks.append(self.exponential_updater_many_guess.bayes_risk(guesses[i]))
+                #igs.append(self.exponential_updater_many_guess.expected_information_gain(guesses[i]))
+           
+            risks = np.array(risks)
+            #igs = np.array(igs)
+            one_guess_exp = guesses[0]
+            many_guess_exp = guesses[np.argmin(risks)]
+            #many_guess_exp_ig = guesses[np.argmin(igs)]
+
+            opt_exps_one_guess.append(one_guess_exp)
+            opt_exps_risk_many_guess.append(many_guess_exp)
+            #opt_exps_ig_many_guess.append(many_guess_exp_ig)
+
+            outcome_one_guess = self.exponential_poisson_model.simulate_experiment(TestPoissonModel.MODELPARAMS_RISK,
+                one_guess_exp,repeat=1 )[0]
+            outcome_many_guess = self.exponential_poisson_model.simulate_experiment(TestPoissonModel.MODELPARAMS_RISK,
+                many_guess_exp,repeat=1 )[0]
+
+            self.exponential_updater_one_guess.update(outcome_one_guess,one_guess_exp)
+            self.exponential_updater_many_guess.update(outcome_many_guess,many_guess_exp)
+        
+       
+        assert_almost_equal(self.exponential_updater_many_guess.est_mean(),TestPoissonModel.MODELPARAMS_RISK,-1)
+        assert_almost_equal(self.exponential_updater_sweep.est_mean(),TestPoissonModel.MODELPARAMS_RISK,-1)
+        assert_array_less(self.exponential_updater_many_guess.est_covariance_mtx(),
+                            self.exponential_updater_one_guess.est_covariance_mtx())
+        assert_array_less(self.exponential_updater_many_guess.est_covariance_mtx(),
+                            self.exponential_updater_sweep.est_covariance_mtx())
 
 
 
