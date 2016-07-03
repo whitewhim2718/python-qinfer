@@ -137,7 +137,7 @@ class TestGaussianModel(DerandomizedTestCase):
     N_BIM = 1000
     N_ONLINE = 50
     TEST_EXPPARAMS_RISK = np.linspace(1.,500.,N_ONLINE,dtype=np.float)
-    N_GUESSES = 100
+    N_GUESSES = 50
     MAX_EXPPARAM = 500.,
     TEST_TARGET_COV_NO_SIGMA_PARAM = np.array([[0.1]])
     TEST_TARGET_COV_SIGMA_PARAM = np.array([[0.1,0.1],[0.1,0.1]])
@@ -275,11 +275,14 @@ class TestGaussianModel(DerandomizedTestCase):
 
             self.exponential_updater_one_guess.update(outcome_one_guess,one_guess_exp)
             self.exponential_updater_many_guess.update(outcome_many_guess,many_guess_exp)
-        import pdb
-        pdb.set_trace()
-        assert_almost_equal(self.exponential_updater_many_guess.est_mean(),TestGaussianModel.MODELPARAMS[:1],0)
+    
+        assert_almost_equal(self.exponential_updater_many_guess.est_mean(),TestGaussianModel.MODELPARAMS[:1],-1)
+        assert_almost_equal(self.exponential_updater_sweep.est_mean(),TestGaussianModel.MODELPARAMS[:1],-1)
         assert_array_less(self.exponential_updater_many_guess.est_covariance_mtx(),
                             self.exponential_updater_one_guess.est_covariance_mtx())
+        assert_array_less(self.exponential_updater_many_guess.est_covariance_mtx(),
+                            self.exponential_updater_sweep.est_covariance_mtx())
+
 
 
 class TestPoissonModel(DerandomizedTestCase):
