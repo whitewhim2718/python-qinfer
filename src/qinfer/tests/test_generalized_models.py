@@ -262,7 +262,7 @@ class TestGaussianModel(DerandomizedTestCase):
             #igs = np.array(igs)
             one_guess_exp = guesses[0]
             many_guess_exp = guesses[np.argmin(risks)]
-            many_guess_exp_ig = guesses[np.argmin(igs)]
+            #many_guess_exp_ig = guesses[np.argmin(igs)]
 
             opt_exps_one_guess.append(one_guess_exp)
             opt_exps_risk_many_guess.append(many_guess_exp)
