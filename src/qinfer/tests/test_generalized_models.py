@@ -140,7 +140,7 @@ class TestGaussianModel(DerandomizedTestCase):
     N_PARTICLES = 10000
     N_BIM = 1000
     N_ONLINE = 50  
-    N_OUTCOME_SAMPLES = N_PARTICLES
+    N_OUTCOME_SAMPLES = 500
     TEST_EXPPARAMS_RISK = np.linspace(1.,500.,N_ONLINE,dtype=np.float)
     N_GUESSES = 50
     MAX_EXPPARAM = 500.,
@@ -156,7 +156,7 @@ class TestGaussianModel(DerandomizedTestCase):
         self.gaussian_model_no_sigma_param = BasicGaussianModel(sigma=sigma,
                                             num_outcome_samples=TestGaussianModel.N_OUTCOME_SAMPLES)
         self.gaussian_model_sigma_param = BasicGaussianModel(num_outcome_samples=TestGaussianModel.N_OUTCOME_SAMPLES)
-        self.exponential_gaussian_model = ExponentialGaussianModel(sigma=TestGaussianModel.ONLINE_SIGMAm,
+        self.exponential_gaussian_model = ExponentialGaussianModel(sigma=TestGaussianModel.ONLINE_SIGMA,
                                             num_outcome_samples=TestGaussianModel.N_OUTCOME_SAMPLES)
 
         self.expparams = TestGaussianModel.TEST_EXPPARAMS.reshape(-1,1)
@@ -301,7 +301,7 @@ class TestPoissonModel(DerandomizedTestCase):
     N_PARTICLES = 10000
     N_ONLINE = 50
     N_GUESSES = 50
-    N_OUTCOME_SAMPLES = N_PARTICLES
+    N_OUTCOME_SAMPLES = 500
     MAX_EXPPARAM = 500.
     TEST_EXPPARAMS_RISK = np.linspace(1.,MAX_EXPPARAM,N_ONLINE,dtype=np.float)
     N_BIM = 1000

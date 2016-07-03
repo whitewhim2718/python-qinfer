@@ -655,12 +655,13 @@ class SMCUpdater(Distribution):
         w_outcomes,outcomes = self.model.outcomes(self.particle_weights,self.particle_locations,
                             expparams)
 
-        
+
         #method currently assumes single experiment
         outcomes = outcomes[0]
         w_outcomes = w_outcomes[0]
-        w = self.hypothetical_update(outcomes, expparams, return_likelihood=False)
 
+       
+        w = self.hypothetical_update(outcomes, expparams, return_likelihood=False)
         w = w[:, 0, :] # Fix w.shape == (n_outcomes, n_particles).
         
 
