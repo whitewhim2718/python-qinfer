@@ -139,10 +139,10 @@ class TestGaussianModel(DerandomizedTestCase):
     PRIOR_SIGMA_PARAM = UniformDistribution([[0,100],[0,10]])
     N_PARTICLES = 10000
     N_BIM = 1000
-    N_ONLINE = 50  
-    N_OUTCOME_SAMPLES = 500
+    N_ONLINE = 25  
+    N_GUESSES = 25
+    N_OUTCOME_SAMPLES = 250
     TEST_EXPPARAMS_RISK = np.linspace(1.,500.,N_ONLINE,dtype=np.float)
-    N_GUESSES = 50
     MAX_EXPPARAM = 500.,
     TEST_TARGET_COV_NO_SIGMA_PARAM = np.array([[0.1]])
     TEST_TARGET_COV_SIGMA_PARAM = np.array([[0.1,0.1],[0.1,0.1]])
@@ -299,9 +299,9 @@ class TestPoissonModel(DerandomizedTestCase):
     TEST_EXPPARAMS = np.arange(50000,dtype=np.float)
     PRIOR = UniformDistribution([[0.,200.]])
     N_PARTICLES = 10000
-    N_ONLINE = 50
-    N_GUESSES = 50
-    N_OUTCOME_SAMPLES = 500
+    N_ONLINE = 25
+    N_GUESSES = 25
+    N_OUTCOME_SAMPLES = 250
     MAX_EXPPARAM = 500.
     TEST_EXPPARAMS_RISK = np.linspace(1.,MAX_EXPPARAM,N_ONLINE,dtype=np.float)
     N_BIM = 1000
@@ -412,7 +412,7 @@ class TestPoissonModel(DerandomizedTestCase):
             self.exponential_updater_one_guess.update(outcome_one_guess,one_guess_exp)
             self.exponential_updater_many_guess.update(outcome_many_guess,many_guess_exp)
         
-       
+
         assert_almost_equal(self.exponential_updater_many_guess.est_mean(),TestPoissonModel.MODELPARAMS_RISK,-1)
         assert_almost_equal(self.exponential_updater_sweep.est_mean(),TestPoissonModel.MODELPARAMS_RISK,-1)
         assert_array_less(self.exponential_updater_many_guess.est_covariance_mtx(),

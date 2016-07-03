@@ -492,7 +492,7 @@ class Model(with_metaclass(abc.ABCMeta, object)):
 
         outcomes = []
         outcome_weights = []
-
+        outcome_sample_points = []
         # We have to loop over expparams only because each one, unfortunately, might have 
         # a different number of outcomes.
         for i in range(expparams.shape[0]):
@@ -500,8 +500,8 @@ class Model(with_metaclass(abc.ABCMeta, object)):
             expparam = expparams[i:i+1]
             n_outcomes = self.n_outcomes(expparam)
             # TODO: unless n_outcomes << modelparams.shape, we are probably duplicating effort.
-            sampled_points = modelparams[np.random.choice(modelparams.shape[0], size=n_outcomes, p=weights)]
-            os = self.simulate_experiment(sampled_points, expparam, repeat=1)[0,:,0]
+            sample_points = modelparams[np.random.choice(modelparams.shape[0], size=n_outcomes, p=weights)]
+            os = self.simulate_experiment(sample_points, expparam, repeat=1)[0,:,0]
             assert os.dtype == self.outcomes_dtype
 
             # The same outcome is likely to have resulted multiple times in the case that outcomes 
@@ -509,18 +509,24 @@ class Model(with_metaclass(abc.ABCMeta, object)):
             # were unique, they would all be assigned equal weight. However, we must count 
             # how many of each outcome we ended up with to correctly weight them. This s tep 
             # can likely be skipped for models with continuous output.
-    
-            if self.allow_identical_outcomes:
-                outcome_weights.append(np.ones((n_outcomes,1), dtype='float64') / n_outcomes)
-            else:
-                os_shape = os.shape[0]
-                os, ow = np.unique(os, return_counts=True)
-                outcome_weights.append((ow.astype('float64') / n_outcomes)[...,np.newaxis])
+            
+            outcome_weights.append(np.ones((n_outcomes,1), dtype='float64') / n_outcomes)
+
+            #below can't be used as is, because we must associate outcome samples with model 
+            # parameters
+            #if self.allow_identical_outcomes:
+            #    outcome_weights.append(np.ones((n_outcomes,1), dtype='float64') / n_outcomes)
+            #else:
+            #    os_shape = os.shape[0]
+            #    os, ow = np.unique(os, return_counts=True)
+            #    outcome_weights.append((ow.astype('float64') / n_outcomes)[...,np.newaxis])
 
             outcomes.append(os)
+            outcome_sample_points.append(sample_points)
 
         self._outcomes = outcomes 
         self._outcome_weights = outcome_weights
+        self._outcome_sample_points = outcome_sample_points
 
     def outcomes(self, weights, modelparams, expparams, resample=False):
         """
@@ -558,7 +564,7 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         if self.needs_outcome_resample or resample or self.always_resample_outcomes:
             self._resample_outcomes(weights, modelparams, expparams)
 
-        return self._outcome_weights, self._outcomes
+        return self._outcome_weights,self._outcome_sample_points,self._outcomes
 
         
 class LinearCostModelMixin(Model):

@@ -652,18 +652,19 @@ class SMCUpdater(Distribution):
         #     rescaling matrix.  Non-diagonal could also be considered, but
         #     for the moment this is not implemented.
 
-        w_outcomes,outcomes = self.model.outcomes(self.particle_weights,self.particle_locations,
-                            expparams)
-
+        w_outcomes,sampled_modelparams,outcomes = self.model.outcomes(self.particle_weights,
+                                                    self.particle_locations,expparams)
 
         #method currently assumes single experiment
         outcomes = outcomes[0]
         w_outcomes = w_outcomes[0]
+        sampled_modelparams = sampled_modelparams[0]
 
        
         w = self.hypothetical_update(outcomes, expparams, return_likelihood=False)
         w = w[:, 0, :] # Fix w.shape == (n_outcomes, n_particles).
         
+      
 
         xs = self.particle_locations.transpose([1, 0]) # shape (n_mp, n_particles).
         
@@ -671,8 +672,12 @@ class SMCUpdater(Distribution):
         # "o" refers to an outcome, "p" to a particle, and
         # "i" to a model parameter.
         # Thus, mu[o,i] is the sum over all particles of w[o,p] * x[i,p].
-    
+        
+      
+
         mu = np.transpose(np.tensordot(w,xs,axes=(1,1)))
+
+      
         var = (
             # This sum is a reduction over the particle index and thus
             # represents an expectation value over the diagonal of the
@@ -684,9 +689,16 @@ class SMCUpdater(Distribution):
             - mu**2).T
 
 
+        var = (sampled_modelparams-mu.transpose([1,0]))**2
+
         rescale_var = np.sum(self.model.Q * var, axis=1)
         # Q has shape (n_mp,), therefore rescale_var has shape (n_outcomes,).
+
+      
         tot_like = np.sum(w_outcomes, axis=1)
+
+
+   
         return np.dot(tot_like.T, rescale_var)
         
     def expected_information_gain(self, expparams):
