@@ -309,7 +309,7 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         Returns an array of dtype ``uint`` describing the number of outcomes
         for each experiment specified by ``expparams``.
         If there are an infinite (or intractibly large) number of outcomes, 
-        this value specifies the number of outcomes to randomly sample
+        this value specifies the number of outcomes to randomly sample.
         
         :param numpy.ndarray expparams: Array of experimental parameters. This
             array must be of dtype agreeing with the ``expparams_dtype``
@@ -495,11 +495,11 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         outcome_sample_points = []
         # We have to loop over expparams only because each one, unfortunately, might have 
         # a different number of outcomes.
-        for i in range(expparams.shape[0]):
+        for idx_ep in range(expparams.shape[0]):
             # So that expparam is a numpy array when extracted
-            expparam = expparams[i:i+1]
+            expparam = expparams[idx_ep:idx_ep+1]
             n_outcomes = self.n_outcomes(expparam)
-            # TODO: unless n_outcomes << modelparams.shape, we are probably duplicating effort.
+            
             sample_points = modelparams[np.random.choice(modelparams.shape[0], size=n_outcomes, p=weights)]
             os = self.simulate_experiment(sample_points, expparam, repeat=1)[0,:,0]
             assert os.dtype == self.outcomes_dtype
@@ -507,7 +507,7 @@ class Model(with_metaclass(abc.ABCMeta, object)):
             # The same outcome is likely to have resulted multiple times in the case that outcomes 
             # are discrete values and the modelparam distribution is not too wide. If each outcome
             # were unique, they would all be assigned equal weight. However, we must count 
-            # how many of each outcome we ended up with to correctly weight them. This s tep 
+            # how many of each outcome we ended up with to correctly weight them. This step 
             # can likely be skipped for models with continuous output.
             
             outcome_weights.append(np.ones((n_outcomes,1), dtype='float64') / n_outcomes)
@@ -564,7 +564,7 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         if self.needs_outcome_resample or resample or self.always_resample_outcomes:
             self._resample_outcomes(weights, modelparams, expparams)
 
-        return self._outcome_weights,self._outcome_sample_points,self._outcomes
+        return self._outcome_weights, self._outcome_sample_points, self._outcomes
 
         
 class LinearCostModelMixin(Model):
