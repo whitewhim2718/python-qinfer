@@ -36,100 +36,12 @@ from qinfer.tests.base_test import DerandomizedTestCase
 from qinfer.abstract_model import (
     FiniteOutcomeModel)
 from qinfer import (GaussianModel,BasicGaussianModel,PoissonModel,BasicPoissonModel,
-                    UniformDistribution)
+                    ExponentialGaussianModel,ExponentialPoissonModel,
+                     UniformDistribution)
 
 from qinfer.smc import SMCUpdater,SMCUpdaterBCRB
 
-class ExponentialGaussianModel(GaussianModel):
-    """
-    The basic Gaussian model consisting of a single model parameter :math:`\mu`,
-    and no experimental parameters.
-    """
-
-    @property 
-    def n_model_function_params(self):
-        return 1
-
-    def model_function(self,modelparams,expparams):
-        """
-        Return model functions in form [idx_expparams,idx_modelparams]. The model function 
-        therefore returns the plain model parameters, but tiles them over the number of experiments 
-        to satisfy the requirements of the abstract method. The shape of `expparams` therefore signifies 
-        the number of experiments that will be performed.
-        """
-   
-        return 1-np.exp(-expparams['tau']/modelparams)
     
-    def model_function_derivative(self,modelparams,expparams):
-        """
-        Return model functions derivatives in form [idx_modelparam,idx_expparams,idx_modelparams]
-        """
-
-        return -(expparams['tau']/modelparams**2)*np.exp(-expparams['tau']/modelparams)
-
-    def are_models_valid(self, modelparams):
-        return np.logical_not(np.any(modelparams<0,axis=1))
-
-    ## ABSTRACT PROPERTIES ##
-    
-    @property
-    def model_function_param_names(self):
-        return [r'T1']
-    
-    @property
-    def expparams_dtype(self):
-        return [('tau','float')]
-
-
-class ExponentialPoissonModel(PoissonModel):
-    """
-    The basic Gaussian model consisting of a single model parameter :math:`\mu`,
-    and no experimental parameters.
-    """
-
-    def __init__(self,max_rate=100, num_outcome_samples=10000):
-        super(ExponentialPoissonModel, self).__init__(num_outcome_samples=num_outcome_samples)
-        self.max_rate = max_rate
-
-    @property 
-    def n_model_function_params(self):
-        return 1
-
-    def model_function(self,modelparams,expparams):
-        """
-        Return model functions in form [idx_expparams,idx_modelparams]. The model function 
-        therefore returns the plain model parameters, but tiles them over the number of experiments 
-        to satisfy the requirements of the abstract method. The shape of `expparams` therefore signifies 
-        the number of experiments that will be performed.
-        """
-
-        return self.max_rate*(1-np.exp(-expparams['tau']/modelparams))
-    
-    def model_function_derivative(self,modelparams,expparams):
-        """
-        Return model functions derivatives in form [idx_modelparam,idx_expparams,idx_modelparams]
-        """
-
-        return -self.max_rate*(expparams['tau']/modelparams**2)*np.exp(-expparams['tau']/modelparams)
-
-
-    
-    def are_models_valid(self, modelparams):
-        return np.logical_not(np.any(modelparams<0,axis=1))
-
-    ## ABSTRACT PROPERTIES ##
-    
-    @property
-    def model_function_param_names(self):
-        return [r'T1']
-    
-    @property
-    def expparams_dtype(self):
-        return [('tau','float')]
-
-    
-
-
 class TestGaussianModel(DerandomizedTestCase):
     # True model parameter for test
     MODELPARAMS = np.array([79,3],dtype=np.float)
