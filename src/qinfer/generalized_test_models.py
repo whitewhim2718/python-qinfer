@@ -34,7 +34,9 @@ __all__ = [
     'PoissonModel',
     'GaussianModel',
     'BasicPoissonModel',
-    'BasicGaussianModel'
+    'BasicGaussianModel',
+    'ExponentialPoissonModel',
+    'ExponentialGaussianModel'
 ]
 
 ## IMPORTS ###################################################################
@@ -283,6 +285,53 @@ class BasicPoissonModel(PoissonModel):
     @property
     def expparams_dtype(self):
         []
+
+class ExponentialPoissonModel(PoissonModel):
+    """
+    A Poisson model with an exponential growth model function
+    consisting of a single model parameter :math:`T1` controlling the
+    rate and a single experimental parameter :math:`\tau`.
+    """
+
+    def __init__(self,max_rate=100, num_outcome_samples=10000):
+        super(ExponentialPoissonModel, self).__init__(num_outcome_samples=num_outcome_samples)
+        self.max_rate = max_rate
+
+    @property 
+    def n_model_function_params(self):
+        return 1
+
+    def model_function(self,modelparams,expparams):
+        """
+        Return model functions in form [idx_expparams,idx_modelparams]. The model function 
+        therefore returns the plain model parameters, but tiles them over the number of experiments 
+        to satisfy the requirements of the abstract method. The shape of `expparams` therefore signifies 
+        the number of experiments that will be performed.
+        """
+
+        return self.max_rate*(1-np.exp(-expparams['tau']/modelparams))
+    
+    def model_function_derivative(self,modelparams,expparams):
+        """
+        Return model functions derivatives in form [idx_modelparam,idx_expparams,idx_modelparams]
+        """
+
+        return -self.max_rate*(expparams['tau']/modelparams**2)*np.exp(-expparams['tau']/modelparams)
+
+
+    
+    def are_models_valid(self, modelparams):
+        return np.logical_not(np.any(modelparams<0,axis=1))
+
+    ## ABSTRACT PROPERTIES ##
+    
+    @property
+    def model_function_param_names(self):
+        return [r'T1']
+    
+    @property
+    def expparams_dtype(self):
+        return [('tau','float')]
 
 class GaussianModel(DifferentiableModel):
     r"""
@@ -598,4 +647,45 @@ class BasicGaussianModel(GaussianModel):
     @property
     def expparams_dtype(self):
         []
+
+class ExponentialGaussianModel(GaussianModel):
+    """
+    A Poisson model with an exponential growth model function
+    consisting of a single model parameter :math:`T1` controlling the
+    rate and a single experimental parameter :math:`\tau`.
+    """
+
+    @property 
+    def n_model_function_params(self):
+        return 1
+
+    def model_function(self,modelparams,expparams):
+        """
+        Return model functions in form [idx_expparams,idx_modelparams]. The model function 
+        therefore returns the plain model parameters, but tiles them over the number of experiments 
+        to satisfy the requirements of the abstract method. The shape of `expparams` therefore signifies 
+        the number of experiments that will be performed.
+        """
+   
+        return 1-np.exp(-expparams['tau']/modelparams)
+    
+    def model_function_derivative(self,modelparams,expparams):
+        """
+        Return model functions derivatives in form [idx_modelparam,idx_expparams,idx_modelparams]
+        """
+
+        return -(expparams['tau']/modelparams**2)*np.exp(-expparams['tau']/modelparams)
+
+    def are_models_valid(self, modelparams):
+        return np.logical_not(np.any(modelparams<0,axis=1))
+
+    ## ABSTRACT PROPERTIES ##
+    
+    @property
+    def model_function_param_names(self):
+        return [r'T1']
+    
+    @property
+    def expparams_dtype(self):
+        return [('tau','float')]
 
