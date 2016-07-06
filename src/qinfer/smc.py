@@ -447,7 +447,7 @@ class SMCUpdater(Distribution):
             self.particle_locations, expparams
         )[:, :, 0]
         
-        self.model.needs_resample = True
+        self.model.needs_outcome_resample = True
         # Resample if needed.
         if check_for_resample:
             self._maybe_resample()
@@ -654,7 +654,6 @@ class SMCUpdater(Distribution):
 
         w_outcomes,sampled_modelparams,outcomes = self.model.outcomes(self.particle_weights,
                                                     self.particle_locations,expparams)
-
         #method currently assumes single experiment
         outcomes = outcomes[0]
         w_outcomes = w_outcomes[0]

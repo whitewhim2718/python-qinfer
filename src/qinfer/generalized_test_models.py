@@ -532,7 +532,7 @@ class GaussianModel(DifferentiableModel):
 
         x = self.model_function(modelparams,expparams)[np.newaxis,...]
         outcomes = outcomes[:,np.newaxis,:]
-
+        
         return 1/(np.sqrt(2*np.pi)*sigma)*np.exp(-(outcomes-x)**2/(2*sigma**2))
 
 

@@ -528,6 +528,8 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         self._outcome_weights = outcome_weights
         self._outcome_sample_points = outcome_sample_points
 
+        self.needs_outcome_resample = False
+
     def outcomes(self, weights, modelparams, expparams, resample=False):
         """
         For each given expparam, randomly samples outcomes marginalized 
