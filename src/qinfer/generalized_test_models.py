@@ -245,8 +245,9 @@ class PoissonModel(DifferentiableModel):
         outcomes = np.asarray(np.random.poisson(np.tile(lamb_das[np.newaxis,...],(repeat,1,1)))
                     ).reshape(repeat,modelparams.shape[0],expparams.shape[0]).astype(self.outcomes_dtype)
 
-        return outcomes 
-
+        return (outcomes[0, 0, 0] if repeat == 1 and expparams.shape[0] == 1 and modelparams.shape[0] == 1 else outcomes
+                ).astype(self.outcomes_dtype)
+        
 
 class BasicPoissonModel(PoissonModel):
     """
@@ -532,7 +533,7 @@ class GaussianModel(DifferentiableModel):
 
         x = self.model_function(modelparams,expparams)[np.newaxis,...]
         outcomes = outcomes[:,np.newaxis,:]
-        
+
         return 1/(np.sqrt(2*np.pi)*sigma)*np.exp(-(outcomes-x)**2/(2*sigma**2))
 
 
@@ -604,7 +605,8 @@ class GaussianModel(DifferentiableModel):
         x = self.model_function(modelparams,expparams)
         outcomes = np.asarray(np.random.normal(x,np.tile(sigma[np.newaxis,:,np.newaxis],(repeat,1,1)))).reshape(
             repeat,modelparams.shape[0],expparams.shape[0]).astype(self.outcomes_dtype)
-        return outcomes 
+        return (outcomes[0, 0, 0] if repeat == 1 and expparams.shape[0] == 1 and modelparams.shape[0] == 1 else outcomes
+                ).astype(self.outcomes_dtype)
 
 
 

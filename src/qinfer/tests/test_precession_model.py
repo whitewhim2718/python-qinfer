@@ -48,12 +48,13 @@ class NumericalSimplePrecessionModel(ScoreMixin, SimplePrecessionModel):
 class TestSMCUpdater(DerandomizedTestCase):
 	# True model parameter for test
 	MODELPARAMS = np.array([1,])
-	TEST_EXPPARAMS = np.linspace(1.,10.,100,dtype=np.float)
 	PRIOR = UniformDistribution([[0,2]])
 	N_PARTICLES = 10000
-
+	N_ONLINE = 20
+	N_GUESSES = 30
 	TEST_TARGET_COV = np.array([[0.01]])
-
+	MAX_EXPPARAM = 10.
+	TEST_EXPPARAMS = np.linspace(1.,MAX_EXPPARAM,N_ONLINE,dtype=np.float)
 	def setUp(self):
 
 		super(TestSMCUpdater,self).setUp()
@@ -66,6 +67,8 @@ class TestSMCUpdater(DerandomizedTestCase):
 		self.updater = SMCUpdater(self.precession_model,
 				TestSMCUpdater.N_PARTICLES,TestSMCUpdater.PRIOR)
 		self.updater_bayes = SMCUpdaterBCRB(self.precession_model,
+				TestSMCUpdater.N_PARTICLES,TestSMCUpdater.PRIOR,adaptive=True)
+		self.updater_bayes_one_guess = SMCUpdaterBCRB(self.precession_model,
 				TestSMCUpdater.N_PARTICLES,TestSMCUpdater.PRIOR,adaptive=True)
 		self.num_updater = SMCUpdater(self.num_precession_model,
 				TestSMCUpdater.N_PARTICLES,TestSMCUpdater.PRIOR)
@@ -140,3 +143,53 @@ class TestSMCUpdater(DerandomizedTestCase):
 		assert_almost_equal(self.updater_bayes.est_covariance_mtx(),np.linalg.inv(self.updater_bayes.adaptive_bim),2)
 		assert_almost_equal(self.num_updater_bayes.est_covariance_mtx(),np.linalg.inv(self.updater_bayes.current_bim),2)
 		assert_almost_equal(self.num_updater_bayes.est_covariance_mtx(),np.linalg.inv(self.updater_bayes.adaptive_bim),2)
+
+
+	def test_bayes_risk(self):
+
+	    opt_exps_one_guess = []
+	    opt_exps_risk_many_guess = []
+	    opt_exps_ig_many_guess = []
+
+	    # classic sweep to check against
+
+	    self.updater.batch_update(self.outcomes,self.expparams.astype(
+	        self.precession_model.expparams_dtype),5)
+
+	    for i in range(TestSMCUpdater.N_ONLINE):
+
+	        guesses = np.random.uniform(low=0.,high=TestSMCUpdater.MAX_EXPPARAM,
+	            size=TestSMCUpdater.N_GUESSES).reshape(-1,1).astype(
+	                    self.precession_model.expparams_dtype)
+	        
+	        risks = []
+	        igs = []
+	        for i,g in enumerate(guesses):
+	            risks.append(self.updater_bayes.bayes_risk(guesses[i]))
+	            igs.append(self.updater_bayes.expected_information_gain(guesses[i]))
+	       
+	        risks = np.array(risks)
+	        igs = np.array(igs)
+	        one_guess_exp = guesses[0]
+	        many_guess_exp = guesses[np.argmin(risks)]
+	        many_guess_exp_ig = guesses[np.argmin(igs)]
+
+	        opt_exps_one_guess.append(one_guess_exp)
+	        opt_exps_risk_many_guess.append(many_guess_exp)
+	        opt_exps_ig_many_guess.append(many_guess_exp_ig)
+
+	        outcome_one_guess = np.array(self.precession_model.simulate_experiment(TestSMCUpdater.MODELPARAMS,
+	            one_guess_exp,repeat=1 ))[np.newaxis,np.newaxis]
+	        outcome_many_guess = np.array(self.precession_model.simulate_experiment(TestSMCUpdater.MODELPARAMS,
+	            many_guess_exp,repeat=1 ))[np.newaxis,np.newaxis]
+
+	        self.updater_bayes_one_guess.update(outcome_one_guess,one_guess_exp)
+	        self.updater_bayes.update(outcome_many_guess,many_guess_exp)
+	    
+
+	    assert_almost_equal(self.updater.est_mean(),TestSMCUpdater.MODELPARAMS,-1)
+	    assert_almost_equal(self.updater_bayes.est_mean(),TestSMCUpdater.MODELPARAMS,-1)
+	    assert_array_less(self.updater_bayes.est_covariance_mtx(),
+	                        self.updater_bayes_one_guess.est_covariance_mtx())
+	    assert_array_less(self.updater_bayes.est_covariance_mtx(),
+	                        self.updater.est_covariance_mtx())
