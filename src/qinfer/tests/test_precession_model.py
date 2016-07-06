@@ -178,10 +178,10 @@ class TestSMCUpdater(DerandomizedTestCase):
 	        opt_exps_risk_many_guess.append(many_guess_exp)
 	        opt_exps_ig_many_guess.append(many_guess_exp_ig)
 
-	        outcome_one_guess = np.array(self.precession_model.simulate_experiment(TestSMCUpdater.MODELPARAMS,
-	            one_guess_exp,repeat=1 ))[np.newaxis,np.newaxis]
-	        outcome_many_guess = np.array(self.precession_model.simulate_experiment(TestSMCUpdater.MODELPARAMS,
-	            many_guess_exp,repeat=1 ))[np.newaxis,np.newaxis]
+	        outcome_one_guess = np.array(self.precession_model.simulate_experiment(
+	        	TestSMCUpdater.MODELPARAMS,one_guess_exp,repeat=1 ))[np.newaxis,np.newaxis]
+	        outcome_many_guess = np.array(self.precession_model.simulate_experiment(
+	        	TestSMCUpdater.MODELPARAMS,many_guess_exp,repeat=1 ))[np.newaxis,np.newaxis]
 
 	        self.updater_bayes_one_guess.update(outcome_one_guess,one_guess_exp)
 	        self.updater_bayes.update(outcome_many_guess,many_guess_exp)
