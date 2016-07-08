@@ -528,6 +528,8 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         self._outcome_weights = outcome_weights
         self._outcome_sample_points = outcome_sample_points
 
+        self.needs_outcome_resample = False
+
     def outcomes(self, weights, modelparams, expparams, resample=False):
         """
         For each given expparam, randomly samples outcomes marginalized 
@@ -650,7 +652,8 @@ class FiniteOutcomeModel(Model):
                 randnum = np.random.random((repeat, 1, modelparams.shape[0]))
                 outcomes[:, :, idx_experiment] = np.argmax(cdf > randnum, axis=1)
                 
-        return outcomes[0, 0, 0] if repeat == 1 and expparams.shape[0] == 1 and modelparams.shape[0] == 1 else outcomes
+        return (outcomes[0, 0, 0] if repeat == 1 and expparams.shape[0] == 1 and modelparams.shape[0] == 1 else outcomes
+                ).astype(self.outcomes_dtype)
                 
     ## STATIC METHODS ##
     # These methods are provided as a convienence to make it easier to write

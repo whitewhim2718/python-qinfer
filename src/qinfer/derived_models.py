@@ -115,6 +115,9 @@ class DerivedModel(Model):
     def canonicalize(self, modelparams):
         return self.underlying_model.canonicalize(modelparams)
 
+    def simulate_experiment(self,modelparams,expparams,repeat=1):
+        return self.underlying_model.simulate_experiment(modelparams,expparams,repeat)
+
 PoisonModes = enum.enum("ALE", "MLE")
 
 class PoisonedModel(DerivedModel, FiniteOutcomeModel):

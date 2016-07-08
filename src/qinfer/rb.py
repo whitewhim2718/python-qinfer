@@ -67,7 +67,7 @@ def F(p, d=2):
 
 ## CLASSES ####################################################################
 
-class RandomizedBenchmarkingModel(DifferentiableModel):
+class RandomizedBenchmarkingModel(FiniteOutcomeModel,DifferentiableModel):
     r"""
     Implements the randomized benchmarking or interleaved randomized
     benchmarking protocol, such that the depolarizing strength :math:`p`

@@ -210,3 +210,6 @@ class DirectViewParallelizedModel(DerivedModel):
 
         return np.concatenate(L, axis=1)
 
+
+
+

@@ -187,10 +187,10 @@ class TestGaussianModel(DerandomizedTestCase):
             opt_exps_risk_many_guess.append(many_guess_exp)
             opt_exps_ig_many_guess.append(many_guess_exp_ig)
 
-            outcome_one_guess = self.exponential_gaussian_model.simulate_experiment(TestGaussianModel.MODELPARAMS[:1],
-                one_guess_exp,repeat=1 )[0]
-            outcome_many_guess = self.exponential_gaussian_model.simulate_experiment(TestGaussianModel.MODELPARAMS[:1],
-                many_guess_exp,repeat=1 )[0]
+            outcome_one_guess = np.array(self.exponential_gaussian_model.simulate_experiment(
+                TestGaussianModel.MODELPARAMS[:1],one_guess_exp,repeat=1 ))[np.newaxis,np.newaxis]
+            outcome_many_guess = np.array(self.exponential_gaussian_model.simulate_experiment(
+                TestGaussianModel.MODELPARAMS[:1],many_guess_exp,repeat=1 ))[np.newaxis,np.newaxis]
 
             self.exponential_updater_one_guess.update(outcome_one_guess,one_guess_exp)
             self.exponential_updater_many_guess.update(outcome_many_guess,many_guess_exp)
@@ -316,10 +316,10 @@ class TestPoissonModel(DerandomizedTestCase):
             opt_exps_risk_many_guess.append(many_guess_exp)
             opt_exps_ig_many_guess.append(many_guess_exp_ig)
 
-            outcome_one_guess = self.exponential_poisson_model.simulate_experiment(TestPoissonModel.MODELPARAMS_RISK,
-                one_guess_exp,repeat=1 )[0]
-            outcome_many_guess = self.exponential_poisson_model.simulate_experiment(TestPoissonModel.MODELPARAMS_RISK,
-                many_guess_exp,repeat=1 )[0]
+            outcome_one_guess = np.array(self.exponential_poisson_model.simulate_experiment(
+                TestPoissonModel.MODELPARAMS_RISK,one_guess_exp,repeat=1 ))[np.newaxis,np.newaxis]
+            outcome_many_guess = np.array(self.exponential_poisson_model.simulate_experiment(
+                TestPoissonModel.MODELPARAMS_RISK,many_guess_exp,repeat=1 ))[np.newaxis,np.newaxis]
 
             self.exponential_updater_one_guess.update(outcome_one_guess,one_guess_exp)
             self.exponential_updater_many_guess.update(outcome_many_guess,many_guess_exp)
