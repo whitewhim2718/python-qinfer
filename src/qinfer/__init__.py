@@ -38,6 +38,7 @@ from qinfer.finite_test_models import *
 from qinfer.generalized_test_models import *
 from qinfer.distributions import *
 from qinfer.abstract_model import *
+from qinfer.domains import *
 from qinfer.parallel import *
 from qinfer.score import *
 from qinfer.rb import *
