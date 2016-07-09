@@ -657,28 +657,31 @@ class SMCUpdater(Distribution):
         #method currently assumes single experiment
         outcomes = outcomes[0]
         w_outcomes = w_outcomes[0]
+  
         sampled_modelparams = sampled_modelparams[0]
 
         w = self.hypothetical_update(outcomes, expparams, return_likelihood=False)
       
         w = w[:, 0, :] # Fix w.shape == (n_outcomes, n_particles).
-        
+
         xs = self.particle_locations.transpose([1, 0]) # shape (n_mp, n_particles).
  
         # In the following, we will use the subscript convention that
         # "o" refers to an outcome, "p" to a particle, and
         # "i" to a model parameter.
         # Thus, mu[o,i] is the sum over all particles of w[o,p] * x[i,p].
-    
         mu = np.transpose(np.tensordot(w,xs,axes=(1,1)))
- 
-        var = (sampled_modelparams-mu.transpose([1,0]))**2
+       
+        var = (sampled_modelparams[np.newaxis,:,:]-mu.transpose([1,0])[:,np.newaxis,:])**2
      
-        rescale_var = np.sum(self.model.Q * var, axis=1)
+        
         # Q has shape (n_mp,), therefore rescale_var has shape (n_outcomes,).
+  
+        weighted_var = w_outcomes*var
+        expect_var = np.sum(weighted_var,axis=1)
 
-        tot_like = np.sum(w_outcomes, axis=1)
-        return np.dot(tot_like.T, rescale_var)
+        return  np.sum(self.model.Q * expect_var, axis=0)
+
         
     def expected_information_gain(self, expparams):
         r"""
