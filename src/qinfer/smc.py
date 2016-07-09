@@ -677,15 +677,16 @@ class SMCUpdater(Distribution):
  
         if mu.shape == sampled_modelparams.shape:
             var = (sampled_modelparams-mu)**2 
-            q_var = w*np.sum(self.model.Q*var,axis=1)
+            q_var = np.sum(self.model.Q*var,axis=1)
+            return np.dot(w_outcomes,q_var)
 
         else:
             var = w[:,:,np.newaxis]*(sampled_modelparams[np.newaxis,:,:]-mu[:,np.newaxis,:])**2
             q_var = np.sum(self.model.Q*var,axis=2)
-            
+            return  np.tensordot(w_outcomes,q_var)
 
+       
         
-        return  np.tensordot(w_outcomes,q_var)
 
         
     def expected_information_gain(self, expparams):
