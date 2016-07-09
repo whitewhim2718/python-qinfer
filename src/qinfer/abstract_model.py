@@ -510,7 +510,7 @@ class Model(with_metaclass(abc.ABCMeta, object)):
             # how many of each outcome we ended up with to correctly weight them. This s tep 
             # can likely be skipped for models with continuous output.
             
-            outcome_weights.append(np.ones((n_outcomes,1), dtype='float64') / n_outcomes)
+            outcome_weights.append(np.ones((n_outcomes), dtype='float64') / n_outcomes)
 
             #below can't be used as is, because we must associate outcome samples with model 
             # parameters

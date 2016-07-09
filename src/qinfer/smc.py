@@ -653,7 +653,7 @@ class SMCUpdater(Distribution):
         #     for the moment this is not implemented.
 
         w_outcomes,sampled_modelparams,outcomes = self.model.outcomes(self.particle_weights,
-                                                    self.particle_locations,expparams)
+                                                       self.particle_locations,expparams)
         #method currently assumes single experiment
         outcomes = outcomes[0]
         w_outcomes = w_outcomes[0]
@@ -663,24 +663,29 @@ class SMCUpdater(Distribution):
         w = self.hypothetical_update(outcomes, expparams, return_likelihood=False)
       
         w = w[:, 0, :] # Fix w.shape == (n_outcomes, n_particles).
+        if len(w_outcomes.shape)>2:
+            w_outcomes = w_outcomes[:,:,0]
 
         xs = self.particle_locations.transpose([1, 0]) # shape (n_mp, n_particles).
- 
+        
         # In the following, we will use the subscript convention that
         # "o" refers to an outcome, "p" to a particle, and
         # "i" to a model parameter.
         # Thus, mu[o,i] is the sum over all particles of w[o,p] * x[i,p].
-        mu = np.transpose(np.tensordot(w,xs,axes=(1,1)))
-       
-        var = (sampled_modelparams[np.newaxis,:,:]-mu.transpose([1,0])[:,np.newaxis,:])**2
-     
-        
-        # Q has shape (n_mp,), therefore rescale_var has shape (n_outcomes,).
-  
-        weighted_var = w_outcomes*var
-        expect_var = np.sum(weighted_var,axis=1)
 
-        return  np.sum(self.model.Q * expect_var, axis=0)
+        mu = np.tensordot(w,xs,axes=(1,1))
+ 
+        if mu.shape == sampled_modelparams.shape:
+            var = (sampled_modelparams-mu)**2 
+            q_var = w*np.sum(self.model.Q*var,axis=1)
+
+        else:
+            var = w[:,:,np.newaxis]*(sampled_modelparams[np.newaxis,:,:]-mu[:,np.newaxis,:])**2
+            q_var = np.sum(self.model.Q*var,axis=2)
+            
+
+        
+        return  np.tensordot(w_outcomes,q_var)
 
         
     def expected_information_gain(self, expparams):
