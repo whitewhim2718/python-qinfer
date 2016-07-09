@@ -68,7 +68,7 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         It will be more efficient to set this to ``True`` whenever it is likely 
         that multiple identical outcomes will occur.
     """
-    def __init__(self, always_resample_outcomes=False, initial_outcomes = None,initial_weights=None, allow_identical_outcomes=False):
+    def __init__(self, initial_outcomes = None,initial_weights=None, allow_identical_outcomes=False):
         """
         Initialize Model model
         :param bool always_resample_outcomes: Resample outcomes stochastically with 
@@ -96,8 +96,6 @@ class Model(with_metaclass(abc.ABCMeta, object)):
             #otherwise initialize all outcomes to zero at start
             self._outcome_weights = np.ones(None,self.outcomes_dtype)
 
-        self._always_resample_outcomes = always_resample_outcomes
-        self.needs_outcome_resample = True
         # Initialize a default scale matrix.
         self._Q = np.ones((self.n_modelparams,))
         
@@ -125,39 +123,14 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         the lifetime of a Model instance.
         """
         pass
-
             
     ## CONCRETE PROPERTIES ##
-    @property
-    def always_resample_outcomes(self):
-        """
-        Return ``True`` if the ``always_resample_outcomes`` flag was set during
-        model initialization. Determines if the outcomes should be resampled with 
-        every call of :func:`~abstract_model.Model.outcomes`
-        :rtype: bool
-
-        """
-        return self._always_resample_outcomes
     
     @property
-    def outcomes_dtype(self):
+    def is_outcomes_constant(self):
         """
-        Returns the dtype of the outcomes parameter array. For a
-        model with single-parameter outcomes, this will likely be a scalar dtype,
-        such as ``"int64"`` for finite models or ``"float64"`` for continuous models. 
-        More generally, this can be an example of a record type, such as 
-        ``[('outcome x', 'uint8'), ('outcome y', 'uint8')]``.
-        
-        This property is assumed by inference engines to be constant for
-        the lifetime of a Model instance.
-        """
-        return 'uint32'
-    
-    @property
-    def is_n_outcomes_constant(self):
-        """
-        Returns ``True`` if and only if the number of outcomes for each
-        experiment is independent of the experiment being performed.
+        Returns ``True`` if and only if both the domain and ``n_outcomes``
+        are independent of the expparam.
         
         This property is assumed by inference engines to be constant for
         the lifetime of a Model instance.
@@ -229,27 +202,6 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         return list(map("x_{{{}}}".format, range(self.n_modelparams)))
 
     @property
-    def needs_outcome_resample(self):
-        """
-        Determines whether the outcomes needs to be resampled during call 
-        to :func:`~abstract_model.Model.outcomes`
-        .
-        :return: Resampling state 
-        :rtype: bool 
-        """
-        return self._needs_outcome_resample
-
-    @needs_outcome_resample.setter
-    def needs_outcome_resample(self, needs_outcome_resample):
-        """
-        Set outcome resampling flag.
-
-        :param bool needs_outcome_resample: Whether to resample or not in call 
-        to :func:`~abstract_model.Model.outcomes`.
-        """
-        self._needs_outcome_resample = needs_outcome_resample
-
-    @property
     def allow_identical_outcomes(self):
         """
         Whether the method ``outcomes`` should be allowed to return multiple 
@@ -317,6 +269,19 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         """
         pass
     
+    @abc.abstractmethod
+    def domain(self, exparams):
+        """
+        Returns a list of ``Domain``s, one for each input expparam.
+
+        :param numpy.ndarray expparams:  Array of experimental parameters. This
+            array must be of dtype agreeing with the ``expparams_dtype``
+            property.
+
+        :rtype: list of ``Domain``
+        """
+        pass
+
     @abc.abstractmethod
     def are_models_valid(self, modelparams):
         """
@@ -463,12 +428,10 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         """
         return modelparams
 
-    def _resample_outcomes(self, weights, modelparams, expparams):
+    def marginalized_outcomes(self, weights, modelparams, expparams):
         """
         For each given expparam, randomly samples outcomes marginalized 
         over the distribution defined by the weights and modelparams.
-        Only returns new outcomes if ``needs_outcome_resample``,``resample``, or ``self.always_resample_outcomes`` 
-        is ``True``, otherwise returns the cached values.
 
         :param np.ndarray weights: Set of weights with a weight
             corresponding to every modelparam. 
@@ -502,7 +465,7 @@ class Model(with_metaclass(abc.ABCMeta, object)):
             
             sample_points = modelparams[np.random.choice(modelparams.shape[0], size=n_outcomes, p=weights)]
             os = self.simulate_experiment(sample_points, expparam, repeat=1)[0,:,0]
-            assert os.dtype == self.outcomes_dtype
+            assert os.dtype == self.domain(expparam)[0].dtype
 
             # The same outcome is likely to have resulted multiple times in the case that outcomes 
             # are discrete values and the modelparam distribution is not too wide. If each outcome
@@ -527,46 +490,6 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         self._outcomes = outcomes 
         self._outcome_weights = outcome_weights
         self._outcome_sample_points = outcome_sample_points
-
-        self.needs_outcome_resample = False
-
-    def outcomes(self, weights, modelparams, expparams, resample=False):
-        """
-        For each given expparam, randomly samples outcomes marginalized 
-        over the distribution defined by the weights and modelparams.
-        Only returns new outcomes if ``needs_outcome_resample``,``resample``, or ``self.always_resample_outcomes`` 
-        is ``True``, otherwise returns the cached values.
-
-        :param np.ndarray weights: Set of weights with a weight
-            corresponding to every modelparam. 
-        :param np.ndarray modelparams: Set of model parameters (particles).
-        :param np.ndarray expparams: An experiment parameter array describing
-            the experiments that outcomes should be sampled for.
-        :param bool resample: Force resampling of outcomes and weights.
-
-        :return (list, np.ndarray): A pair of outcomes ``(outcome_weights, outcomes)`` where 
-        ``outcomes`` is list of ``np.ndarrays`` of type ``outcomes_dtype`` corresponding to 
-        outcomes of ``expparam``, and where ``outcome_weights`` is a list of ``np.ndarrays`` 
-        specifying corresponding weights of each outcome.
-
-
-        Note: that the idea of outcome weights exists for two reasons: 1) to be
-        compatible with ``FiniteOutcomeModel``, where it is possible to enumerate 
-        all possible outcomes, in which case the weights are related 
-        to the likelihood conditional on a particle, and 2) for efficiency in the 
-        case where some of the same outcomes will be output many times, so that 
-        the return value can contain each of these outcomes only once, but with 
-        a higher weight.
-
-        Note: The outcomes and outcome weights can be used to compute generic 
-        quantities which are averaged over data being marginalized over 
-        a distribution of model parameters. See ``~qinfer.SMCUpdater.bayes_risk()` 
-        as an example.
-        """
-        if self.needs_outcome_resample or resample or self.always_resample_outcomes:
-            self._resample_outcomes(weights, modelparams, expparams)
-
-        return self._outcome_weights, self._outcome_sample_points, self._outcomes
 
         
 class LinearCostModelMixin(Model):
@@ -635,25 +558,27 @@ class FiniteOutcomeModel(Model):
         # This is used to count simulation calls.
         super(FiniteOutcomeModel, self).simulate_experiment(modelparams, expparams, repeat)
         
-        if self.is_n_outcomes_constant:
-            all_outcomes = np.arange(self.n_outcomes(expparams[0, np.newaxis]))
-            probabilities = self.likelihood(np.arange(self.n_outcomes(expparams)), modelparams, expparams)
-            cdf = np.cumsum(probabilities,axis=0)
+        if self.is_outcomes_constant:
+            # In this case, all expparams have the same domain, so just look at the first one
+            all_outcomes = self.domain(expparams)[0].values
+            probabilities = self.likelihood(all_outcomes, modelparams, expparams)
+            cdf = np.cumsum(probabilities, axis=0)
             randnum = np.random.random((repeat, 1, modelparams.shape[0], expparams.shape[0]))
-            outcomes = np.argmax(cdf > randnum, axis=1)
+            outcome_idxs = all_outcomes[np.argmax(cdf > randnum, axis=1)]
+            outcomes = all_outcomes[outcome_idxs]
         else:
             # Loop over each experiment, sadly.
-            outcomes = np.empty((repeat, modelparams.shape[0], expparams.shape[0]))
+            # Assume all domains have the same dtype
+            dtype = self.domain(expparams[0, np.newaxis])[0].dtype
+            outcomes = np.empty((repeat, modelparams.shape[0], expparams.shape[0]), dtype=dtype)
             for idx_experiment, single_expparams in enumerate(expparams[:, np.newaxis]):
-                all_outcomes = np.arange(self.n_outcomes(single_expparams))
-                
-                probabilities = self.likelihood(np.arange(self.n_outcomes(single_expparams)), modelparams, single_expparams)
+                all_outcomes = self.domain(single_expparams).values
+                probabilities = self.likelihood(all_outcomes, modelparams, single_expparams)
                 cdf = np.cumsum(probabilities, axis=0)[..., 0]
                 randnum = np.random.random((repeat, 1, modelparams.shape[0]))
-                outcomes[:, :, idx_experiment] = np.argmax(cdf > randnum, axis=1)
+                outcomes[:, :, idx_experiment] = all_outcomes[np.argmax(cdf > randnum, axis=1)]
                 
-        return (outcomes[0, 0, 0] if repeat == 1 and expparams.shape[0] == 1 and modelparams.shape[0] == 1 else outcomes
-                ).astype(self.outcomes_dtype)
+        return outcomes[0, 0, 0] if repeat == 1 and expparams.shape[0] == 1 and modelparams.shape[0] == 1 else outcomes
                 
     ## STATIC METHODS ##
     # These methods are provided as a convienence to make it easier to write
