@@ -652,43 +652,54 @@ class SMCUpdater(Distribution):
         #     rescaling matrix.  Non-diagonal could also be considered, but
         #     for the moment this is not implemented.
 
-        w_outcomes,sampled_modelparams,outcomes = self.model.outcomes(self.particle_weights,
+        outcomes_arr = self.model.outcomes(self.particle_weights,
                                                        self.particle_locations,expparams)
-        #method currently assumes single experiment
-        outcomes = outcomes[0]
-        w_outcomes = w_outcomes[0]
-  
-        sampled_modelparams = sampled_modelparams[0]
+        if len(outcomes_arr)==3:
+            w_outcomes,sampled_modelparams,outcomes = outcomes_arr
+            outcomes = outcomes[0]
+            w_outcomes = w_outcomes[0][:,np.newaxis]
+            sampled_modelparams = sampled_modelparams[0]
 
-        w,N = self.hypothetical_update(outcomes, expparams, return_normalization=True)
-      
-        w = w[:, 0, :] # Fix w.shape == (n_outcomes, n_particles).
-        N = N[:, :, 0] # Fix L.shape == (n_outcomes, n_particles).
-        xs = self.particle_locations.transpose([1, 0]) # shape (n_mp, n_particles).
-        
-        # In the following, we will use the subscript convention that
-        # "o" refers to an outcome, "p" to a particle, and
-        # "i" to a model parameter.
-        # Thus, mu[o,i] is the sum over all particles of w[o,p] * x[i,p].
-
-        mu = np.transpose(np.tensordot(w,xs,axes=(1,1)))
- 
-        var = (
-            # This sum is a reduction over the particle index and thus
-            # represents an expectation value over the diagonal of the
-            # outer product $x . x^T$.
+            w = self.hypothetical_update(outcomes, expparams)
+            w = w[:, 0, :] # Fix w.shape == (n_outcomes, n_particles).
+            xs = self.particle_locations.transpose([1, 0]) # shape (n_mp, n_particles).
+            mu = np.tensordot(w,xs,axes=(1,1))
+            var = np.sum(w_outcomes*(mu-sampled_modelparams)**2,axis=0)
+            return np.sum(self.model.Q * var)
+        else:
+            outcomes = outcomes_arr
+            #method currently assumes single experiment
+            outcomes = outcomes[0]
+            w,N = self.hypothetical_update(outcomes, expparams, return_normalization=True)
+          
+            w = w[:, 0, :] # Fix w.shape == (n_outcomes, n_particles).
+            N = N[:, :, 0] # Fix N.shape == (n_outcomes, n_particles).
+            xs = self.particle_locations.transpose([1, 0]) # shape (n_mp, n_particles).
             
-            np.transpose(np.tensordot(w,xs**2,axes=(1,1)))
-            # We finish by subracting from the above expectation value
-            # the diagonal of the outer product $mu . mu^T$.
-            - mu**2).T
+            # In the following, we will use the subscript convention that
+            # "o" refers to an outcome, "p" to a particle, and
+            # "i" to a model parameter.
+            # Thus, mu[o,i] is the sum over all particles of w[o,p] * x[i,p].
+
+            mu = np.transpose(np.tensordot(w,xs,axes=(1,1)))
+            
+
+            var = (
+                # This sum is a reduction over the particle index and thus
+                # represents an expectation value over the diagonal of the
+                # outer product $x . x^T$.
+                
+                np.transpose(np.tensordot(w,xs**2,axes=(1,1)))
+                # We finish by subracting from the above expectation value
+                # the diagonal of the outer product $mu . mu^T$.
+                - mu**2).T
 
 
-        rescale_var = np.sum(self.model.Q * var, axis=1)
-        tot_like = np.sum(N, axis=1)
+            rescale_var = np.sum(self.model.Q * var, axis=1)
+            tot_like = np.sum(N, axis=1)
 
    
-        return np.dot(tot_like.T, rescale_var)        
+            return np.dot(tot_like.T, rescale_var)        
 
         
     def expected_information_gain(self, expparams):

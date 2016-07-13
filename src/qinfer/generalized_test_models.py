@@ -363,11 +363,11 @@ class GaussianModel(DifferentiableModel):
 
     def __init__(self, sigma=None, num_outcome_samples=10000,
                 always_resample_outcomes=False, initial_outcomes = None,
-                initial_weights=None, allow_identical_outcomes=False):
+                initial_weights=None, allow_identical_outcomes=False,constant_noise_outcomes=False):
 
         self.num_outcome_samples = num_outcome_samples
         self._sigma = sigma
-
+        self._constant_noise_outcomes = constant_noise_outcomes
         super(GaussianModel, self).__init__(always_resample_outcomes=always_resample_outcomes,
             initial_outcomes=initial_outcomes,initial_weights=initial_weights,
             allow_identical_outcomes=allow_identical_outcomes)

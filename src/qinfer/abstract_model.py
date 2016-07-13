@@ -660,16 +660,12 @@ class FiniteOutcomeModel(Model):
             expparams = expparams[np.newaxis,:] 
 
         outcomes = []
-        outcome_weights = []
-        sampled_modelparams = []
+
         for x in expparams:
             out = np.arange(self.n_outcomes(x))
-            out_w = self.likelihood(out,modelparams,np.asarray(x,dtype=self.expparams_dtype))
             outcomes.append(out)
-            outcome_weights.append(out_w)
-            sampled_modelparams.append(modelparams)
 
-        return outcome_weights,sampled_modelparams,outcomes
+        return outcomes
     ## STATIC METHODS ##
     # These methods are provided as a convienence to make it easier to write
     # simple models.
