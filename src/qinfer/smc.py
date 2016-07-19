@@ -665,7 +665,7 @@ class SMCUpdater(Distribution):
             xs = self.particle_locations.transpose([1, 0]) # shape (n_mp, n_particles).
             mu = np.tensordot(w,xs,axes=(1,1))
             var = np.sum(w_outcomes*(mu-sampled_modelparams)**2,axis=0)
-            return np.sum(self.model.Q * var)
+            return np.dot(self.model.Q, var)
         else:
             outcomes = outcomes_arr
             #method currently assumes single experiment
