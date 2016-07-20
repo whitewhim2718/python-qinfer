@@ -766,7 +766,6 @@ class DifferentiableModel(with_metaclass(abc.ABCMeta, Model)):
             
                 outcomes = np.arange(n_o)
                 scores, L = self.score(outcomes, modelparams, experiment, return_L=True)
-                
                 fisher[:, :, :, idx_experiment] = np.einsum("ome,iome,jome->ijme",
                     L, scores, scores
                 )
