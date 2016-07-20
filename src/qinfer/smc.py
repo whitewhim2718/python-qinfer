@@ -320,24 +320,23 @@ class SMCUpdater(Distribution):
 
     ## UPDATE METHODS #########################################################
 
-    def hypothetical_update(self, outcomes, expparams, return_likelihood=False, return_normalization=False):
+    def hypothetical_update(self, outcomes, expparams, return_likelihood=False, return_normalization=False, weights=None):
         """
         Produces the particle weights for the posterior of a hypothetical
         experiment.
-
         :param outcomes: Integer index of the outcome of the hypothetical
             experiment.
+            TODO: Fix this to take an array-like of ints as well.
         :type outcomes: int or an ndarray of dtype int.
-        :param numpy.ndarray expparams: Experiments to be used for the hypothetical
-            updates.
-
+        :param expparams: TODO
         :type weights: ndarray, shape (n_outcomes, n_expparams, n_particles)
         :param weights: Weights assigned to each particle in the posterior
             distribution :math:`\Pr(\omega | d)`.
         """
 
         # It's "hypothetical", don't want to overwrite old weights yet!
-        weights = self.particle_weights
+        if weights is None:
+            weights = self.particle_weights
         locs = self.particle_locations
 
         # Check if we have a single outcome or an array. If we only have one
@@ -383,6 +382,49 @@ class SMCUpdater(Distribution):
                 return norm_weights, L
             else:
                 return norm_weights, L, norm_scale
+
+    def batch_hypothetical_update(self, outcomes, expparams, return_likelihood=False, return_normalization=False):
+        r"""
+        Updates based on a batch of outcomes and experiments, rather than just
+        one.
+
+        :param numpy.ndarray outcomes: A list  of arrays outcomes of the experiments that
+            were performed.
+        :param numpy.ndarray expparams: Either a scalar or 
+            array of experiments that were performed.
+        :param int resample_interval: Controls how often to check whether
+            :math:`N_{\text{ess}}` falls below the resample threshold.
+        """
+   
+        n_exps = expparams.shape[0]
+        if expparams.shape[0] != len(outcomes):
+            raise ValueError("The number of outcomes and experiments must match.")
+
+        if len(expparams.shape) == 1:
+            expparams = expparams[:, None]
+
+        # Loop over experiments and update one at a time.
+        w = self.particle_weights
+        for idx_exp, (outcome, experiment) in enumerate(zip(iter(outcomes), iter(expparams))):
+
+            w,L,N = self.hypothetical_update(outcome, experiment,return_likelihood=True,return_normalization=True,weights=w)
+            if idx_exp ==0:
+                LT = L 
+                NT = N
+            else:
+                LT = LT*L 
+                NT = NT*N
+        if not return_likelihood:
+            if not return_normalization:
+                return w
+            else:
+                return w, NT
+        else:
+            if not return_normalization:
+                return w, LT
+            else:
+                return w, LT, NT
+
 
     def update(self, outcome, expparams, check_for_resample=True):
         """
@@ -451,6 +493,8 @@ class SMCUpdater(Distribution):
         # Resample if needed.
         if check_for_resample:
             self._maybe_resample()
+
+
 
     def batch_update(self, outcomes, expparams, resample_interval=5):
         r"""
@@ -634,10 +678,10 @@ class SMCUpdater(Distribution):
         quadratic loss function defined by the current model's scale matrix
         (see :attr:`qinfer.abstract_model.Model.Q`).
         
-        :param expparams: The experiment at which to compute the Bayes risk.
+        :param expparams: The experiments for which to compute the Bayes risk over.
         :type expparams: :class:`~numpy.ndarray` of dtype given by the current
             model's :attr:`~qinfer.abstract_model.Model.expparams_dtype` property,
-            and of shape ``(1,)``
+            and of shape ``(n_experiments,)``
             
         :return float: The Bayes risk for the current posterior distribution
             of the hypothetical experiment ``expparams``.
@@ -656,11 +700,11 @@ class SMCUpdater(Distribution):
                                                        self.particle_locations,expparams)
         if len(outcomes_arr)==3:
             w_outcomes,sampled_modelparams,outcomes = outcomes_arr
-            outcomes = outcomes[0]
+            outcomes = outcomes
             w_outcomes = w_outcomes[0][:,np.newaxis]
             sampled_modelparams = sampled_modelparams[0]
 
-            w = self.hypothetical_update(outcomes, expparams)
+            w = self.batch_hypothetical_update(outcomes, expparams)
             w = w[:, 0, :] # Fix w.shape == (n_outcomes, n_particles).
             xs = self.particle_locations.transpose([1, 0]) # shape (n_mp, n_particles).
             mu = np.tensordot(w,xs,axes=(1,1))
@@ -669,8 +713,8 @@ class SMCUpdater(Distribution):
         else:
             outcomes = outcomes_arr
             #method currently assumes single experiment
-            outcomes = outcomes[0]
-            w,N = self.hypothetical_update(outcomes, expparams, return_normalization=True)
+            outcomes = [outcomes for i in range(expparams.shape[0])]
+            w,N = self.batch_hypothetical_update(outcomes, expparams, return_normalization=True)
           
             w = w[:, 0, :] # Fix w.shape == (n_outcomes, n_particles).
             N = N[:, :, 0] # Fix N.shape == (n_outcomes, n_particles).
@@ -724,7 +768,7 @@ class SMCUpdater(Distribution):
         outcomes = outcomes[0]
         w_outcomes = w_outcomes[0]
 
-        w = self.hypothetical_update(outcomes, expparams, return_likelihood=False)
+        w = self.batch_hypothetical_update(outcomes, expparams, return_likelihood=False)
         w = w[:, 0, :] # Fix w.shape == (n_outcomes, n_particles).
 
         
@@ -1314,6 +1358,8 @@ class MixedApproximateSMCUpdater(SMCUpdater):
                 return norm_weights, L
             else:
                 return norm_weights, L, norm_scale
+
+
                 
 class SMCUpdaterBCRB(SMCUpdater):
     """
