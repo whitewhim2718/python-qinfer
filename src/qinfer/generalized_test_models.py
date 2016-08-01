@@ -551,9 +551,8 @@ class GaussianModel(DifferentiableModel):
             sigma[...] = self._sigma
 
 
-        x = self.model_function(modelparams,expparams)
-
-        return 1/(np.sqrt(2*np.pi)*sigma)*np.exp(-(outcomes-x)**2/(2*sigma**2))
+        x = self.model_function(modelparams,expparams)[np.newaxis,...]
+        return 1/np.sqrt(2*np.pi*sigma**2)*np.exp(-(outcomes-x)**2/(2*sigma**2))
 
 
     def score(self, outcomes, modelparams, expparams, return_L=False):

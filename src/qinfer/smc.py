@@ -395,7 +395,9 @@ class SMCUpdater(Distribution):
         :param int resample_interval: Controls how often to check whether
             :math:`N_{\text{ess}}` falls below the resample threshold.
         """
-   
+        if len(expparams.shape)<1:
+            expparams = expparams.reshape(-1)
+
         n_exps = expparams.shape[0]
         if expparams.shape[0] != len(outcomes):
             raise ValueError("The number of outcomes and experiments must match.")
@@ -406,7 +408,6 @@ class SMCUpdater(Distribution):
         # Loop over experiments and update one at a time.
         w = self.particle_weights
         for idx_exp, (outcome, experiment) in enumerate(zip(iter(outcomes), iter(expparams))):
-
             w,L,N = self.hypothetical_update(outcome, experiment,return_likelihood=True,return_normalization=True,weights=w)
             if idx_exp ==0:
                 LT = L 
@@ -414,6 +415,7 @@ class SMCUpdater(Distribution):
             else:
                 LT = LT*L 
                 NT = NT*N
+
         if not return_likelihood:
             if not return_normalization:
                 return w
@@ -695,21 +697,19 @@ class SMCUpdater(Distribution):
         # Q = np array(Nmodelparams), which contains the diagonal part of the
         #     rescaling matrix.  Non-diagonal could also be considered, but
         #     for the moment this is not implemented.
-
         outcomes_arr = self.model.outcomes(self.particle_weights,
                                                        self.particle_locations,expparams)
         if len(outcomes_arr)==3:
             w_outcomes,sampled_modelparams,outcomes = outcomes_arr
-            outcomes = outcomes
-            w_outcomes = w_outcomes[0][:,np.newaxis]
-            sampled_modelparams = sampled_modelparams[0]
-
+            sampled_modelparams = sampled_modelparams
             w = self.batch_hypothetical_update(outcomes, expparams)
             w = w[:, 0, :] # Fix w.shape == (n_outcomes, n_particles).
             xs = self.particle_locations.transpose([1, 0]) # shape (n_mp, n_particles).
             mu = np.tensordot(w,xs,axes=(1,1))
-            var = np.sum(w_outcomes*(mu-sampled_modelparams)**2,axis=0)
-            return np.dot(self.model.Q, var)
+            w_o = w_outcomes[0][:,np.newaxis]  
+            var = np.sum(w_o*(mu-sampled_modelparams[0])**2,axis=0)
+            b_i = np.dot(self.model.Q, var)
+            return b_i 
         else:
             outcomes = outcomes_arr
             #method currently assumes single experiment
