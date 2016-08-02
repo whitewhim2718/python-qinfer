@@ -96,6 +96,8 @@ class Model(with_metaclass(abc.ABCMeta, object)):
             #otherwise initialize all outcomes to zero at start
             self._outcome_weights = np.ones(None,self.outcomes_dtype)
 
+        self._always_resample_outcomes = always_resample_outcomes
+        self.needs_outcome_resample = True
         # Initialize a default scale matrix.
         self._Q = np.ones((self.n_modelparams,))
         
@@ -123,8 +125,19 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         the lifetime of a Model instance.
         """
         pass
+
             
     ## CONCRETE PROPERTIES ##
+    @property
+    def always_resample_outcomes(self):
+        """
+        Return ``True`` if the ``always_resample_outcomes`` flag was set during
+        model initialization. Determines if the outcomes should be resampled with 
+        every call of :func:`~abstract_model.Model.outcomes`
+        :rtype: bool
+
+        """
+        return self._always_resample_outcomes
     
     @property
     def is_outcomes_constant(self):
@@ -200,6 +213,27 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         model, formatted as LaTeX strings.
         """
         return list(map("x_{{{}}}".format, range(self.n_modelparams)))
+
+    @property
+    def needs_outcome_resample(self):
+        """
+        Determines whether the outcomes needs to be resampled during call 
+        to :func:`~abstract_model.Model.outcomes`
+        .
+        :return: Resampling state 
+        :rtype: bool 
+        """
+        return self._needs_outcome_resample
+
+    @needs_outcome_resample.setter
+    def needs_outcome_resample(self, needs_outcome_resample):
+        """
+        Set outcome resampling flag.
+
+        :param bool needs_outcome_resample: Whether to resample or not in call 
+        to :func:`~abstract_model.Model.outcomes`.
+        """
+        self._needs_outcome_resample = needs_outcome_resample
 
     @property
     def allow_identical_outcomes(self):
@@ -432,6 +466,8 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         """
         For each given expparam, randomly samples outcomes marginalized 
         over the distribution defined by the weights and modelparams.
+        Only returns new outcomes if ``needs_outcome_resample``,``resample``, or ``self.always_resample_outcomes`` 
+        is ``True``, otherwise returns the cached values.
 
         :param np.ndarray weights: Set of weights with a weight
             corresponding to every modelparam. 
@@ -490,6 +526,46 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         self._outcomes = outcomes 
         self._outcome_weights = outcome_weights
         self._outcome_sample_points = outcome_sample_points
+
+        self.needs_outcome_resample = False
+
+    def outcomes(self, weights, modelparams, expparams, resample=False):
+        """
+        For each given expparam, randomly samples outcomes marginalized 
+        over the distribution defined by the weights and modelparams.
+        Only returns new outcomes if ``needs_outcome_resample``,``resample``, or ``self.always_resample_outcomes`` 
+        is ``True``, otherwise returns the cached values.
+
+        :param np.ndarray weights: Set of weights with a weight
+            corresponding to every modelparam. 
+        :param np.ndarray modelparams: Set of model parameters (particles).
+        :param np.ndarray expparams: An experiment parameter array describing
+            the experiments that outcomes should be sampled for.
+        :param bool resample: Force resampling of outcomes and weights.
+
+        :return (list, np.ndarray): A pair of outcomes ``(outcome_weights, outcomes)`` where 
+        ``outcomes`` is list of ``np.ndarrays`` of type ``outcomes_dtype`` corresponding to 
+        outcomes of ``expparam``, and where ``outcome_weights`` is a list of ``np.ndarrays`` 
+        specifying corresponding weights of each outcome.
+
+
+        Note: that the idea of outcome weights exists for two reasons: 1) to be
+        compatible with ``FiniteOutcomeModel``, where it is possible to enumerate 
+        all possible outcomes, in which case the weights are related 
+        to the likelihood conditional on a particle, and 2) for efficiency in the 
+        case where some of the same outcomes will be output many times, so that 
+        the return value can contain each of these outcomes only once, but with 
+        a higher weight.
+
+        Note: The outcomes and outcome weights can be used to compute generic 
+        quantities which are averaged over data being marginalized over 
+        a distribution of model parameters. See ``~qinfer.SMCUpdater.bayes_risk()` 
+        as an example.
+        """
+        if self.needs_outcome_resample or resample or self.always_resample_outcomes:
+            self._resample_outcomes(weights, modelparams, expparams)
+
+        return self._outcome_weights,self._outcome_sample_points,self._outcomes
 
         
 class LinearCostModelMixin(Model):

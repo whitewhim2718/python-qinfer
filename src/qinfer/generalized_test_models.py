@@ -67,8 +67,11 @@ class PoissonModel(DifferentiableModel):
     
     ## INITIALIZER ##
 
-    def __init__(self, num_outcome_samples=10000):
-        super(PoissonModel, self).__init__()
+    def __init__(self, num_outcome_samples=10000,always_resample_outcomes=False, 
+            initial_outcomes = None,initial_weights=None, allow_identical_outcomes=False):
+        super(PoissonModel, self).__init__(always_resample_outcomes=always_resample_outcomes,
+            initial_outcomes=initial_outcomes,initial_weights=initial_weights,
+            allow_identical_outcomes=allow_identical_outcomes)
         self.num_outcome_samples = num_outcome_samples
 
     ## ABSTRACT METHODS##
@@ -205,9 +208,12 @@ class PoissonModel(DifferentiableModel):
             modelparams = modelparams[np.newaxis, ...]
         
         if len(outcomes.shape) == 1:
-            outcomes = outcomes[..., np.newaxis]
+            outcomes = outcomes[...,np.newaxis, np.newaxis]
+        else:
+            outcomes = outcomes[:,np.newaxis,:]
+
         lamb_da = self.model_function(modelparams,expparams)[np.newaxis,...]
-        outcomes = outcomes[:,np.newaxis,:]
+     
         return np.exp(outcomes*np.log(lamb_da)-gammaln(outcomes+1)-lamb_da)
 
 
@@ -220,11 +226,13 @@ class PoissonModel(DifferentiableModel):
             modelparams = modelparams[np.newaxis, ...]
         
         if len(outcomes.shape) == 1:
-            outcomes = outcomes[..., np.newaxis]
+            outcomes_rs = outcomes[np.newaxis,...,np.newaxis, np.newaxis]
+        else:
+            outcomes_rs = outcomes[np.newaxis,:,np.newaxis,:]
 
         lamb_da = self.model_function(modelparams,expparams)[np.newaxis,np.newaxis,:,:]
         fns_deriv = self.model_function_derivative(modelparams,expparams)[:,np.newaxis,:,:]
-        outcomes_rs = outcomes[np.newaxis,:,np.newaxis,:]
+
 
         scr = (outcomes_rs/lamb_da-1)*fns_deriv
         
@@ -294,8 +302,13 @@ class ExponentialPoissonModel(PoissonModel):
     rate and a single experimental parameter :math:`\tau`.
     """
 
-    def __init__(self,max_rate=100, num_outcome_samples=10000):
-        super(ExponentialPoissonModel, self).__init__(num_outcome_samples=num_outcome_samples)
+    def __init__(self,max_rate=100, num_outcome_samples=10000,
+                always_resample_outcomes=False, initial_outcomes = None,
+                initial_weights=None, allow_identical_outcomes=False):
+
+        super(ExponentialPoissonModel, self).__init__(num_outcome_samples=num_outcome_samples,
+            always_resample_outcomes=always_resample_outcomes,initial_outcomes=initial_outcomes,
+            initial_weights=initial_weights,allow_identical_outcomes=allow_identical_outcomes)
         self.max_rate = max_rate
 
     @property 
@@ -353,12 +366,16 @@ class GaussianModel(DifferentiableModel):
     
     ## INITIALIZER ##
 
-    def __init__(self, sigma=None, num_outcome_samples=10000):
+    def __init__(self, sigma=None, num_outcome_samples=10000,
+                always_resample_outcomes=False, initial_outcomes = None,
+                initial_weights=None, allow_identical_outcomes=False,constant_noise_outcomes=False):
 
         self.num_outcome_samples = num_outcome_samples
         self._sigma = sigma
-
-        super(GaussianModel, self).__init__()
+        self._constant_noise_outcomes = constant_noise_outcomes
+        super(GaussianModel, self).__init__(always_resample_outcomes=always_resample_outcomes,
+            initial_outcomes=initial_outcomes,initial_weights=initial_weights,
+            allow_identical_outcomes=allow_identical_outcomes)
 
 
     
@@ -513,12 +530,15 @@ class GaussianModel(DifferentiableModel):
 
         super(GaussianModel, self).likelihood(outcomes, modelparams, expparams)
 
-       
+        
         if len(modelparams.shape) == 1:
             modelparams = modelparams[np.newaxis, ...]
         
+      
         if len(outcomes.shape) == 1:
-            outcomes = outcomes[..., np.newaxis]
+            outcomes = outcomes[...,np.newaxis, np.newaxis]
+        else:
+            outcomes = outcomes[:,np.newaxis,:]
 
         # Check to see if sigma/mu are model parameters, and if 
         # so remove from model parameter array 
@@ -531,8 +551,7 @@ class GaussianModel(DifferentiableModel):
             sigma[...] = self._sigma
 
 
-        x = self.model_function(modelparams,expparams)[np.newaxis,...]
-        outcomes = outcomes[:,np.newaxis,:]
+        x = self.model_function(modelparams,expparams)
 
         return 1/(np.sqrt(2*np.pi)*sigma)*np.exp(-(outcomes-x)**2/(2*sigma**2))
 
@@ -545,7 +564,9 @@ class GaussianModel(DifferentiableModel):
             modelparams = modelparams[np.newaxis, ...]
         
         if len(outcomes.shape) == 1:
-            outcomes = outcomes[..., np.newaxis]
+            outcomes_rs = outcomes[np.newaxis,...,np.newaxis, np.newaxis]
+        else:
+            outcomes_rs = outcomes[np.newaxis,:,np.newaxis,:]
 
 
         if self._sigma is None:
@@ -561,7 +582,6 @@ class GaussianModel(DifferentiableModel):
         x = self.model_function(modelparams_rs,expparams)[np.newaxis,np.newaxis,:,:]
         fns_deriv = self.model_function_derivative(modelparams_rs,expparams)[:,np.newaxis,:,:]
         
-        outcomes_rs = outcomes[np.newaxis,:,np.newaxis,:]
    
         scr = ((outcomes_rs-x)/sigma**2)*fns_deriv
 
