@@ -385,13 +385,13 @@ class ReferencedPoissonModel(DerivedModel):
                 alpha = modelparams[:, -2]
                 beta = modelparams[:, -1]
 
-                outcomes[:,:,idx_ep] = np.random.poisson(pr1 * alpha + (1 - pr1) * beta, size=(repeat, n_mps)
+                outcomes[:,:,idx_ep] = np.random.poisson(pr1 * alpha + (1 - pr1) * beta, size=(repeat, n_mps))
             elif expparam['mode'] == self.BRIGHT:
                 alpha = modelparams[:, -2]
-                outcomes[:,:,idx_ep] = np.random.poisson(alpha, size=(repeat, n_mps)
+                outcomes[:,:,idx_ep] = np.random.poisson(alpha, size=(repeat, n_mps))
             elif expparam['mode'] == self.DARK:
                 beta = modelparams[:, -1]
-                outcomes[:,:,idx_ep] = np.random.poisson(beta, size=(repeat, n_mps)
+                outcomes[:,:,idx_ep] = np.random.poisson(beta, size=(repeat, n_mps))
             else:
                 raise(ValueError('Unknown mode detected in ReferencedPoissonModel.'))
 
@@ -399,7 +399,7 @@ class ReferencedPoissonModel(DerivedModel):
 
     def update_timestep(self, modelparams, expparams):
         return self.underlying_model.update_timestep(modelparams,
-            np.array([expparam['p']]) if self._expparams_scalar else expparam)[0,:,0]
+            np.array([expparam['p']]) if self._expparams_scalar else expparam[0,:,0]
         )
 
 
