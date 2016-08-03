@@ -35,6 +35,7 @@ from __future__ import division # Ensures that a/b is always a float.
 __all__ = [
     'DerivedModel',
     'PoisonedModel',
+    'ReferencedPoissonModel',
     'BinomialModel',
     'MultinomialModel',
     'MLEModel',
@@ -49,12 +50,49 @@ from functools import reduce
 import numpy as np
 import scipy
 from scipy.stats import binom
+from scipy.special import xlogy, gammaln
 
 from qinfer.utils import binomial_pdf
 from qinfer.abstract_model import Model, FiniteOutcomeModel, DifferentiableModel
 from qinfer._lib import enum # <- TODO: replace with flufl.enum!
 from qinfer.ale import binom_est_error
-    
+
+## FUNCTIONS ###################################################################
+
+def tuple_encode(x):
+    """
+    If x is a tuple of non-negative integers, outputs a single non-negative
+    integer which is unique for that tuple, based on Cantor's bijection
+    argument.
+    """
+    if len(x) == 1:
+        return x
+    else:
+        i, j = x[0], tuple_encode(x[1:])
+        return int((i + j + 1) * (i + j) / 2) + i
+
+def tuple_decode(a, n):
+    """
+    Given the non-negative integer a, does the inverse operation of
+    tuple_encode, assuming the desired tuple has length n.
+    """
+
+    if n == 1:
+        return [a]
+    else:
+        # Do not question the voodoo
+        b = int(np.floor((1 + np.sqrt(1 + 8 * a)) / 2) - 1)
+        j = int(b * (b + 3) / 2 - a)
+        i = int((np.sqrt(9 + 8 * (a + j))- 2 * j - 3) / 2)
+
+        return [i] + tuple_decode(j, n - 1)
+
+def poisson_pdf(k, mu):
+    """
+    Probability of k events in a poisson process of expectation mu
+    """
+    return np.exp(xlogy(k, mu) - gammaln(k + 1) - mu)
+
 ## CLASSES #####################################################################
 
 class DerivedModel(Model):
@@ -194,6 +232,181 @@ class PoisonedModel(DerivedModel, FiniteOutcomeModel):
         """
         super(PoisonedModel, self).simulate_experiment(modelparams, expparams, repeat)
         return self.underlying_model.simulate_experiment(modelparams, expparams, repeat)
+
+class ReferencedPoissonModel(DerivedModel):
+    """
+    Model whose "true" underlying model is a coin flip, but where the coin is
+    only accessible by drawing three poisson random variates, the rate
+    of the third being the convex combination of the rates of the first two,
+    and the linear parameter being the weight of the coin.
+    By drawing from all three poisson random variables, information about the
+    coin can be extracted, and the rates are thought of as nuisance parameters.
+
+    This model is in many ways similar to the :class:`BinomialModel`, in
+    particular, it requires the underlying model to have exactly two outcomes.
+
+    :param Model underlying_model: The "true" model hidden by poisson random
+        variables which set upper and lower references.
+
+    Note that new ``modelparam`` fields alpha and beta are
+    added by this model. They refer to, respectively, the higher poisson
+    rate (corresponding to underlying probability 1)
+    and the lower poisson rate (corresponding to underlying probability 0).
+
+    Additionally, an exparam field ``mode`` is added.
+    This field indicates whether just the signal has been measured (0), the
+    bright reference (1), or the dark reference (2).
+    To ensure the correct operation of this model, it is important that the
+    decorated model does not also admit a field with the name ``mode``.
+    """
+
+    SIGNAL = 0
+    BRIGHT = 1
+    DARK = 2
+
+    def __init__(self, underlying_model):
+        super(ReferencedPoissonModel, self).__init__(underlying_model)
+
+        if not (underlying_model.is_n_outcomes_constant and underlying_model.n_outcomes(None) == 2):
+            raise ValueError("Decorated model must be a two-outcome model.")
+
+        if isinstance(underlying_model.expparams_dtype, str):
+            # We default to calling the original experiment parameters "p".
+            self._expparams_scalar = True
+            self._expparams_dtype = [('p', underlying_model.expparams_dtype), ('mode', 'int')]
+        else:
+            self._expparams_scalar = False
+            self._expparams_dtype = underlying_model.expparams_dtype + [('mode', 'int')]
+
+    ## PROPERTIES ##
+
+    @property
+    def n_modelparams(self):
+        return super(ReferencedPoissonModel, self).n_modelparams + 2
+
+    @property
+    def modelparam_names(self):
+        underlying_names = super(ReferencedPoissonModel, self).modelparam_names
+        return underlying_names + [r'\alpha', r'\beta']
+
+    @property
+    def expparams_dtype(self):
+        return self._expparams_dtype
+
+    @property
+    def is_n_outcomes_constant(self):
+        """
+        Returns ``True`` if and only if the number of outcomes for each
+        experiment is independent of the experiment being performed.
+
+        This property is assumed by inference engines to be constant for
+        the lifetime of a Model instance.
+        """
+        return False
+
+    ## METHODS ##
+
+    def n_outcomes(self, expparams):
+        """
+        Returns an array of dtype ``uint`` describing the number of outcomes
+        for each experiment specified by ``expparams``.
+
+        :param numpy.ndarray expparams: Array of experimental parameters. This
+            array must be of dtype agreeing with the ``expparams_dtype``
+            property.
+
+        Note: This is incorrect as there are an infinite number of outcomes.
+        We arbitrarily pick a number.
+        """
+        return 1000
+
+    def likelihood(self, outcomes, modelparams, expparams):
+        # By calling the superclass implementation, we can consolidate
+        # call counting there.
+        super(ReferencedPoissonModel, self).likelihood(outcomes, modelparams, expparams)
+
+        L = np.empty((outcomes.shape[0], modelparams.shape[0], expparams.shape[0]))
+        ot = np.tile(outcomes.T, (1, modelparams.shape[0]))
+
+        for idx_ep, expparam in enumerate(expparams):
+
+
+            if expparam['mode'] == self.SIGNAL:
+
+                # Get the probability of outcome 1 for the underlying model.
+                pr1 = self.underlying_model.likelihood(
+                    np.array([1], dtype='uint'),
+                    modelparams[:,:-2],
+                    np.array([expparam['p']]) if self._expparams_scalar else expparam)[0,:,0]
+                pr1 = np.tile(pr1, (outcomes.shape[0], 1))
+
+                # Reference Rate
+                alpha = np.tile(modelparams[:, -2], (outcomes.shape[0], 1))
+                beta = np.tile(modelparams[:, -1], (outcomes.shape[0], 1))
+
+                # For each model parameter, turn this into an expected poisson rate
+                gamma = pr1 * alpha + (1 - pr1) * beta
+
+                # The likelihood of getting each of the outcomes for each of the modelparams
+                L[:,:,idx_ep] = poisson_pdf(ot, gamma)
+
+            elif expparam['mode'] == self.BRIGHT:
+
+                # Reference Rate
+                alpha = np.tile(modelparams[:, -2], (outcomes.shape[0], 1))
+
+                # The likelihood of getting each of the outcomes for each of the modelparams
+                L[:,:,idx_ep] = poisson_pdf(ot, alpha)
+
+            if expparam['mode'] == self.DARK:
+
+                # Reference Rate
+                beta = np.tile(modelparams[:, -1], (outcomes.shape[0], 1))
+
+                # The likelihood of getting each of the outcomes for each of the modelparams
+                L[:,:,idx_ep] = poisson_pdf(ot, beta)
+            else:
+                raise(ValueError('Unknown mode detected in ReferencedPoissonModel.'))
+
+        assert not np.any(np.isnan(L))
+        return L
+
+    def simulate_experiment(self, modelparams, expparams, repeat=1):
+        super(ReferencedPoissonModel, self).simulate_experiment(modelparams, expparams)
+
+        n_mps = modelparams.shape[0]
+        n_eps = expparams.shape[0]
+        outcomes = np.empty(size=(repeat, n_mps, n_eps))
+
+        for idx_ep, expparam in enumerate(expparams):
+            if expparam['mode'] == self.SIGNAL:
+                # Get the probability of outcome 1 for the underlying model.
+                pr1 = self.underlying_model.likelihood(
+                    np.array([1], dtype='uint'),
+                    modelparams[:,:-2],
+                    np.array([expparam['p']]) if self._expparams_scalar else expparam)[0,:,0]
+
+                # Reference Rate
+                alpha = modelparams[:, -2]
+                beta = modelparams[:, -1]
+
+                outcomes[:,:,idx_ep] = np.random.poisson(pr1 * alpha + (1 - pr1) * beta, size=(repeat, n_mps))
+            elif expparam['mode'] == self.BRIGHT:
+                alpha = modelparams[:, -2]
+                outcomes[:,:,idx_ep] = np.random.poisson(alpha, size=(repeat, n_mps))
+            elif expparam['mode'] == self.DARK:
+                beta = modelparams[:, -1]
+                outcomes[:,:,idx_ep] = np.random.poisson(beta, size=(repeat, n_mps))
+            else:
+                raise(ValueError('Unknown mode detected in ReferencedPoissonModel.'))
+
+        return outcomes[0,0,0] if outcomes.size == 1 else outcomes
+
+    def update_timestep(self, modelparams, expparams):
+        return self.underlying_model.update_timestep(modelparams,
+            np.array([expparam['p']]) if self._expparams_scalar else expparam[0,:,0]
+        )
+
 
 class BinomialModel(DerivedModel, FiniteOutcomeModel):
     """
