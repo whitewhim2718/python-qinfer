@@ -46,6 +46,7 @@ import numpy as np
 from .utils import binomial_pdf
 
 from .abstract_model import FiniteOutcomeModel, DifferentiableModel
+from .domains import IntegerDomain
     
 ## CLASSES ###################################################################
 
@@ -66,6 +67,7 @@ class SimpleInversionModel(DifferentiableModel, FiniteOutcomeModel):
     def __init__(self, min_freq=0):
         super(SimpleInversionModel, self).__init__()
         self._min_freq = min_freq
+        self._domain = IntegerDomain(min=0, max=1)
 
     ## PROPERTIES ##
     
@@ -82,7 +84,7 @@ class SimpleInversionModel(DifferentiableModel, FiniteOutcomeModel):
         return [('t', 'float'), ('w_', 'float')]
     
     @property
-    def is_n_outcomes_constant(self):
+    def is_outcomes_constant(self):
         """
         Returns ``True`` if and only if the number of outcomes for each
         experiment is independent of the experiment being performed.
@@ -107,6 +109,18 @@ class SimpleInversionModel(DifferentiableModel, FiniteOutcomeModel):
             property.
         """
         return 2
+
+    def domain(self, expparams):
+        """
+        Returns a list of ``Domain``s, one for each input expparam.
+
+        :param numpy.ndarray expparams:  Array of experimental parameters. This
+            array must be of dtype agreeing with the ``expparams_dtype``
+            property.
+
+        :rtype: list of ``Domain``
+        """
+        return [self._domain] if expparams is None else [self._domain for ep in expparams]
     
     def likelihood(self, outcomes, modelparams, expparams):
         # By calling the superclass implementation, we can consolidate

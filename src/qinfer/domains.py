@@ -155,7 +155,7 @@ class RealDomain(Domain):
     :param float min: A number specifying the lowest possible value of the 
         domain. If left as `None`, negative infinity is assumed. 
     :param float max: A number specifying the largest possible value of the 
-        domain. If left as `None`, negative infinity is assumed.
+        domain. If left as `None`, positive infinity is assumed.
     """
 
     def __init__(self, min=None, max=None):
@@ -269,7 +269,7 @@ class IntegerDomain(Domain):
     :param int min: A number specifying the lowest possible value of the 
         domain. If `None`, negative infinity is assumed. 
     :param int max: A number specifying the largest possible value of the 
-        domain. If left as `None`, negative infinity is assumed.
+        domain. If left as `None`, positive infinity is assumed.
 
     Note: Yes, it is slightly unpythonic to specify `max` instead of `max`+1.
     """

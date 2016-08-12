@@ -37,6 +37,7 @@ from qinfer.tests.base_test import DerandomizedTestCase
 from qinfer.abstract_model import (
     FiniteOutcomeModel
 )
+from qinfer.domains import IntegerDomain
     
 ## CLASSES ####################################################################
 
@@ -55,11 +56,14 @@ class MockModel(FiniteOutcomeModel):
         return np.ones((modelparams.shape[0], ), dtype=bool)
         
     @property
-    def is_n_outcomes_constant(self):
+    def is_outcomes_constant(self):
         return True
         
     def n_outcomes(self, expparams):
         return 2
+
+    def domain(self, expparams):
+        return [IntegerDomain(min=0, max=1) for ep in expparams]
         
     @property
     def expparams_dtype(self):

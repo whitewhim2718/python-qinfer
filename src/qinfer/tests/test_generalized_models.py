@@ -66,13 +66,10 @@ class TestGaussianModel(DerandomizedTestCase):
         sigma = TestGaussianModel.MODELPARAMS[1]
         
         self.gaussian_model_no_sigma_param = BasicGaussianModel(sigma=sigma,
-                                            num_outcome_samples=TestGaussianModel.N_OUTCOME_SAMPLES,
-                                            always_resample_outcomes=True)
-        self.gaussian_model_sigma_param = BasicGaussianModel(num_outcome_samples=TestGaussianModel.N_OUTCOME_SAMPLES,
-                                            always_resample_outcomes=True)
+                                            num_outcome_samples=TestGaussianModel.N_OUTCOME_SAMPLES)
+        self.gaussian_model_sigma_param = BasicGaussianModel(num_outcome_samples=TestGaussianModel.N_OUTCOME_SAMPLES)
         self.exponential_gaussian_model = ExponentialGaussianModel(sigma=TestGaussianModel.ONLINE_SIGMA,
-                                            num_outcome_samples=TestGaussianModel.N_OUTCOME_SAMPLES,
-                                            always_resample_outcomes=True)
+                                            num_outcome_samples=TestGaussianModel.N_OUTCOME_SAMPLES)
 
         self.expparams = TestGaussianModel.TEST_EXPPARAMS.reshape(-1,1)
         self.expparams_risk = TestGaussianModel.TEST_EXPPARAMS_RISK.reshape(-1,1)
@@ -225,10 +222,8 @@ class TestPoissonModel(DerandomizedTestCase):
     def setUp(self):
 
         super(TestPoissonModel,self).setUp()
-        self.poisson_model = BasicPoissonModel(num_outcome_samples=TestPoissonModel.N_OUTCOME_SAMPLES,
-                            always_resample_outcomes=True)
-        self.exponential_poisson_model = ExponentialPoissonModel(num_outcome_samples=TestPoissonModel.N_OUTCOME_SAMPLES,
-                            always_resample_outcomes=True)
+        self.poisson_model = BasicPoissonModel(num_outcome_samples=TestPoissonModel.N_OUTCOME_SAMPLES)
+        self.exponential_poisson_model = ExponentialPoissonModel(num_outcome_samples=TestPoissonModel.N_OUTCOME_SAMPLES)
 
 
         self.expparams = TestPoissonModel.TEST_EXPPARAMS.reshape(-1,1)

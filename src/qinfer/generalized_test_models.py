@@ -49,6 +49,7 @@ from scipy.special import gammaln
 from .utils import binomial_pdf
 from functools import wraps 
 from .abstract_model import Model, DifferentiableModel
+from .domains import IntegerDomain, RealDomain
     
 ## CLASSES ###################################################################
 
@@ -67,12 +68,11 @@ class PoissonModel(DifferentiableModel):
     
     ## INITIALIZER ##
 
-    def __init__(self, num_outcome_samples=10000,always_resample_outcomes=False, 
-            initial_outcomes = None,initial_weights=None, allow_identical_outcomes=False):
-        super(PoissonModel, self).__init__(always_resample_outcomes=always_resample_outcomes,
-            initial_outcomes=initial_outcomes,initial_weights=initial_weights,
-            allow_identical_outcomes=allow_identical_outcomes)
+    def __init__(self, num_outcome_samples=10000, allow_identical_outcomes=False):
+        super(PoissonModel, self).__init__(allow_identical_outcomes=allow_identical_outcomes)
         self.num_outcome_samples = num_outcome_samples
+
+        self._domain = IntegerDomain(min=0, max=None)
 
     ## ABSTRACT METHODS##
 
@@ -167,13 +167,8 @@ class PoissonModel(DifferentiableModel):
     def n_modelparams(self):
         return self.n_model_function_params   
     
-    
     @property
-    def outcomes_dtype(self):
-        return 'uint32'
-    
-    @property
-    def is_n_outcomes_constant(self):
+    def is_outcomes_constant(self):
         """
         Returns ``True`` if and only if the number of outcomes for each
         experiment is independent of the experiment being performed.
@@ -195,6 +190,18 @@ class PoissonModel(DifferentiableModel):
             property.
         """
         return self.num_outcome_samples
+
+    def domain(self, expparams):
+        """
+        Returns a list of ``Domain``s, one for each input expparam.
+
+        :param numpy.ndarray expparams:  Array of experimental parameters. This
+            array must be of dtype agreeing with the ``expparams_dtype``
+            property.
+
+        :rtype: list of ``Domain``
+        """
+        return [self._domain] if expparams is None else [self._domain for ep in expparams]
     
 
     def likelihood(self, outcomes, modelparams, expparams):
@@ -251,10 +258,10 @@ class PoissonModel(DifferentiableModel):
         
         lamb_das = self.model_function(modelparams,expparams)
         outcomes = np.asarray(np.random.poisson(np.tile(lamb_das[np.newaxis,...],(repeat,1,1)))
-                    ).reshape(repeat,modelparams.shape[0],expparams.shape[0]).astype(self.outcomes_dtype)
+                    ).reshape(repeat,modelparams.shape[0],expparams.shape[0]).astype(self.domain(None)[0].dtype)
 
         return (outcomes[0, 0, 0] if repeat == 1 and expparams.shape[0] == 1 and modelparams.shape[0] == 1 else outcomes
-                ).astype(self.outcomes_dtype)
+                ).astype(self.domain(None)[0].dtype)
         
 
 class BasicPoissonModel(PoissonModel):
@@ -302,13 +309,10 @@ class ExponentialPoissonModel(PoissonModel):
     rate and a single experimental parameter :math:`\tau`.
     """
 
-    def __init__(self,max_rate=100, num_outcome_samples=10000,
-                always_resample_outcomes=False, initial_outcomes = None,
-                initial_weights=None, allow_identical_outcomes=False):
+    def __init__(self,max_rate=100, num_outcome_samples=10000, allow_identical_outcomes=False):
 
-        super(ExponentialPoissonModel, self).__init__(num_outcome_samples=num_outcome_samples,
-            always_resample_outcomes=always_resample_outcomes,initial_outcomes=initial_outcomes,
-            initial_weights=initial_weights,allow_identical_outcomes=allow_identical_outcomes)
+        super(ExponentialPoissonModel, self).__init__(num_outcome_samples=num_outcome_samples, 
+            allow_identical_outcomes=allow_identical_outcomes)
         self.max_rate = max_rate
 
     @property 
@@ -351,7 +355,7 @@ class GaussianModel(DifferentiableModel):
     r"""
     Abstract Gaussian model class that describes a Gaussian model with likelihood form 
 
-    :math:`\Pr(y|\mu,\sigma,f(\vec{x};\vec{c}))= \frac{1}{\sqrt{2\sigma^2\pi}}e^(-\frac{(x-\mu)^2}{2\sigma^2}`
+    :math:`\Pr(y|\mu,\sigma,f(\vec{x};\vec{c}))= \frac{1}{\sqrt{2\sigma^2\pi}}e^{-\frac{(x-\mu)^2}{2\sigma^2}}`
 
     Where :math:`y` is the observed outcome, and :math:`f(\vec{x};\vec{c})`
     is some underlying model function with unknown parameters :math:`\vec{x}` and experimental 
@@ -367,20 +371,15 @@ class GaussianModel(DifferentiableModel):
     ## INITIALIZER ##
 
     def __init__(self, sigma=None, num_outcome_samples=10000,
-                always_resample_outcomes=False, initial_outcomes = None,
-                initial_weights=None, allow_identical_outcomes=False,constant_noise_outcomes=False):
+                allow_identical_outcomes=False,constant_noise_outcomes=False):
 
         self.num_outcome_samples = num_outcome_samples
         self._sigma = sigma
         self._constant_noise_outcomes = constant_noise_outcomes
-        super(GaussianModel, self).__init__(always_resample_outcomes=always_resample_outcomes,
-            initial_outcomes=initial_outcomes,initial_weights=initial_weights,
-            allow_identical_outcomes=allow_identical_outcomes)
+        super(GaussianModel, self).__init__(allow_identical_outcomes=allow_identical_outcomes)
 
-
-    
-
-        
+        # The domain is always the set of all real numbers
+        self._domain = RealDomain(min=None, max=None)
 
     ## ABSTRACT METHODS##
 
@@ -475,16 +474,9 @@ class GaussianModel(DifferentiableModel):
         """
     ## PROPERTIES ##
     
-  
-        
-    
     
     @property
-    def outcomes_dtype(self):
-        return 'float32'
-    
-    @property
-    def is_n_outcomes_constant(self):
+    def is_outcomes_constant(self):
         """
         Returns ``True`` if and only if the number of outcomes for each
         experiment is independent of the experiment being performed.
@@ -522,6 +514,18 @@ class GaussianModel(DifferentiableModel):
             property.
         """
         return self.num_outcome_samples
+
+    def domain(self, expparams):
+        """
+        Returns a list of ``Domain``s, one for each input expparam.
+
+        :param numpy.ndarray expparams:  Array of experimental parameters. This
+            array must be of dtype agreeing with the ``expparams_dtype``
+            property.
+
+        :rtype: list of ``Domain``
+        """
+        return [self._domain] if expparams is None else [self._domain for ep in expparams]
     
 
     def likelihood(self, outcomes, modelparams, expparams):
@@ -624,9 +628,9 @@ class GaussianModel(DifferentiableModel):
        
         x = self.model_function(modelparams,expparams)
         outcomes = np.asarray(np.random.normal(x,np.tile(sigma[np.newaxis,:,np.newaxis],(repeat,1,1)))).reshape(
-            repeat,modelparams.shape[0],expparams.shape[0]).astype(self.outcomes_dtype)
+            repeat,modelparams.shape[0],expparams.shape[0]).astype(self.domain(None)[0].dtype)
         return (outcomes[0, 0, 0] if repeat == 1 and expparams.shape[0] == 1 and modelparams.shape[0] == 1 else outcomes
-                ).astype(self.outcomes_dtype)
+                ).astype(self.domain(None)[0].dtype)
 
 
 
