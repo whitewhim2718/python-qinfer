@@ -45,6 +45,7 @@ from future.utils import with_metaclass
 import abc
     # Python standard library package for specifying abstract classes.
 import numpy as np
+import warnings
 
 from qinfer.utils import safe_shape
     
@@ -524,9 +525,11 @@ class Model(Simulatable):
 
         outcomes = []
         L = []
+        test_threshold = np.empty((n_expparams, ))
+
         # We have to loop over expparams only because each one, unfortunately, might have 
         # a different dtype and/or number of outcomes .
-        for idx_ep in range(expparams.shape[0]):
+        for idx_ep in range(n_expparams):
             # So that expparam is a numpy array when extracted
             expparam = expparams[idx_ep:idx_ep+1]
             n_o = n_outcomes if np.isscalar(n_outcomes) else n_outcomes[idx_ep]
@@ -543,7 +546,19 @@ class Model(Simulatable):
             # Find the likelihood for each outcome given each modelparam (irrespective 
             # of which modelparam the outcome resulted from)
             L_ep = self.likelihood(os, modelparams, expparam)[:,:,0]
-            #print(np.sum(np.tensordot(weights, L_ep, (0, 1))))      
+
+            if self.domain(expparam)[0].is_discrete:
+                # If we sum L_ep over the weighted modelparams, we get the total probability 
+                # of the respective outcome. We want the total probability of 
+                # getting _any_ outcome to be near 1.
+                coverage = np.sum(np.tensordot(weights, L_ep, (0, 1)))
+                if coverage < self.outcome_warning_threshold:
+                    warnings.warn('The representative outcomes for experiment '
+                        '{} only cover {}% of their distribution. Consider increasing '
+                        'n_outcomes.'.format(expparam, coverage))
+            else:
+                # TODO: figure out a test in this case.
+                pass
 
             outcomes.append(os)
             L.append(L_ep)
@@ -667,7 +682,7 @@ class FiniteOutcomeModel(Model):
         experimental parameter but marginalized over the given 
         model parameter distribution and
         is controlled by the class parameter ``n_outcomes`` and 
-        monitored by the threshold ``outcome_warning_threshhold``. 
+        monitored by the threshold ``outcome_warning_threshold``. 
         Additionally, the likelihood of each of these outcomes is returned for 
         each modelparam.
 
@@ -713,6 +728,7 @@ class FiniteOutcomeModel(Model):
                 # Otherwise, use the generic method to pick some randomly.
                 os = super(FiniteOutcomeModel, self).representative_outcomes(
                     weights, modelparams, expparam)[0]
+
 
             outcomes.append(os)
             L.append(self.likelihood(os, modelparams, expparam)[:,:,0])
