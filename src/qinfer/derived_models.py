@@ -498,6 +498,7 @@ class BinomialModel(DerivedModel, FiniteOutcomeModel):
             binomial_pdf(expparams['n_meas'][np.newaxis, :], outcomes[idx], pr1)
             for idx in range(outcomes.shape[0])
             ]) 
+
         assert not np.any(np.isnan(L))
         return L
             

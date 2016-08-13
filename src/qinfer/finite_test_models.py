@@ -277,13 +277,9 @@ class CoinModel(FiniteOutcomeModel, DifferentiableModel):
         # By calling the superclass implementation, we can consolidate
         # call counting there.
         super(CoinModel, self).likelihood(outcomes, modelparams, expparams)
-
-        # Possibly add a second axis to modelparams.
-        if len(modelparams.shape) == 1:
-            modelparams = modelparams[..., np.newaxis]
                   
         # Our job is easy.
-        pr0 = np.tile(modelparams, (expparams.shape[0], 1)).T
+        pr0 = np.tile(modelparams.flatten(), (expparams.shape[0], 1)).T
         
         # Now we concatenate over outcomes.
         return FiniteOutcomeModel.pr0_to_likelihood_array(outcomes, pr0)
