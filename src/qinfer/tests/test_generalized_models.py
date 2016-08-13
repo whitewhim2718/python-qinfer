@@ -155,54 +155,6 @@ class TestGaussianModel(DerandomizedTestCase):
             np.linalg.inv(self.updater_bayes_sigma_param.adaptive_bim),1)
 
 
-    def test_bayes_risk(self):
-        opt_exps_one_guess = []
-        opt_exps_risk_many_guess = []
-        opt_exps_ig_many_guess = []
-
-        # classic sweep to check against
-   
-        self.exponential_updater_sweep.batch_update(self.outcomes_exponential,self.expparams_risk.astype(
-            self.exponential_gaussian_model.expparams_dtype),5)
-
-        for i in range(TestGaussianModel.N_ONLINE):
-
-            guesses = np.random.uniform(low=0.,high=TestGaussianModel.MAX_EXPPARAM,
-                size=TestGaussianModel.N_GUESSES).reshape(-1,1).astype(
-                        self.exponential_gaussian_model.expparams_dtype)
-            
-            risks = []
-            igs = []
-            for i,g in enumerate(guesses):
-                risks.append(self.exponential_updater_many_guess.bayes_risk(guesses[i]))
-                igs.append(self.exponential_updater_many_guess.expected_information_gain(guesses[i]))
-
-            risks = np.array(risks)
-            igs = np.array(igs)
-            one_guess_exp = guesses[0]
-            many_guess_exp = guesses[np.argmin(risks)]
-            many_guess_exp_ig = guesses[np.argmin(igs)]
-
-            opt_exps_one_guess.append(one_guess_exp)
-            opt_exps_risk_many_guess.append(many_guess_exp)
-            opt_exps_ig_many_guess.append(many_guess_exp_ig)
-
-            outcome_one_guess = np.array(self.exponential_gaussian_model.simulate_experiment(
-                TestGaussianModel.MODELPARAMS[:1],one_guess_exp,repeat=1 ))[np.newaxis,np.newaxis]
-            outcome_many_guess = np.array(self.exponential_gaussian_model.simulate_experiment(
-                TestGaussianModel.MODELPARAMS[:1],many_guess_exp,repeat=1 ))[np.newaxis,np.newaxis]
-
-            self.exponential_updater_one_guess.update(outcome_one_guess,one_guess_exp)
-            self.exponential_updater_many_guess.update(outcome_many_guess,many_guess_exp)
-    
-        assert_almost_equal(self.exponential_updater_many_guess.est_mean(),TestGaussianModel.MODELPARAMS[:1],-1)
-        assert_almost_equal(self.exponential_updater_sweep.est_mean(),TestGaussianModel.MODELPARAMS[:1],-1)
-        assert_array_less(self.exponential_updater_many_guess.est_covariance_mtx(),
-                            self.exponential_updater_one_guess.est_covariance_mtx())
-        assert_array_less(self.exponential_updater_many_guess.est_covariance_mtx(),
-                            self.exponential_updater_sweep.est_covariance_mtx())
-
-
 
 class TestPoissonModel(DerandomizedTestCase):
     # True model parameter for test
@@ -282,55 +234,6 @@ class TestPoissonModel(DerandomizedTestCase):
         #verify that BCRB is approximately reached 
         assert_almost_equal(self.updater_bayes.est_covariance_mtx(),np.linalg.inv(self.updater_bayes.current_bim),1)
         assert_almost_equal(self.updater_bayes.est_covariance_mtx(),np.linalg.inv(self.updater_bayes.adaptive_bim),1)
-
-
-    def test_bayes_risk(self):
-        opt_exps_one_guess = []
-        opt_exps_risk_many_guess = []
-        opt_exps_ig_many_guess = []
-
-        # classic sweep to check against
-   
-        self.exponential_updater_sweep.batch_update(self.outcomes_exponential,self.expparams_risk.astype(
-            self.exponential_poisson_model.expparams_dtype),5)
-
-        for i in range(TestPoissonModel.N_ONLINE):
-
-            guesses = np.random.uniform(low=0.,high=TestPoissonModel.MAX_EXPPARAM,
-                size=TestPoissonModel.N_GUESSES).reshape(-1,1).astype(
-                        self.exponential_poisson_model.expparams_dtype)
-            
-            risks = []
-            igs = []
-            for i,g in enumerate(guesses):
-                risks.append(self.exponential_updater_many_guess.bayes_risk(guesses[i]))
-                igs.append(self.exponential_updater_many_guess.expected_information_gain(guesses[i]))
-           
-            risks = np.array(risks)
-            igs = np.array(igs)
-            one_guess_exp = guesses[0]
-            many_guess_exp = guesses[np.argmin(risks)]
-            many_guess_exp_ig = guesses[np.argmin(igs)]
-
-            opt_exps_one_guess.append(one_guess_exp)
-            opt_exps_risk_many_guess.append(many_guess_exp)
-            opt_exps_ig_many_guess.append(many_guess_exp_ig)
-
-            outcome_one_guess = np.array(self.exponential_poisson_model.simulate_experiment(
-                TestPoissonModel.MODELPARAMS_RISK,one_guess_exp,repeat=1 ))[np.newaxis,np.newaxis]
-            outcome_many_guess = np.array(self.exponential_poisson_model.simulate_experiment(
-                TestPoissonModel.MODELPARAMS_RISK,many_guess_exp,repeat=1 ))[np.newaxis,np.newaxis]
-
-            self.exponential_updater_one_guess.update(outcome_one_guess,one_guess_exp)
-            self.exponential_updater_many_guess.update(outcome_many_guess,many_guess_exp)
-        
-
-        assert_almost_equal(self.exponential_updater_many_guess.est_mean(),TestPoissonModel.MODELPARAMS_RISK,-1)
-        assert_almost_equal(self.exponential_updater_sweep.est_mean(),TestPoissonModel.MODELPARAMS_RISK,-1)
-        assert_array_less(self.exponential_updater_many_guess.est_covariance_mtx(),
-                            self.exponential_updater_one_guess.est_covariance_mtx())
-        assert_array_less(self.exponential_updater_many_guess.est_covariance_mtx(),
-                            self.exponential_updater_sweep.est_covariance_mtx())
 
 
 

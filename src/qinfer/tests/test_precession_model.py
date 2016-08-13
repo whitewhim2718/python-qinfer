@@ -153,7 +153,7 @@ class TestSMCUpdater(DerandomizedTestCase):
         assert_almost_equal(self.num_updater_bayes.est_covariance_mtx(),np.linalg.inv(self.updater_bayes.adaptive_bim),2)
 
 
-    def test_bayes_risk(self):
+    def test_experiment_design(self):
 
         opt_exps_one_guess = []
         opt_exps_risk_many_guess = []
