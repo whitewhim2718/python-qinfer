@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 ##
-# generalized_models_test.py: Checks that the Generalized models works properly.
+# test_generalized_models.py: Checks that models with generalized outcomes work.
 ##
 # © 2014 Chris Ferrie (csferrie@gmail.com) and
 #        Christopher E. Granade (cgranade@gmail.com)

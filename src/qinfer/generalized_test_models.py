@@ -59,9 +59,9 @@ class PoissonModel(DifferentiableModel):
 
     :math:`\Pr(k|f(\vec{x};\vec{c}))= \frac{f(\vec{x};\vec{c})^ke^{-f(\vec{x};\vec{c})}}{k!}`
 
-    Where :math:`k` is the number of outcomes observed per unit time, and :math:`f(\vec{x};\vec{c})`
-    is some underlying rate function with unknown parameters :math:`\vec{x}` and experimental 
-    parameters :math:`\vec{c}`.
+    Where :math:`k` is the number of events observed, and :math:`f(\vec{x};\vec{c})`
+    is the expected number of events observed given the model parameters :math:`\vec{x}` 
+    and experimental parameters :math:`\vec{c}`.
     """
 
     __metaclass__ = ABCMeta
@@ -79,8 +79,9 @@ class PoissonModel(DifferentiableModel):
     @abstractmethod
     def model_function(self,modelparams,expparams):
         """
-        Return model function :math:`f(\vec{x};\vec{c})` with unknown parameters :math:`\vec{x}` 
-        and experimental parameters :math:`\vec{c}` in the form [idx_modelparams,idx_expparams].
+        Return model function :math:`f(\vec{x};\vec{c})` specifying the expected 
+        number of Poisson events observed for every combination of 
+        model parameters :math:`\vec{x}` and experimental parameters :math:`\vec{c}`.
 
         :param np.ndarray modelparams: A shape ``(n_models, n_modelparams)``
             array of model parameter vectors describing the hypotheses for
@@ -90,8 +91,7 @@ class PoissonModel(DifferentiableModel):
             :attr:`~qinfer.Model.expparams_dtype`, describing the
             experiments from which the given outcomes were drawn.
         :rtype: np.ndarray
-        :return: A two-index tensor ``f[i, j]``, where ``i`` indexes which model parameters are
-            being considered, ``j`` indexes which experimental parameters was used.   
+        :return: A two-index tensor of shape ``(n_models, n_expparams)``.
         """
         pass
 
@@ -99,7 +99,7 @@ class PoissonModel(DifferentiableModel):
     def model_function_derivative(self,modelparams,expparams):
         """
         Return model functions derivatives :math:`\nabla_{\vec{x}}f(\vec{x};\vec{c})`
-        in form [idx_modelparam,idx_modelparams,idx_expparams].
+        in an array of shape ``(n_modelparams,n_models,n_expparams)``.
 
         :param np.ndarray modelparams: A shape ``(n_models, n_modelparams)``
         array of model parameter vectors describing the hypotheses for
@@ -109,8 +109,9 @@ class PoissonModel(DifferentiableModel):
             :attr:`~qinfer.Model.expparams_dtype`, describing the
             experiments from which the given outcomes were drawn.
         :rtype: np.ndarray
-        :return: A three-index tensor ``f[i, j,k]``, where ``i`` indexes which model parameter the derivative was taken with respect to,
-            ``j`` indexes which model parameters are being considered, 
+        :return: A three-index tensor ``f[i, j,k]``, where ``i`` 
+            indexes which model parameter the derivative was taken with respect to,
+            ``j`` indexes which model is being considered, 
             and ``k`` indexes which experimental parameters was used.   
         """
         pass
@@ -125,7 +126,7 @@ class PoissonModel(DifferentiableModel):
     @abstractproperty
     def n_model_function_params(self):
         """
-        Returns the number of real model function parameters admitted by this GaussianModel's,
+        Returns the number of real model function parameters admitted by this PoissonModel's,
         model function.
         
         This property is assumed by inference engines to be constant for
@@ -267,7 +268,8 @@ class PoissonModel(DifferentiableModel):
 class BasicPoissonModel(PoissonModel):
     """
     The basic Poisson model consisting of a single model parameter :math:`\lambda`,
-    and no experimental parameters.
+    describing an event rate and a single experimental parameter :math:`\tau` describing 
+    how long we measure the event rate for.
     """
     @property 
     def n_model_function_params(self):
@@ -275,20 +277,18 @@ class BasicPoissonModel(PoissonModel):
 
     def model_function(self,modelparams,expparams):
         """
-        Return model functions in form [idx_expparams,idx_modelparams]. The model function 
+        Return model functions in form [idx_modelparams,idx_expparams]. The model function 
         therefore returns the plain model parameters, but tiles them over the number of experiments 
         to satisfy the requirements of the abstract method. The shape of `expparams` therefore signifies 
         the number of experiments that will be performed.
         """
-        return np.tile(modelparams,expparams.shape[0])
+        return modelparams.flatten()[:,np.newaxis] * expparams['tau'][np.newaxis,:]
     
     def model_function_derivative(self,modelparams,expparams):
         """
-        Return model functions derivatives in form [idx_modelparam,idx_expparams,idx_modelparams]
+        Return model functions derivatives in form [idx_modelparam,idx_model,idx_expparams]
         """
-        return np.ones((1,modelparams.shape[0],expparams.shape[0]))
-
-
+        return np.tile(expparams['tau'], (modelparams.shape[0],1))[np.newaxis,...]
     
     def are_models_valid(self, modelparams):
         return np.all(modelparams >= 0, axis=1)
@@ -300,7 +300,7 @@ class BasicPoissonModel(PoissonModel):
     
     @property
     def expparams_dtype(self):
-        []
+        return [('tau', 'float')]
 
 class ExponentialPoissonModel(PoissonModel):
     """
@@ -646,7 +646,7 @@ class BasicGaussianModel(GaussianModel):
 
     def model_function(self,modelparams,expparams):
         """
-        Return model functions in form [idx_expparams,idx_modelparams]. The model function 
+        Return model functions in form [idx_modelparams,idx_expparams]. The model function 
         therefore returns the plain model parameters, but tiles them over the number of experiments 
         to satisfy the requirements of the abstract method. The shape of `expparams` therefore signifies 
         the number of experiments that will be performed.
@@ -655,7 +655,7 @@ class BasicGaussianModel(GaussianModel):
     
     def model_function_derivative(self,modelparams,expparams):
         """
-        Return model functions derivatives in form [idx_modelparam,idx_expparams,idx_modelparams]
+        Return model functions derivatives in form [idx_modelparam,idx_modelparams,idx_expparams]
         """
         return np.ones((1,modelparams.shape[0],expparams.shape[0]))
 
