@@ -45,12 +45,13 @@ from future.utils import with_metaclass
 import abc
     # Python standard library package for specifying abstract classes.
 import numpy as np
+import warnings
 
 from qinfer.utils import safe_shape
     
 ## CLASSES ###################################################################
 
-class Model(with_metaclass(abc.ABCMeta, object)):
+class Simulatable(with_metaclass(abc.ABCMeta, object)):
     """
     Represents a system which can be simulated according to
     various model parameters and experimental control parameters
@@ -58,17 +59,12 @@ class Model(with_metaclass(abc.ABCMeta, object)):
 
     See :ref:`models_guide` for more details.
 
-    :param bool always_resample_outcomes: Resample outcomes stochastically with 
-        each outcome call.
-    :param :class:`~numpy.ndarray` initial_outcomes: Initial set of outcomes 
-        that may be supplied. Otherwise initial outcomes default to 
-        zeros. 
     :param bool allow_identical_outcomes: Whether the method ``outcomes`` should 
         be allowed to return multiple identical outcomes for a given ``expparam``.
         It will be more efficient to set this to ``True`` whenever it is likely 
         that multiple identical outcomes will occur.
     """
-    def __init__(self, always_resample_outcomes=False, initial_outcomes = None,initial_weights=None, allow_identical_outcomes=False):
+    def __init__(self):
         """
         Initialize Model model
         :param bool always_resample_outcomes: Resample outcomes stochastically with 
@@ -78,26 +74,7 @@ class Model(with_metaclass(abc.ABCMeta, object)):
                     zeros. 
         """
         self._sim_count = 0
-        self._call_count = 0
-        self._allow_identical_outcomes = allow_identical_outcomes
-        if initial_outcomes is not None:
-            #verify that the supplied outcomes are of the correct length
-            assert initial_outcomes.dtype== self.outcomes_dtype
-            self._outcomes = initial_outcomes
-        else:
-            #otherwise initialize all outcomes to zero at start
-            self._outcomes = np.empty(None,self.outcomes_dtype)
-
-        if initial_weights is not None:
-            #verify that the supplied outcomes are of the correct length
-            assert initial_outcomes.shape == self._outcomes.shape
-            self._outcome_weights = initial_weights
-        else:
-            #otherwise initialize all outcomes to zero at start
-            self._outcome_weights = np.ones(None,self.outcomes_dtype)
-
-        self._always_resample_outcomes = always_resample_outcomes
-        self.needs_outcome_resample = True
+        
         # Initialize a default scale matrix.
         self._Q = np.ones((self.n_modelparams,))
         
@@ -128,36 +105,12 @@ class Model(with_metaclass(abc.ABCMeta, object)):
 
             
     ## CONCRETE PROPERTIES ##
-    @property
-    def always_resample_outcomes(self):
-        """
-        Return ``True`` if the ``always_resample_outcomes`` flag was set during
-        model initialization. Determines if the outcomes should be resampled with 
-        every call of :func:`~abstract_model.Model.outcomes`
-        :rtype: bool
-
-        """
-        return self._always_resample_outcomes
     
     @property
-    def outcomes_dtype(self):
+    def is_outcomes_constant(self):
         """
-        Returns the dtype of the outcomes parameter array. For a
-        model with single-parameter outcomes, this will likely be a scalar dtype,
-        such as ``"int64"`` for finite models or ``"float64"`` for continuous models. 
-        More generally, this can be an example of a record type, such as 
-        ``[('outcome x', 'uint8'), ('outcome y', 'uint8')]``.
-        
-        This property is assumed by inference engines to be constant for
-        the lifetime of a Model instance.
-        """
-        return 'uint32'
-    
-    @property
-    def is_n_outcomes_constant(self):
-        """
-        Returns ``True`` if and only if the number of outcomes for each
-        experiment is independent of the experiment being performed.
+        Returns ``True`` if and only if both the domain and ``n_outcomes``
+        are independent of the expparam.
         
         This property is assumed by inference engines to be constant for
         the lifetime of a Model instance.
@@ -228,58 +181,6 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         """
         return list(map("x_{{{}}}".format, range(self.n_modelparams)))
 
-    @property
-    def needs_outcome_resample(self):
-        """
-        Determines whether the outcomes needs to be resampled during call 
-        to :func:`~abstract_model.Model.outcomes`
-        .
-        :return: Resampling state 
-        :rtype: bool 
-        """
-        return self._needs_outcome_resample
-
-    @needs_outcome_resample.setter
-    def needs_outcome_resample(self, needs_outcome_resample):
-        """
-        Set outcome resampling flag.
-
-        :param bool needs_outcome_resample: Whether to resample or not in call 
-        to :func:`~abstract_model.Model.outcomes`.
-        """
-        self._needs_outcome_resample = needs_outcome_resample
-
-    @property
-    def allow_identical_outcomes(self):
-        """
-        Whether the method ``outcomes`` should be allowed to return multiple 
-        identical outcomes for a given ``expparam``.
-        It will be more efficient to set this to ``True`` whenever it is likely 
-        that multiple identical outcomes will occur.
-
-        :return: Flag state.
-        :rtype: bool
-        """
-        return self._allow_identical_outcomes
-
-    @allow_identical_outcomes.setter
-    def allow_identical_outcomes(self, value):
-        """
-        Whether the method ``outcomes`` should be allowed to return multiple 
-        identical outcomes for a given ``expparam``.
-        It will be more efficient to set this to ``True`` whenever it is likely 
-        that multiple identical outcomes will occur.
-
-        :param bool allow_identical_outcomes: Value of flag.
-        """
-        self._allow_identical_outcomes = value
-    
-
-    @property
-    def call_count(self):
-        # TODO: document
-        return self._call_count
-    
     ## CONCRETE METHODS ##
 
     def _repr_html_(self, suppress_base=False):
@@ -309,7 +210,7 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         Returns an array of dtype ``uint`` describing the number of outcomes
         for each experiment specified by ``expparams``.
         If there are an infinite (or intractibly large) number of outcomes, 
-        this value specifies the number of outcomes to randomly sample
+        this value specifies the number of outcomes to randomly sample.
         
         :param numpy.ndarray expparams: Array of experimental parameters. This
             array must be of dtype agreeing with the ``expparams_dtype``
@@ -317,6 +218,20 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         """
         pass
     
+    @abc.abstractmethod
+    def domain(self, exparams):
+        """
+        Returns a list of ``Domain``s, one for each input expparam.
+
+        :param numpy.ndarray expparams:  Array of experimental parameters. This
+            array must be of dtype agreeing with the ``expparams_dtype``
+            property, or, in the case where ``n_outcomes_constant`` is ``True``,
+            ``None`` should be a valid input.
+
+        :rtype: list of ``Domain``
+        """
+        pass
+
     @abc.abstractmethod
     def are_models_valid(self, modelparams):
         """
@@ -349,31 +264,6 @@ class Model(with_metaclass(abc.ABCMeta, object)):
             datum is returned instead.
         """
         self._sim_count += modelparams.shape[0] * expparams.shape[0] * repeat
-    
-    @abc.abstractmethod
-    def likelihood(self, outcomes, modelparams, expparams):
-        r"""
-        Calculates the probability of each given outcome, conditioned on each
-        given model parameter vector and each given experimental control setting.
-        :param np.ndarray modelparams: A shape ``(n_models, n_modelparams)``
-            array of model parameter vectors describing the hypotheses for
-            which the likelihood function is to be calculated.
-        :param np.ndarray expparams: A shape ``(n_experiments, )`` array of
-            experimental control settings, with ``dtype`` given by 
-            :attr:`~qinfer.Model.expparams_dtype`, describing the
-            experiments from which the given outcomes were drawn.
-        :rtype: np.ndarray
-        :return: A three-index tensor ``L[i, j, k]``, where ``i`` is the outcome
-            being considered, ``j`` indexes which vector of model parameters was used,
-            and where ``k`` indexes which experimental parameters where used.
-            Each element ``L[i, j, k]`` then corresponds to the likelihood
-            :math:`\Pr(d_i | \vec{x}_j; e_k)`.
-        """
-        
-        # Count the number of times the inner-most loop is called.
-        self._call_count += (
-            safe_shape(outcomes) * safe_shape(modelparams) * safe_shape(expparams)
-        )
 
     ## CONCRETE METHODS ##
     
@@ -463,112 +353,219 @@ class Model(with_metaclass(abc.ABCMeta, object)):
         """
         return modelparams
 
-    def _resample_outcomes(self, weights, modelparams, expparams):
+class Model(Simulatable):
+    """
+    Represents a system which can be simulated according to
+    various model parameters and experimental control parameters
+    in order to produce the probability of a hypothetical data
+    record. As opposed to :class:`~qinfer.Simulatable`, instances
+    of :class:`~qinfer.Model` not only produce data consistent
+    with the description of a system, but also evaluate the probability
+    of that data arising from the system.
+
+    :param bool allow_identical_outcomes: Whether the method 
+        ``representative_outcomes`` should be allowed to return multiple 
+        identical outcomes for a given ``expparam``.
+    :param float outcome_warning_threshold: Threshold value below which 
+        ``representative_outcomes`` 
+        will issue a warning about the representative outcomes 
+        not adequately covering the domain with respect to 
+        the relevant distribution.
+
+    See :ref:`models_guide` for more details.
+    """
+
+    ## INITIALIZERS ##
+    def __init__(self, allow_identical_outcomes=False,
+            outcome_warning_threshold=0.99):
+        super(Model, self).__init__()
+        self._call_count = 0
+        self._allow_identical_outcomes = allow_identical_outcomes
+        self._outcome_warning_threshold = outcome_warning_threshold
+
+    ## CONCRETE PROPERTIES ##
+
+    @property
+    def call_count(self):
         """
-        For each given expparam, randomly samples outcomes marginalized 
-        over the distribution defined by the weights and modelparams.
-        Only returns new outcomes if ``needs_outcome_resample``,``resample``, or ``self.always_resample_outcomes`` 
-        is ``True``, otherwise returns the cached values.
+        Returns the number of points at which
+        the probability of this model has been evaluated,
+        where a point consists of a hypothesis about the model (a vector of
+        model parameters), an experimental control setting (expparams) and
+        a hypothetical or actual datum.
+        :rtype: int
+        """
+        return self._call_count
+
+    ## ABSTRACT METHODS ##
+
+    @abc.abstractmethod
+    def likelihood(self, outcomes, modelparams, expparams):
+        r"""
+        Calculates the probability of each given outcome, conditioned on each
+        given model parameter vector and each given experimental control setting.
+        :param np.ndarray modelparams: A shape ``(n_models, n_modelparams)``
+            array of model parameter vectors describing the hypotheses for
+            which the likelihood function is to be calculated.
+        :param np.ndarray expparams: A shape ``(n_experiments, )`` array of
+            experimental control settings, with ``dtype`` given by 
+            :attr:`~qinfer.Simulatable.expparams_dtype`, describing the
+            experiments from which the given outcomes were drawn.
+        :rtype: np.ndarray
+        :return: A three-index tensor ``L[i, j, k]``, where ``i`` is the outcome
+            being considered, ``j`` indexes which vector of model parameters was used,
+            and where ``k`` indexes which experimental parameters where used.
+            Each element ``L[i, j, k]`` then corresponds to the likelihood
+            :math:`\Pr(d_i | \vec{x}_j; e_k)`.
+        """
+        
+        # Count the number of times the inner-most loop is called.
+        self._call_count += (
+            safe_shape(outcomes) * safe_shape(modelparams) * safe_shape(expparams)
+        )
+
+    @property
+    def allow_identical_outcomes(self):
+        """
+        Whether the method ``representative_outcomes`` should be allowed to return multiple 
+        identical outcomes for a given ``expparam``.
+        It will be more efficient to set this to ``True`` whenever it is likely 
+        that multiple identical outcomes will occur.
+
+        :return: Flag state.
+        :rtype: ``bool``
+        """
+        return self._allow_identical_outcomes
+    @allow_identical_outcomes.setter
+    def allow_identical_outcomes(self, value):
+        """
+        Whether the method ``representative_outcomes`` should be allowed to return multiple 
+        identical outcomes for a given ``expparam``.
+        It will be more efficient to set this to ``True`` whenever it is likely 
+        that multiple identical outcomes will occur.
+
+        :param bool allow_identical_outcomes: Value of flag.
+        """
+        self._allow_identical_outcomes = value
+
+    @property
+    def outcome_warning_threshold(self):
+        """
+        Threshold value below which ``representative_outcomes`` 
+        will issue a warning about the representative outcomes 
+        not adequately covering the domain with respect to 
+        the relevant distribution.
+
+        :return: Threshold value.
+        :rtype: ``float``
+        """
+        return self._outcome_warning_threshold
+    @outcome_warning_threshold.setter
+    def outcome_warning_threshold(self, value):
+        """
+        Threshold value below which ``representative_outcomes`` 
+        will issue a warning about the representative outcomes 
+        not adequately covering the domain with respect to 
+        the relevant distribution.
+
+        :param float value: Threshold value.
+        """
+        self._outcome_warning_threshold = value
+    
+                
+    ## CONCRETE METHODS ##
+    # These methods depend on the abstract methods, and thus their behaviors
+    # change in each inheriting class.
+    
+    def is_model_valid(self, modelparams):
+        """
+        Returns True if and only if the model parameters given are valid for
+        this model.
+        """
+        return self.are_models_valid(modelparams[np.newaxis, :])[0]
+
+    def representative_outcomes(self, weights, modelparams, expparams):
+        """
+        Given the distribution of model parameters specified by 
+        (``weights``, ``modelparams``), for each experimental parameter 
+        in ``expparams``, returns a subset of the relevant outcome 
+        domain where most of the weight lies. The notion of "most of" 
+        refers to the liklihood distribution conditioned on a specific
+        experimental parameter but marginalized over the given 
+        model parameter distribution and
+        is controlled by the class parameter ``n_outcomes`` and 
+        monitored by the threshold ``outcome_warning_threshhold``. 
+        Additionally, the likelihood of each of these outcomes is returned for 
+        each modelparam.
 
         :param np.ndarray weights: Set of weights with a weight
             corresponding to every modelparam. 
         :param np.ndarray modelparams: Set of model parameters (particles).
-        :param np.ndarray expparams: An experiment parameter array describing
-            the experiments that outcomes should be sampled for.
+        :param np.ndarray expparams: Set of experimental parameters of 
+            type ``exparams_dtype``.
 
-        Note: that the idea of outcome weights exists for two reasons: 1) to be
-        compatible with ``FiniteOutcomeModel``, where it is possible to enumerate 
-        all possible outcomes, in which case the weights are related 
-        to the likelihood conditional on a particle, and 2) for efficiency in the 
-        case where some of the same outcomes will be output many times, so that 
-        the return value can contain each of these outcomes only once, but with 
-        a higher weight.
+        :return list: Returns a tuple ``(likelihoods, outcomes)``.
+            Here, ``outcomes`` is a list of length ``n_experiments`` 
+            with each member is an ``np.ndarray`` of shape ``(n_outcomes)`` 
+            with type ``model.domain(expparam).dtype``,
+            and ``likelihoods`` is a list of length ``n_experiments`` 
+            with each member is an ``np.ndarray`` of floats of shape 
+            ``(n_outcomes, modelparams)``
+
 
         Note: The outcomes and outcome weights can be used to compute generic 
         quantities which are averaged over data being marginalized over 
         a distribution of model parameters. See ``~qinfer.SMCUpdater.bayes_risk()` 
         as an example.
         """
+
+        n_outcomes = self.n_outcomes(expparams)
+        n_expparams = expparams.shape[0]
+        n_modelparams = modelparams.shape[0]
 
         outcomes = []
-        outcome_weights = []
-        outcome_sample_points = []
+        L = []
+        test_threshold = np.empty((n_expparams, ))
+
         # We have to loop over expparams only because each one, unfortunately, might have 
-        # a different number of outcomes.
-        for i in range(expparams.shape[0]):
+        # a different dtype and/or number of outcomes .
+        for idx_ep in range(n_expparams):
             # So that expparam is a numpy array when extracted
-            expparam = expparams[i:i+1]
-            n_outcomes = self.n_outcomes(expparam)
-            # TODO: unless n_outcomes << modelparams.shape, we are probably duplicating effort.
-            sample_points = modelparams[np.random.choice(modelparams.shape[0], size=n_outcomes, p=weights)]
+            expparam = expparams[idx_ep:idx_ep+1]
+            n_o = n_outcomes if np.isscalar(n_outcomes) else n_outcomes[idx_ep]
+            
+            sample_points = modelparams[np.random.choice(modelparams.shape[0], size=n_o, p=weights)]
             os = self.simulate_experiment(sample_points, expparam, repeat=1)[0,:,0]
-            assert os.dtype == self.outcomes_dtype
+            assert os.dtype == self.domain(expparam)[0].dtype
 
             # The same outcome is likely to have resulted multiple times in the case that outcomes 
-            # are discrete values and the modelparam distribution is not too wide. If each outcome
-            # were unique, they would all be assigned equal weight. However, we must count 
-            # how many of each outcome we ended up with to correctly weight them. This s tep 
-            # can likely be skipped for models with continuous output.
-            
-            outcome_weights.append(np.ones((n_outcomes), dtype='float64') / n_outcomes)
+            # are discrete values and the modelparam distribution is not too wide.
+            if not self.allow_identical_outcomes:
+                os = np.unique(os)
 
-            #below can't be used as is, because we must associate outcome samples with model 
-            # parameters
-            #if self.allow_identical_outcomes:
-            #    outcome_weights.append(np.ones((n_outcomes,1), dtype='float64') / n_outcomes)
-            #else:
-            #    os_shape = os.shape[0]
-            #    os, ow = np.unique(os, return_counts=True)
-            #    outcome_weights.append((ow.astype('float64') / n_outcomes)[...,np.newaxis])
+            # Find the likelihood for each outcome given each modelparam (irrespective 
+            # of which modelparam the outcome resulted from)
+            L_ep = self.likelihood(os, modelparams, expparam)[:,:,0]
+
+            if self.domain(expparam)[0].is_discrete:
+                # If we sum L_ep over the weighted modelparams, we get the total probability 
+                # of the respective outcome. We want the total probability of 
+                # getting _any_ outcome to be near 1.
+                coverage = np.sum(np.tensordot(weights, L_ep, (0, 1)))
+                if coverage < self.outcome_warning_threshold:
+                    warnings.warn('The representative outcomes for experiment '
+                        '{} only cover {}% of their distribution. Consider increasing '
+                        'n_outcomes.'.format(expparam, coverage))
+            else:
+                # TODO: figure out a test in this case.
+                pass
 
             outcomes.append(os)
-            outcome_sample_points.append(sample_points)
+            L.append(L_ep)
 
-        self._outcomes = outcomes 
-        self._outcome_weights = outcome_weights
-        self._outcome_sample_points = outcome_sample_points
-
-        self.needs_outcome_resample = False
-
-    def outcomes(self, weights, modelparams, expparams, resample=False):
-        """
-        For each given expparam, randomly samples outcomes marginalized 
-        over the distribution defined by the weights and modelparams.
-        Only returns new outcomes if ``needs_outcome_resample``,``resample``, or ``self.always_resample_outcomes`` 
-        is ``True``, otherwise returns the cached values.
-
-        :param np.ndarray weights: Set of weights with a weight
-            corresponding to every modelparam. 
-        :param np.ndarray modelparams: Set of model parameters (particles).
-        :param np.ndarray expparams: An experiment parameter array describing
-            the experiments that outcomes should be sampled for.
-        :param bool resample: Force resampling of outcomes and weights.
-
-        :return (list, np.ndarray): A pair of outcomes ``(outcome_weights, outcomes)`` where 
-        ``outcomes`` is list of ``np.ndarrays`` of type ``outcomes_dtype`` corresponding to 
-        outcomes of ``expparam``, and where ``outcome_weights`` is a list of ``np.ndarrays`` 
-        specifying corresponding weights of each outcome.
-
-
-        Note: that the idea of outcome weights exists for two reasons: 1) to be
-        compatible with ``FiniteOutcomeModel``, where it is possible to enumerate 
-        all possible outcomes, in which case the weights are related 
-        to the likelihood conditional on a particle, and 2) for efficiency in the 
-        case where some of the same outcomes will be output many times, so that 
-        the return value can contain each of these outcomes only once, but with 
-        a higher weight.
-
-        Note: The outcomes and outcome weights can be used to compute generic 
-        quantities which are averaged over data being marginalized over 
-        a distribution of model parameters. See ``~qinfer.SMCUpdater.bayes_risk()` 
-        as an example.
-        """
-        if self.needs_outcome_resample or resample or self.always_resample_outcomes:
-            self._resample_outcomes(weights, modelparams, expparams)
-
-        return self._outcome_weights,self._outcome_sample_points,self._outcomes
-
-        
+        return L, outcomes
+    
+            
 class LinearCostModelMixin(Model):
     # FIXME: move this mixin to a new module.
     # TODO: test this mixin.
@@ -584,88 +581,160 @@ class LinearCostModelMixin(Model):
 
 class FiniteOutcomeModel(Model):
     """
-    Represents a system which can be simulated according to
-    various model parameters and experimental control parameters
-    in order to produce the probability of a hypothetical data
-    record. As opposed to :class:`~qinfer.Simulatable`, instances
-    of :class:`~qinfer.Model` not only produce data consistent
-    with the description of a system, but also evaluate the probability
-    of that data arising from the system.
+    Represents a system in the same way that :class:`~qinfer.Model`,
+    except that it is demanded that the number of outcomes for any 
+    experiment be known and finite.
 
-    See :ref:`models_guide` for more details.
+    :param bool allow_identical_outcomes: Whether the method 
+        ``representative_outcomes`` should be allowed to return multiple 
+        identical outcomes for a given ``expparam``.
+    :param float outcome_warning_threshold: Threshold value below which 
+        ``representative_outcomes`` 
+        will issue a warning about the representative outcomes 
+        not adequately covering the domain with respect to 
+        the relevant distribution.
+    :param int n_outcomes_cutoff: If ``n_outcomes`` exceeds this value, 
+        ``representative_outcomes`` will use this 
+        value in its place. This is useful in the case
+        of a finite yet untractible number of outcomes. Use ``None`` 
+        for no cutoff.
+
+    See :class:`~qinfer.Model` and :ref:`models_guide` for more details.
     """
     
     ## INITIALIZERS ##
-    def __init__(self):
-        super(FiniteOutcomeModel, self).__init__()
+    def __init__(self, 
+            allow_identical_outcomes=False, 
+            outcome_warning_threshold=0.99, 
+            n_outcomes_cutoff=None
+    ):
+        super(FiniteOutcomeModel, self).__init__(
+            outcome_warning_threshold=outcome_warning_threshold, 
+            allow_identical_outcomes=allow_identical_outcomes)
+        self._n_outcomes_cutoff = n_outcomes_cutoff
     
     ## CONCRETE PROPERTIES ##
 
     @property
-    def call_count(self):
+    def n_outcomes_cutoff(self):
         """
-        Returns the number of points at which
-        the probability of this model has been evaluated,
-        where a point consists of a hypothesis about the model (a vector of
-        model parameters), an experimental control setting (expparams) and
-        a hypothetical or actual datum.
+        If ``n_outcomes`` exceeds this value, 
+        ``representative_outcomes`` will use this 
+        value in its place. This is useful in the case
+        of a finite yet untractible number of outcomes.
 
-        :rtype: int
+        :return: Cutoff value.
+        :rtype: ``int``
         """
-        return self._call_count
-    
+        return self._n_outcomes_cutoff
+    @n_outcomes_cutoff.setter
+    def n_outcomes_cutoff(self, value):
+        """
+        If ``n_outcomes`` exceeds this value, 
+        ``representative_outcomes`` will use this 
+        value in its place. This is useful in the case
+        of a finite yet untractible number of outcomes.
+
+        :param int value: Cutoff value.
+        """
+        self.n_outcomes_cutoff = value
+   
     ## ABSTRACT METHODS ##
                 
     ## CONCRETE METHODS ##
     # These methods depend on the abstract methods, and thus their behaviors
     # change in each inheriting class.
-    
-    def is_model_valid(self, modelparams):
-        """
-        Returns True if and only if the model parameters given are valid for
-        this model.
-        """
-        return self.are_models_valid(modelparams[np.newaxis, :])[0]
 
     def simulate_experiment(self, modelparams, expparams, repeat=1):
-        # NOTE: implements abstract method of Model.
-        # TODO: document
-        
         # Call the superclass simulate_experiment, not recording the result.
         # This is used to count simulation calls.
         super(FiniteOutcomeModel, self).simulate_experiment(modelparams, expparams, repeat)
         
-        if self.is_n_outcomes_constant:
-            all_outcomes = np.arange(self.n_outcomes(expparams[0, np.newaxis]))
-            probabilities = self.likelihood(np.arange(self.n_outcomes(expparams)), modelparams, expparams)
-            cdf = np.cumsum(probabilities,axis=0)
+        if self.is_outcomes_constant:
+            # In this case, all expparams have the same domain, so just look at the first one
+            all_outcomes = self.domain(expparams)[0].values
+            probabilities = self.likelihood(all_outcomes, modelparams, expparams)
+            cdf = np.cumsum(probabilities, axis=0)
             randnum = np.random.random((repeat, 1, modelparams.shape[0], expparams.shape[0]))
-            outcomes = np.argmax(cdf > randnum, axis=1)
+            outcome_idxs = all_outcomes[np.argmax(cdf > randnum, axis=1)]
+            outcomes = all_outcomes[outcome_idxs]
         else:
             # Loop over each experiment, sadly.
-            outcomes = np.empty((repeat, modelparams.shape[0], expparams.shape[0]))
+            # Assume all domains have the same dtype
+            dtype = self.domain(expparams[0, np.newaxis])[0].dtype
+            outcomes = np.empty((repeat, modelparams.shape[0], expparams.shape[0]), dtype=dtype)
             for idx_experiment, single_expparams in enumerate(expparams[:, np.newaxis]):
-                all_outcomes = np.arange(self.n_outcomes(single_expparams))
-                
-                probabilities = self.likelihood(np.arange(self.n_outcomes(single_expparams)), modelparams, single_expparams)
+                all_outcomes = self.domain(single_expparams).values
+                probabilities = self.likelihood(all_outcomes, modelparams, single_expparams)
                 cdf = np.cumsum(probabilities, axis=0)[..., 0]
                 randnum = np.random.random((repeat, 1, modelparams.shape[0]))
-                outcomes[:, :, idx_experiment] = np.argmax(cdf > randnum, axis=1)
+                outcomes[:, :, idx_experiment] = all_outcomes[np.argmax(cdf > randnum, axis=1)]
                 
-        return (outcomes[0, 0, 0] if repeat == 1 and expparams.shape[0] == 1 and modelparams.shape[0] == 1 else outcomes
-                ).astype(self.outcomes_dtype)
-    
-    def outcomes(self, weights, modelparams, expparams, resample=False):
-        if len(expparams.shape) ==1:
-            expparams = expparams[np.newaxis,:] 
+        return outcomes[0, 0, 0] if repeat == 1 and expparams.shape[0] == 1 and modelparams.shape[0] == 1 else outcomes
+
+    def representative_outcomes(self, weights, modelparams, expparams):
+        """
+        Given the distribution of model parameters specified by 
+        (``weights``, ``modelparams``), for each experimental parameter 
+        in ``expparams``, returns a subset of the relevant outcome 
+        domain where most of the weight lies. The notion of "most of" 
+        refers to the liklihood distribution conditioned on a specific
+        experimental parameter but marginalized over the given 
+        model parameter distribution and
+        is controlled by the class parameter ``n_outcomes`` and 
+        monitored by the threshold ``outcome_warning_threshold``. 
+        Additionally, the likelihood of each of these outcomes is returned for 
+        each modelparam.
+
+        :param np.ndarray weights: Set of weights with a weight
+            corresponding to every modelparam. 
+        :param np.ndarray modelparams: Set of model parameters (particles).
+        :param np.ndarray expparams: Set of experimental parameters of 
+            type ``exparams_dtype``.
+
+        :return list: Returns a tuple ``(likelihoods, outcomes)``.
+            Here, ``outcomes`` is a list of length ``n_experiments`` 
+            with each member is an ``np.ndarray`` of shape ``(n_outcomes)`` 
+            with type ``model.domain(expparam).dtype``,
+            and ``likelihoods`` is a list of length ``n_experiments`` 
+            with each member is an ``np.ndarray`` of floats of shape 
+            ``(n_outcomes, modelparams)``
+
+
+        Note: The outcomes and outcome weights can be used to compute generic 
+        quantities which are averaged over data being marginalized over 
+        a distribution of model parameters. See ``~qinfer.SMCUpdater.bayes_risk()` 
+        as an example.
+        """
+
+        n_outcomes = self.n_outcomes(expparams)
+        n_expparams = expparams.shape[0]
+        n_modelparams = modelparams.shape[0]
 
         outcomes = []
+        L = []
+        # We have to loop over expparams only because each one, unfortunately, might have 
+        # a different dtype and/or number of outcomes .
+        for idx_ep in range(expparams.shape[0]):
+            # So that expparam is a numpy array when extracted
+            expparam = expparams[idx_ep:idx_ep+1]
 
-        for x in expparams:
-            out = np.arange(self.n_outcomes(x))
-            outcomes.append(out)
+            n_o = n_outcomes if np.isscalar(n_outcomes) else n_outcomes[idx_ep]
+            
+            if self.n_outcomes_cutoff is None or n_o <= self.n_outcomes_cutoff:
+                # If we don't have to many outcomes, just report them all.
+                os = self.domain(expparam)[0].values
+            else:
+                # Otherwise, use the generic method to pick some randomly.
+                os = super(FiniteOutcomeModel, self).representative_outcomes(
+                    weights, modelparams, expparam)[0]
 
-        return outcomes
+
+            outcomes.append(os)
+            L.append(self.likelihood(os, modelparams, expparam)[:,:,0])
+
+        return L, outcomes
+
     ## STATIC METHODS ##
     # These methods are provided as a convienence to make it easier to write
     # simple models.
@@ -735,7 +804,7 @@ class DifferentiableModel(with_metaclass(abc.ABCMeta, Model)):
         #       slower.
         #       Here, we sketch the first case.
         # FIXME: completely untested!
-        if self.is_n_outcomes_constant:
+        if self.is_outcomes_constant:
             outcomes = np.arange(self.n_outcomes(expparams))
             scores, L = self.score(outcomes, modelparams, expparams, return_L=True)
             
@@ -766,6 +835,7 @@ class DifferentiableModel(with_metaclass(abc.ABCMeta, Model)):
             
                 outcomes = np.arange(n_o)
                 scores, L = self.score(outcomes, modelparams, experiment, return_L=True)
+                
                 fisher[:, :, :, idx_experiment] = np.einsum("ome,iome,jome->ijme",
                     L, scores, scores
                 )

@@ -57,6 +57,7 @@ class TestSMCUpdater(DerandomizedTestCase):
     MAX_EXPPARAM = 10.
     TEST_EXPPARAMS = np.linspace(1.,MAX_EXPPARAM,N_EXPPARAMS,dtype=np.float)
     TEST_EXPPARAMS_RISK = np.linspace(1.,MAX_EXPPARAM,N_ONLINE,dtype=np.float)
+
     def setUp(self):
 
         super(TestSMCUpdater,self).setUp()
@@ -65,7 +66,7 @@ class TestSMCUpdater(DerandomizedTestCase):
         self.expparams = TestSMCUpdater.TEST_EXPPARAMS.reshape(-1,1)
         self.expparams_risk = TestSMCUpdater.TEST_EXPPARAMS_RISK.reshape(-1,1)
         self.outcomes = self.precession_model.simulate_experiment(TestSMCUpdater.MODELPARAMS,
-                TestSMCUpdater.TEST_EXPPARAMS,repeat=1 ).reshape(-1,1)
+                TestSMCUpdater.TEST_EXPPARAMS, repeat=1).reshape(-1,1)
 
         self.outcomes_risk = self.precession_model.simulate_experiment(TestSMCUpdater.MODELPARAMS,
                 TestSMCUpdater.TEST_EXPPARAMS_RISK,repeat=1 ).reshape(-1,1)
@@ -88,10 +89,10 @@ class TestSMCUpdater(DerandomizedTestCase):
         test but I ran 100 times and there were no fails, with these parameters.
         """
 
-        self.updater.batch_update(self.outcomes,self.expparams)
-        self.updater_bayes.batch_update(self.outcomes,self.expparams)
-        self.num_updater.batch_update(self.outcomes,self.expparams)
-        self.num_updater_bayes.batch_update(self.outcomes,self.expparams)
+        self.updater.batch_update(self.outcomes, self.expparams)
+        self.updater_bayes.batch_update(self.outcomes, self.expparams)
+        self.num_updater.batch_update(self.outcomes, self.expparams)
+        self.num_updater_bayes.batch_update(self.outcomes, self.expparams)
 
         #Assert that models have learned true model parameters from data 
         #test means
@@ -110,6 +111,7 @@ class TestSMCUpdater(DerandomizedTestCase):
 
     def test_bim(self):
         """
+        For Baysian information matrix (BIM).
         Checks that the fitters converge on true value on simple precession_model. Is a stochastic
         test but I ran 100 times and there were no fails, with these parameters.
         """
@@ -151,7 +153,7 @@ class TestSMCUpdater(DerandomizedTestCase):
         assert_almost_equal(self.num_updater_bayes.est_covariance_mtx(),np.linalg.inv(self.updater_bayes.adaptive_bim),2)
 
 
-    def test_bayes_risk(self):
+    def test_experiment_design(self):
 
         opt_exps_one_guess = []
         opt_exps_risk_many_guess = []

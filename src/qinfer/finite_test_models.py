@@ -33,6 +33,7 @@ from __future__ import division # Ensures that a/b is always a float.
 __all__ = [
     'SimpleInversionModel',
     'SimplePrecessionModel',
+    'CoinModel',
     'NoisyCoinModel',
     'NDieModel'
 ]
@@ -46,8 +47,10 @@ import numpy as np
 from .utils import binomial_pdf
 
 from .abstract_model import FiniteOutcomeModel, DifferentiableModel
+from .domains import IntegerDomain
     
 ## CLASSES ###################################################################
+
 
 class SimpleInversionModel(DifferentiableModel, FiniteOutcomeModel):
     r"""
@@ -66,6 +69,7 @@ class SimpleInversionModel(DifferentiableModel, FiniteOutcomeModel):
     def __init__(self, min_freq=0):
         super(SimpleInversionModel, self).__init__()
         self._min_freq = min_freq
+        self._domain = IntegerDomain(min=0, max=1)
 
     ## PROPERTIES ##
     
@@ -82,7 +86,7 @@ class SimpleInversionModel(DifferentiableModel, FiniteOutcomeModel):
         return [('t', 'float'), ('w_', 'float')]
     
     @property
-    def is_n_outcomes_constant(self):
+    def is_outcomes_constant(self):
         """
         Returns ``True`` if and only if the number of outcomes for each
         experiment is independent of the experiment being performed.
@@ -107,6 +111,18 @@ class SimpleInversionModel(DifferentiableModel, FiniteOutcomeModel):
             property.
         """
         return 2
+
+    def domain(self, expparams):
+        """
+        Returns a list of ``Domain``s, one for each input expparam.
+
+        :param numpy.ndarray expparams:  Array of experimental parameters. This
+            array must be of dtype agreeing with the ``expparams_dtype``
+            property.
+
+        :rtype: list of ``Domain``
+        """
+        return [self._domain] if expparams is None else [self._domain for ep in expparams]
     
     def likelihood(self, outcomes, modelparams, expparams):
         # By calling the superclass implementation, we can consolidate
@@ -154,7 +170,7 @@ class SimpleInversionModel(DifferentiableModel, FiniteOutcomeModel):
             return q
 
 
-class SimplePrecessionModel(SimpleInversionModel, FiniteOutcomeModel):
+class SimplePrecessionModel(SimpleInversionModel):
     r"""
     Describes the free evolution of a single qubit prepared in the
     :math:`\left|+\right\rangle` state under a Hamiltonian :math:`H = \omega \sigma_z / 2`,
@@ -188,7 +204,105 @@ class SimplePrecessionModel(SimpleInversionModel, FiniteOutcomeModel):
         new_eps['t'] = expparams
 
         return super(SimplePrecessionModel, self).score(outcomes, modelparams, new_eps, return_L)
-           
+
+class CoinModel(FiniteOutcomeModel, DifferentiableModel):
+    r"""
+    Arguably the simplest possible model; the unknown model parameter 
+    is the bias of a coin, and an experiment consists of flipping it and 
+    looking at the result.
+
+    The model parameter :math:`p` represents the probability of outcome 0.
+    """
+
+    ## INITIALIZER ##
+
+    def __init__(self):
+        super(CoinModel, self).__init__()
+        self._domain = IntegerDomain(min=0, max=1)
+
+    ## PROPERTIES ##
+    
+    @property
+    def n_modelparams(self):
+        return 1
+    
+    @property
+    def modelparam_names(self):
+        return [r'p']
+        
+    @property
+    def expparams_dtype(self):
+        return []
+    
+    @property
+    def is_outcomes_constant(self):
+        """
+        Returns ``True`` if and only if the number of outcomes for each
+        experiment is independent of the experiment being performed.
+        
+        This property is assumed by inference engines to be constant for
+        the lifetime of a FiniteOutcomeModel instance.
+        """
+        return True
+    
+    ## METHODS ##
+    
+    def are_models_valid(self, modelparams):
+        return np.all(modelparams >= 0, axis=1) and np.all(modelparams <= 1, axis=1)
+    
+    def n_outcomes(self, expparams):
+        """
+        Returns an array of dtype ``uint`` describing the number of outcomes
+        for each experiment specified by ``expparams``.
+        
+        :param numpy.ndarray expparams: Array of experimental parameters. This
+            array must be of dtype agreeing with the ``expparams_dtype``
+            property.
+        """
+        return 2
+
+    def domain(self, expparams):
+        """
+        Returns a list of ``Domain``s, one for each input expparam.
+
+        :param numpy.ndarray expparams:  Array of experimental parameters. This
+            array must be of dtype agreeing with the ``expparams_dtype``
+            property.
+
+        :rtype: list of ``Domain``
+        """
+        return [self._domain] if expparams is None else [self._domain for ep in expparams]
+    
+    def likelihood(self, outcomes, modelparams, expparams):
+        # By calling the superclass implementation, we can consolidate
+        # call counting there.
+        super(CoinModel, self).likelihood(outcomes, modelparams, expparams)
+                  
+        # Our job is easy.
+        pr0 = np.tile(modelparams.flatten(), (expparams.shape[0], 1)).T
+        
+        # Now we concatenate over outcomes.
+        return FiniteOutcomeModel.pr0_to_likelihood_array(outcomes, pr0)
+
+    def score(self, outcomes, modelparams, expparams, return_L=False):
+
+        p = modelparams.flatten()[np.newaxis, :]
+        side = outcomes.flatten()[:, np.newaxis]
+
+        q = (1 - side) / p - side / (1 - p)
+
+        #  we need to add singleton dimension since there 
+        # is only one model param
+        q = q[np.newaxis, :, :]
+
+        # duplicate this for any exparams we have
+        q = np.tile(q, (expparams.shape[0], 1, 1, 1)).transpose((1,2,3,0))
+        
+        if return_L:
+            return q, self.likelihood(outcomes, modelparams, expparams)
+        else:
+            return q
+
 class NoisyCoinModel(FiniteOutcomeModel):
     r"""
     Implements the "noisy coin" model of [FB12]_, where the model parameter

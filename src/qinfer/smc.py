@@ -674,7 +674,7 @@ class SMCUpdater(Distribution):
 
     def bayes_risk(self, expparams):
         r"""
-        Calculates the Bayes risk for a hypothetical experiment, assuming the
+        Calculates the Bayes risk for each hypothetical experiment, assuming the
         quadratic loss function defined by the current model's scale matrix
         (see :attr:`qinfer.abstract_model.Model.Q`).
         
@@ -686,69 +686,42 @@ class SMCUpdater(Distribution):
         :return float: The Bayes risk for the current posterior distribution
             of the hypothetical experiment ``expparams``.
         """
-        # This subroutine computes the bayes risk for a hypothetical experiment
-        # defined by expparams.
 
-        # Assume expparams is a single experiment
+        n_expparams = expparams.shape[0]
+        all_likelihoods, all_outcomes = self.model.representative_outcomes(
+            self.particle_weights, self.particle_locations, expparams)
 
-        # expparams =
-        # Q = np array(Nmodelparams), which contains the diagonal part of the
-        #     rescaling matrix.  Non-diagonal could also be considered, but
-        #     for the moment this is not implemented.
+        risk = np.empty((n_expparams, ))
 
-        outcomes_arr = self.model.outcomes(self.particle_weights,
-                                                       self.particle_locations,expparams)
-        if len(outcomes_arr)==3:
-            w_outcomes,sampled_modelparams,outcomes = outcomes_arr
-            outcomes = outcomes
-            w_outcomes = w_outcomes[0][:,np.newaxis]
-            sampled_modelparams = sampled_modelparams[0]
+        for idx_exp in xrange(n_expparams):
+            L = all_likelihoods[idx_exp]     # shape (n_outcomes, n_particles)
+            outcomes = all_outcomes[idx_exp] # shape (n_outcomes)
 
-            w = self.batch_hypothetical_update(outcomes, expparams)
-            w = w[:, 0, :] # Fix w.shape == (n_outcomes, n_particles).
-            xs = self.particle_locations.transpose([1, 0]) # shape (n_mp, n_particles).
-            mu = np.tensordot(w,xs,axes=(1,1))
-            var = np.sum(w_outcomes*(mu-sampled_modelparams)**2,axis=0)
-            return np.dot(self.model.Q, var)
-        else:
-            outcomes = outcomes_arr
-            #method currently assumes single experiment
-            outcomes = [outcomes for i in range(expparams.shape[0])]
-            w,N = self.batch_hypothetical_update(outcomes, expparams, return_normalization=True)
-          
-            w = w[:, 0, :] # Fix w.shape == (n_outcomes, n_particles).
-            N = N[:, :, 0] # Fix N.shape == (n_outcomes, n_particles).
-            xs = self.particle_locations.transpose([1, 0]) # shape (n_mp, n_particles).
+            # (unnormalized) hypothetical posterior weights for this experiment
+            hyp_weights = self.particle_weights * L   # shape (n_outcomes, n_particles)
+            # Sum up the weights to find the renormalization scale.
+            norm_scale = np.sum(hyp_weights, axis=1)                 # shape (n_outcomes)
+            norm_weights = hyp_weights / norm_scale[..., np.newaxis] # shape(n_outcomes, n_particles)
+
             
-            # In the following, we will use the subscript convention that
-            # "o" refers to an outcome, "p" to a particle, and
-            # "i" to a model parameter.
-            # Thus, mu[o,i] is the sum over all particles of w[o,p] * x[i,p].
+            # compute the expected mean for each of the outcomes
+            est_posterior_means = np.tensordot(norm_weights, self.particle_locations, axes=(1, 0)) # shape(n_outcomes, n_mps)
 
-            mu = np.transpose(np.tensordot(w,xs,axes=(1,1)))
-            
+            # compute the second moment of these means over the outcome distribution
+            est_posterior_mom2 = np.tensordot(norm_scale, est_posterior_means**2, axes=(0, 0)) # shape (n_mps)
 
-            var = (
-                # This sum is a reduction over the particle index and thus
-                # represents an expectation value over the diagonal of the
-                # outer product $x . x^T$.
-                
-                np.transpose(np.tensordot(w,xs**2,axes=(1,1)))
-                # We finish by subracting from the above expectation value
-                # the diagonal of the outer product $mu . mu^T$.
-                - mu**2).T
+            # compute the second moment of the particles
+            est_mom2 = np.tensordot(self.particle_weights, self.particle_locations**2, axes=(0,0))      # shape (n_mps)
 
+            # finally, weight their difference by Q and return
+            risk[idx_exp] = np.sum(self.model.Q * (est_mom2 - est_posterior_mom2), axis=0)
 
-            rescale_var = np.sum(self.model.Q * var, axis=1)
-            tot_like = np.sum(N, axis=1)
-
-   
-            return np.dot(tot_like.T, rescale_var)        
+        return risk  
 
         
     def expected_information_gain(self, expparams):
         r"""
-        Calculates the expected information gain for a hypothetical experiment.
+        Calculates the expected information gain for each hypothetical experiment.
         
         :param expparams: The experiment at which to compute expected
             information gain.
@@ -760,31 +733,28 @@ class SMCUpdater(Distribution):
             of the hypothetical experiment ``expparams``.
         """
 
-        w_outcomes,_,outcomes = self.model.outcomes(self.particle_weights,self.particle_locations,
-                            expparams)
+        n_expparams = expparams.shape[0]
+        all_likelihoods, all_outcomes = self.model.representative_outcomes(
+            self.particle_weights, self.particle_locations, expparams)
 
+        # preallocate information gain array
+        ig = np.empty((n_expparams, ))
 
-        #method currently assumes single experiment
-        outcomes = outcomes[0]
-        w_outcomes = w_outcomes[0]
+        for idx_exp in xrange(n_expparams):
+            L = all_likelihoods[idx_exp]     # shape (n_outcomes, n_particles)
+            outcomes = all_outcomes[idx_exp] # shape (n_outcomes)
 
-        w = self.batch_hypothetical_update(outcomes, expparams, return_likelihood=False)
-        w = w[:, 0, :] # Fix w.shape == (n_outcomes, n_particles).
+            # (unnormalized) hypothetical posterior weights for this experiment
+            hyp_weights = self.particle_weights * L   # shape (n_outcomes, n_particles)
+            # Sum up the weights to find the renormalization scale.
+            norm_scale = np.sum(hyp_weights, axis=1)                 # shape (n_outcomes)
 
-        
-        # This is a special case of the KL divergence estimator (see below),
-        # in which the other distribution is guaranteed to share support.
-        #
-        # KLD[idx_outcome] = Sum over particles(self * log(self / other[idx_outcome])
-        # Est. KLD = E[KLD[idx_outcome] | outcomes].
-  
-        KLD = np.sum(
-            self.particle_weights * np.log(self.particle_weights / w),
-            axis=1 # Sum over particles.
-        )
-        
-        tot_like = np.sum(w_outcomes, axis=1)
-        return np.dot(tot_like, KLD)
+            # Sum over particles and outcomes. It may take some fiddling to convince yourself
+            # that this is the correct formula. See the second last formula of the second 
+            # page of derivations here: https://github.com/QInfer/python-qinfer/pull/70
+            ig[idx_exp] = np.sum(hyp_weights * np.log(L / norm_scale[..., np.newaxis]), axis=(0,1))
+
+        return ig
         
     def est_entropy(self):
         r"""
@@ -1376,7 +1346,8 @@ class SMCUpdaterBCRB(SMCUpdater):
         non-adaptive and adaptive Bayes Information matrices.
     :param initial_bim: If the regularity conditions are not met, then taking
         the outer products of gradients over the prior will not give the correct
-        initial BIM. In such cases, ``initial_bim`` can be set to the correct
+        initial (Bayesian Information Matrix) BIM. 
+        In such cases, ``initial_bim`` can be set to the correct
         BIM corresponding to having done no experiments.
     """
     

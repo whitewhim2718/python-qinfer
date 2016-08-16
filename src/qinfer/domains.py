@@ -31,17 +31,12 @@ from __future__ import absolute_import
 from builtins import range
 from future.utils import with_metaclass
 
+from scipy.special import binom
+from math import factorial
+from itertools import combinations_with_replacement
 import numpy as np
-import scipy.stats as st
-import scipy.linalg as la
-from scipy.interpolate import interp1d
-from scipy.integrate import cumtrapz
-
-from functools import partial
 
 import abc
-
-from qinfer import utils as u
 
 import warnings
 
@@ -51,22 +46,10 @@ __all__ = [
     'Domain',
     'RealDomain',
     'IntegerDomain',
-    'IntegerTupleDomain'
+    'MultinomialDomain'
 ]
 
 ## FUNCTIONS #################################################################
-
-
-## EXCEPTIONS ################################################################
-
-class CannotBeEnumeratedException(Exception):
-    """
-    Custom exception which indicates that a generator for all 
-    of the elements of a domain has been asked for when it 
-    is not possible to do, for example, when the domain 
-    has infinitly many values.
-    """
-    pass
 
 ## ABSTRACT CLASSES AND MIXINS ###############################################
 
@@ -105,6 +88,16 @@ class Domain(with_metaclass(abc.ABCMeta, object)):
         pass
 
     @abc.abstractproperty
+    def n_members(self):
+        """
+        Returns the number of members in the domain if it 
+        `is_finite`, otherwise, returns `None`.
+
+        :type: ``int``
+        """
+        pass
+
+    @abc.abstractproperty
     def example_point(self):
         """
         Returns any single point guaranteed to be in the domain, but 
@@ -112,6 +105,18 @@ class Domain(with_metaclass(abc.ABCMeta, object)):
         This is given as a size 1 ``np.array`` of type ``dtype``.
 
         :type: ``np.ndarray``
+        """
+        pass
+
+    @abc.abstractproperty
+    def values(self):
+        """
+        Returns an `np.array` of type `self.dtype` containing 
+        some values from the domain.
+        For domains where ``is_finite`` is ``True``, all elements 
+        of the domain will be yielded exactly once.
+
+        :rtype: `np.ndarray`
         """
         pass
 
@@ -126,27 +131,15 @@ class Domain(with_metaclass(abc.ABCMeta, object)):
         """
         return not self.is_continuous
 
-    ## CONCRETE METHODS ##
-
-    def values(self):
-        """
-        Returns an iterable object that yields elements of the domain.
-        For domains where ``is_finite`` is ``True``, all elements 
-        of the domain will be yielded exactly once.
-
-        :rtype: something iterable.
-        """
-        if not self.is_finite:
-            raise CannotBeEnumeratedException('All values of this domain cannot be given because it is not finite.')
-        else
-            raise NotImplementedError()
-
-    ## ABSTRACT METHODS ######################################################
+    ## ABSTRACT METHODS ##
 
     @abc.abstractmethod
-    def in_domain(self, point):
+    def in_domain(self, points):
         """
-        Returns ``True`` or ``False`` depending on whether the given point is in the domain or not.
+        Returns ``True`` if all of the given points are in the domain, 
+        ``False`` otherwise.
+
+        :param np.ndarray points: An `np.ndarray` of type `self.dtype`.
 
         :rtype: `bool`
         """
@@ -162,12 +155,14 @@ class RealDomain(Domain):
     :param float min: A number specifying the lowest possible value of the 
         domain. If left as `None`, negative infinity is assumed. 
     :param float max: A number specifying the largest possible value of the 
-        domain. If left as `None`, negative infinity is assumed.
+        domain. If left as `None`, positive infinity is assumed.
     """
 
     def __init__(self, min=None, max=None):
         self._min = min
         self._max = max
+
+    ## PROPERTIES ##
 
     @property
     def min(self):
@@ -188,7 +183,7 @@ class RealDomain(Domain):
         """
         return self._max
     
-
+    @property
     def is_continuous(self):
         """
         Whether or not the domain has an uncountable number of values.
@@ -197,6 +192,7 @@ class RealDomain(Domain):
         """
         return True
 
+    @property
     def is_finite(self):
         """
         Whether or not the domain contains a finite number of points.
@@ -205,6 +201,7 @@ class RealDomain(Domain):
         """
         return False
 
+    @property
     def dtype(self):
         """
         The numpy dtype of a single element of the domain.
@@ -213,6 +210,17 @@ class RealDomain(Domain):
         """
         return np.float
 
+    @property
+    def n_members(self):
+        """
+        Returns the number of members in the domain if it 
+        `is_finite`, otherwise, returns `None`.
+
+        :type: ``int``
+        """
+        return None
+
+    @property
     def example_point(self):
         """
         Returns any single point guaranteed to be in the domain, but 
@@ -228,14 +236,30 @@ class RealDomain(Domain):
         else:
             return np.array([0], dtype=self.dtype)
 
-    def in_domain(self, point):
+    @property
+    def values(self):
         """
-        Returns ``True`` or ``False`` depending on whether the given point is in the domain or not.
+        Returns an `np.array` of type `self.dtype` containing 
+        some values from the domain.
+        For domains where ``is_finite`` is ``True``, all elements 
+        of the domain will be yielded exactly once.
+
+        :rtype: `np.ndarray`
+        """
+        return self.example_point
+
+    ## METHODS ##
+
+    def in_domain(self, points):
+        """
+        Returns ``True`` if all of the given points are in the domain, 
+        ``False`` otherwise.
+
+        :param np.ndarray points: An `np.ndarray` of type `self.dtype`.
 
         :rtype: `bool`
         """
-
-        return pself._min <= p and self._max >= p
+        return np.all(points >= self._min) and np.all(points <= self._max)
 
 class IntegerDomain(Domain):
     """
@@ -245,12 +269,16 @@ class IntegerDomain(Domain):
     :param int min: A number specifying the lowest possible value of the 
         domain. If `None`, negative infinity is assumed. 
     :param int max: A number specifying the largest possible value of the 
-        domain. If left as `None`, negative infinity is assumed.
+        domain. If left as `None`, positive infinity is assumed.
+
+    Note: Yes, it is slightly unpythonic to specify `max` instead of `max`+1.
     """
 
     def __init__(self, min=0, max=None):
         self._min = min
         self._max = max
+
+    ## PROPERTIES ##
 
     @property
     def min(self):
@@ -272,6 +300,7 @@ class IntegerDomain(Domain):
         return self._max
     
 
+    @property
     def is_continuous(self):
         """
         Whether or not the domain has an uncountable number of values.
@@ -280,6 +309,7 @@ class IntegerDomain(Domain):
         """
         return False
 
+    @property
     def is_finite(self):
         """
         Whether or not the domain contains a finite number of points.
@@ -288,6 +318,7 @@ class IntegerDomain(Domain):
         """
         return self.min is not None and self.max is not None
 
+    @property
     def dtype(self):
         """
         The numpy dtype of a single element of the domain.
@@ -296,6 +327,20 @@ class IntegerDomain(Domain):
         """
         return np.int
 
+    @property
+    def n_members(self):
+        """
+        Returns the number of members in the domain if it 
+        `is_finite`, otherwise, returns `None`.
+
+        :type: ``int``
+        """
+        if self.is_finite:
+            return self.max - self.min + 1
+        else:
+            return None
+
+    @property
     def example_point(self):
         """
         Returns any single point guaranteed to be in the domain, but 
@@ -311,72 +356,69 @@ class IntegerDomain(Domain):
         else:
             return np.array([0], dtype=self.dtype)
 
-    def in_domain(self, point):
-        """
-        Returns ``True`` or ``False`` depending on whether the given point is in the domain or not.
-
-        :rtype: `bool`
-        """
-
-        return np.mod(p,1) == 0 and self._min <= p and self._max >= p
-
+    @property
     def values(self):
         """
-        Returns an iterable object that yields elements of the domain.
+        Returns an `np.array` of type `self.dtype` containing 
+        some values from the domain.
         For domains where ``is_finite`` is ``True``, all elements 
         of the domain will be yielded exactly once.
 
-        :rtype: something iterable.
+        :rtype: `np.ndarray`
         """
         if self.max is None or self.min is None:
-            return super(IntegerDomain, self).values()
+            return self.example_point
         else:
             return np.arange(self.min, self.max + 1, dtype = self.dtype)
 
-class IntegerTupleDomain(Domain):
-    """
-    A domain specifying a hyper-cube of k-tuples of integers
+    ## METHODS ##
 
-    :param int n_elements: The number of elements of a tuple. 
-    :param int min: A number specifying the lowest possible value of each 
-        element of a tuple in the domain. If left as `None`, negative infinity is assumed. 
-    :param int max: A number specifying the largest possible value of each 
-        element of a tuple in the domain. If left as `None`, negative infinity is assumed.
+    def in_domain(self, points):
+        """
+        Returns ``True`` if all of the given points are in the domain, 
+        ``False`` otherwise.
+
+        :param np.ndarray points: An `np.ndarray` of type `self.dtype`.
+
+        :rtype: `bool`
+        """
+        return np.all(np.mod(points,1) == 0) and np.all(points >= self._min) and np.all(points <= self._max)
+    
+
+class MultinomialDomain(Domain):
+    """
+    A domain specifying k-tuples of non-negative integers which 
+    sum to a specific value.
+
+    :param int n_meas: The sum of any tuple in the domain.
+    :param int n_elements: The number of elements in a tuple. 
     """
 
-    def __init__(self, min=0, max=None, n_elements=2):
+    def __init__(self, n_meas, n_elements=2):
         self._n_elements = n_elements
-        self._min = min
-        self._max = max
+        self._n_meas = n_meas
+
+    ## PROPERTIES ##
 
     @property
-    def min(self):
+    def n_meas(self):
         """
-        Returns the minimum value of the domain. The outcome 
-        None is interpreted as negative infinity.
+        Returns the sum of any tuple in the domain.
 
-        :rtype: `float`
+        :rtype: `int`
         """
-        return self._min
-    @property
-    def max(self):
-        """
-        Returns the maximum value of the domain. The outcome 
-        None is interpreted as positive infinity.
-
-        :rtype: `float`
-        """
-        return self._max
+        return self._n_meas
     @property
     def n_elements(self):
         """
         Returns the number of elements of a tuple in the domain.
 
-        :rtype: `float`
+        :rtype: `int`
         """
         return self._n_elements
     
 
+    @property
     def is_continuous(self):
         """
         Whether or not the domain has an uncountable number of values.
@@ -385,14 +427,16 @@ class IntegerTupleDomain(Domain):
         """
         return False
 
+    @property
     def is_finite(self):
         """
         Whether or not the domain contains a finite number of points.
 
         :type: `bool`
         """
-        return self.min is not None and self.max is not None
+        return True
 
+    @property
     def dtype(self):
         """
         The numpy dtype of a single element of the domain.
@@ -401,6 +445,17 @@ class IntegerTupleDomain(Domain):
         """
         return np.dtype([('k', np.int, self.n_elements)])
 
+    @property
+    def n_members(self):
+        """
+        Returns the number of members in the domain if it 
+        `is_finite`, otherwise, returns `None`.
+
+        :type: ``int``
+        """
+        return int(binom(self.n_meas + self.n_elements -1, self.n_elements - 1))
+
+    @property
     def example_point(self):
         """
         Returns any single point guaranteed to be in the domain, but 
@@ -409,31 +464,64 @@ class IntegerTupleDomain(Domain):
 
         :type: ``np.ndarray``
         """
-        if self.min is not None:
-            return self.min * np.ones((1,), dtype=self.dtype)
-        if self.max is not None:
-            return self.max * np.ones((1,), dtype=self.dtype)
-        else:
-            return np.zeros((1,), dtype=self.dtype)
+        return np.array([([self.n_meas] + list(0 for i in xrange(self.n_elements - 1)),)], dtype=self.dtype)
 
-    def in_domain(self, point):
-        """
-        Returns ``True`` or ``False`` depending on whether the given point is in the domain or not.
-
-        :rtype: `bool`
-        """
-
-        return np.mod(p,1) == 0 and self._min <= p and self._max >= p
-
+    @property
     def values(self):
         """
-        Returns an iterable object that yields elements of the domain.
+        Returns an `np.array` of type `self.dtype` containing 
+        some values from the domain.
         For domains where ``is_finite`` is ``True``, all elements 
         of the domain will be yielded exactly once.
 
-        :rtype: something iterable.
+        :rtype: `np.ndarray`
         """
-        if self.max is None or self.min is None:
-            super(IntegerDomain, self).values()
-        else:
-            v = np.indices((self.max-self.min+1)*np.ones(self.n_elements))
+
+        # This code comes from Jared Goguen at http://stackoverflow.com/a/37712597/1082565
+        partition_array = np.empty((self.n_members, self.n_elements), dtype=int)
+        masks = np.identity(self.n_elements, dtype=int)
+        for i, c in enumerate(combinations_with_replacement(masks, self.n_meas)): 
+            partition_array[i,:] = sum(c)
+
+        # Convert to dtype before returning
+        return self._from_regular_array(partition_array)
+        
+    ## METHODS ##
+
+    def _to_regular_array(self, A):
+        """
+        Converts from an array of type `self.dtype` to an array 
+        of type `int` with an additional index labeling the 
+        tuple indeces.
+
+        :param np.ndarray A: An `np.array` of type `self.dtype`.
+
+        :rtype: `np.ndarray`
+        """
+        return A.view((int, len(A.dtype.names))).reshape(A.shape + (-1,))
+
+    def _from_regular_array(self, A):
+        """
+        Converts from an array of type `int` where the last index 
+        is assumed to have length `self.n_elements` to an array 
+        of type `self.d_type` with one fewer index.
+
+        :param np.ndarray A: An `np.array` of type `int`.
+
+        :rtype: `np.ndarray`
+        """
+        return A.view(dtype=self.dtype).squeeze(-1) 
+
+    def in_domain(self, points):
+        """
+        Returns ``True`` if all of the given points are in the domain, 
+        ``False`` otherwise.
+
+        :param np.ndarray points: An `np.ndarray` of type `self.dtype`.
+
+        :rtype: `bool`
+        """
+        array_view = self._to_regular_array(points)
+        return np.all(array_view >= 0) and np.all(np.sum(array_view, axis=-1) == self.n_meas)
+
+    

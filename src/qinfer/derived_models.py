@@ -35,6 +35,7 @@ from __future__ import division # Ensures that a/b is always a float.
 __all__ = [
     'DerivedModel',
     'PoisonedModel',
+    'ReferencedPoissonModel',
     'BinomialModel',
     'MultinomialModel',
     'MLEModel',
@@ -49,12 +50,27 @@ from functools import reduce
 import numpy as np
 import scipy
 from scipy.stats import binom
+from scipy.special import xlogy, gammaln
 
 from qinfer.utils import binomial_pdf
 from qinfer.abstract_model import Model, FiniteOutcomeModel, DifferentiableModel
 from qinfer._lib import enum # <- TODO: replace with flufl.enum!
 from qinfer.ale import binom_est_error
-    
+from qinfer.domains import IntegerDomain
+from qinfer.utils import safe_shape
+
+## FUNCTIONS ###################################################################
+
+def rmfield( a, *fieldnames_to_remove ):
+    # Removes named fields from a structured np array
+    return a[ [ name for name in a.dtype.names if name not in fieldnames_to_remove ] ]
+
+def poisson_pdf(k, mu):
+    """
+    Probability of k events in a poisson process of expectation mu
+    """
+    return np.exp(xlogy(k, mu) - gammaln(k + 1) - mu)
+
 ## CLASSES #####################################################################
 
 class DerivedModel(Model):
@@ -116,7 +132,13 @@ class DerivedModel(Model):
         return self.underlying_model.canonicalize(modelparams)
 
     def simulate_experiment(self,modelparams,expparams,repeat=1):
-        return self.underlying_model.simulate_experiment(modelparams,expparams,repeat)
+        # It might be tempting to call this for sim_count incrementing, 
+        # but it will almost certainly be a waste of time. It might even 
+        # be called in the concrete implementation as a part of simulating 
+        # the derived model. Moreover, it might cause an error if,
+        # for example, the number of model parameters changes.
+        #return self.underlying_model.simulate_experiment(modelparams,expparams,repeat)
+        self._sim_count += modelparams.shape[0] * expparams.shape[0] * repeat
 
 PoisonModes = enum.enum("ALE", "MLE")
 
@@ -195,6 +217,195 @@ class PoisonedModel(DerivedModel, FiniteOutcomeModel):
         super(PoisonedModel, self).simulate_experiment(modelparams, expparams, repeat)
         return self.underlying_model.simulate_experiment(modelparams, expparams, repeat)
 
+class ReferencedPoissonModel(DerivedModel):
+    """
+    Model whose "true" underlying model is a coin flip, but where the coin is
+    only accessible by drawing three poisson random variates, the rate
+    of the third being the convex combination of the rates of the first two,
+    and the linear parameter being the weight of the coin.
+    By drawing from all three poisson random variables, information about the
+    coin can be extracted, and the rates are thought of as nuisance parameters.
+
+    This model is in many ways similar to the :class:`BinomialModel`, in
+    particular, it requires the underlying model to have exactly two outcomes.
+
+    :param Model underlying_model: The "true" model hidden by poisson random
+        variables which set upper and lower references.
+
+    Note that new ``modelparam`` fields alpha and beta are
+    added by this model. They refer to, respectively, the higher poisson
+    rate (corresponding to underlying probability 1)
+    and the lower poisson rate (corresponding to underlying probability 0).
+
+    Additionally, an exparam field ``mode`` is added.
+    This field indicates whether just the signal has been measured (0), the
+    bright reference (1), or the dark reference (2).
+    To ensure the correct operation of this model, it is important that the
+    decorated model does not also admit a field with the name ``mode``.
+    """
+
+    SIGNAL = 0
+    BRIGHT = 1
+    DARK = 2
+
+    def __init__(self, underlying_model):
+        super(ReferencedPoissonModel, self).__init__(underlying_model)
+
+        if not (underlying_model.is_outcomes_constant and underlying_model.domain(None)[0].n_members == 2):
+            raise ValueError("Decorated model must be a two-outcome model.")
+
+        if isinstance(underlying_model.expparams_dtype, str):
+            # We default to calling the original experiment parameters "p".
+            self._expparams_scalar = True
+            self._expparams_dtype = [('p', underlying_model.expparams_dtype), ('mode', 'int')]
+        else:
+            self._expparams_scalar = False
+            self._expparams_dtype = underlying_model.expparams_dtype + [('mode', 'int')]
+
+        # The domain for any mode of an experiment is all of the non-negative integers
+        self._domain = IntegerDomain(min=0, max=None)
+
+    ## PROPERTIES ##
+
+    @property
+    def n_modelparams(self):
+        return super(ReferencedPoissonModel, self).n_modelparams + 2
+
+    @property
+    def modelparam_names(self):
+        underlying_names = super(ReferencedPoissonModel, self).modelparam_names
+        return underlying_names + [r'\alpha', r'\beta']
+
+    @property
+    def expparams_dtype(self):
+        return self._expparams_dtype
+
+    @property
+    def is_outcomes_constant(self):
+        """
+        Returns ``True`` if and only if the number of outcomes for each
+        experiment is independent of the experiment being performed.
+
+        This property is assumed by inference engines to be constant for
+        the lifetime of a Model instance.
+        """
+        return False
+
+    ## METHODS ##
+
+    def n_outcomes(self, expparams):
+        """
+        Returns an array of dtype ``uint`` describing the number of outcomes
+        for each experiment specified by ``expparams``.
+
+        :param numpy.ndarray expparams: Array of experimental parameters. This
+            array must be of dtype agreeing with the ``expparams_dtype``
+            property.
+
+        Note: This is incorrect as there are an infinite number of outcomes.
+        We arbitrarily pick a number.
+        """
+        return 1000
+
+    def domain(self, expparams):
+        """
+        Returns a list of ``Domain``s, one for each input expparam.
+
+        :param numpy.ndarray expparams:  Array of experimental parameters. This
+            array must be of dtype agreeing with the ``expparams_dtype``
+            property.
+
+        :rtype: list of ``Domain``
+        """
+        return [self._domain] if expparams is None else [self._domain for ep in expparams]
+
+    def likelihood(self, outcomes, modelparams, expparams):
+        # By calling the superclass implementation, we can consolidate
+        # call counting there.
+        super(ReferencedPoissonModel, self).likelihood(outcomes, modelparams, expparams)
+
+        L = np.empty((outcomes.shape[0], modelparams.shape[0], expparams.shape[0]))
+        ot = np.tile(outcomes.T, (1, modelparams.shape[0]))
+
+        for idx_ep, expparam in enumerate(expparams):
+
+            if expparam['mode'] == self.SIGNAL:
+
+                # Get the probability of outcome 1 for the underlying model.
+                pr0 = self.underlying_model.likelihood(
+                    np.array([0], dtype='uint'),
+                    modelparams[:,:-2],
+                    np.array([expparam['p']]) if self._expparams_scalar else expparam)[0,:,0]
+                pr0 = np.tile(pr0, (outcomes.shape[0], 1))
+
+                # Reference Rate
+                alpha = np.tile(modelparams[:, -2], (outcomes.shape[0], 1))
+                beta = np.tile(modelparams[:, -1], (outcomes.shape[0], 1))
+
+                # For each model parameter, turn this into an expected poisson rate
+                gamma = pr0 * alpha + (1 - pr0) * beta
+
+                # The likelihood of getting each of the outcomes for each of the modelparams
+                L[:,:,idx_ep] = poisson_pdf(ot, gamma)
+
+            elif expparam['mode'] == self.BRIGHT:
+
+                # Reference Rate
+                alpha = np.tile(modelparams[:, -2], (outcomes.shape[0], 1))
+
+                # The likelihood of getting each of the outcomes for each of the modelparams
+                L[:,:,idx_ep] = poisson_pdf(ot, alpha)
+
+            elif expparam['mode'] == self.DARK:
+
+                # Reference Rate
+                beta = np.tile(modelparams[:, -1], (outcomes.shape[0], 1))
+
+                # The likelihood of getting each of the outcomes for each of the modelparams
+                L[:,:,idx_ep] = poisson_pdf(ot, beta)
+            else:
+                raise(ValueError('Unknown mode detected in ReferencedPoissonModel.'))
+
+        assert not np.any(np.isnan(L))
+        return L
+
+    def simulate_experiment(self, modelparams, expparams, repeat=1):
+        super(ReferencedPoissonModel, self).simulate_experiment(modelparams, expparams, repeat)
+
+        n_mps = modelparams.shape[0]
+        n_eps = expparams.shape[0]
+        outcomes = np.empty(shape=(repeat, n_mps, n_eps))
+
+        for idx_ep, expparam in enumerate(expparams):
+            if expparam['mode'] == self.SIGNAL:
+                # Get the probability of outcome 1 for the underlying model.
+                pr0 = self.underlying_model.likelihood(
+                    np.array([0], dtype='uint'),
+                    modelparams[:,:-2],
+                    np.array([expparam['p']]) if self._expparams_scalar else expparam)[0,:,0]
+
+                # Reference Rate
+                alpha = modelparams[:, -2]
+                beta = modelparams[:, -1]
+
+                outcomes[:,:,idx_ep] = np.random.poisson(pr0 * alpha + (1 - pr0) * beta, size=(repeat, n_mps))
+            elif expparam['mode'] == self.BRIGHT:
+                alpha = modelparams[:, -2]
+                outcomes[:,:,idx_ep] = np.random.poisson(alpha, size=(repeat, n_mps))
+            elif expparam['mode'] == self.DARK:
+                beta = modelparams[:, -1]
+                outcomes[:,:,idx_ep] = np.random.poisson(beta, size=(repeat, n_mps))
+            else:
+                raise(ValueError('Unknown mode detected in ReferencedPoissonModel.'))
+
+        return outcomes[0,0,0] if outcomes.size == 1 else outcomes
+
+    def update_timestep(self, modelparams, expparams):
+        return self.underlying_model.update_timestep(modelparams,
+            np.array([expparams['p']]) if self._expparams_scalar else expparam[0,:,0]
+        )
+
+
 class BinomialModel(DerivedModel, FiniteOutcomeModel):
     """
     Model representing finite numbers of iid samples from another model,
@@ -214,7 +425,7 @@ class BinomialModel(DerivedModel, FiniteOutcomeModel):
     def __init__(self, underlying_model):
         super(BinomialModel, self).__init__(underlying_model)
         
-        if not (underlying_model.is_n_outcomes_constant and underlying_model.n_outcomes(None) == 2):
+        if not (underlying_model.is_outcomes_constant and underlying_model.domain(None)[0].n_members == 2):
             raise ValueError("Decorated model must be a two-outcome model.")
         
         if isinstance(underlying_model.expparams_dtype, str):
@@ -238,7 +449,7 @@ class BinomialModel(DerivedModel, FiniteOutcomeModel):
         return self._expparams_dtype
     
     @property
-    def is_n_outcomes_constant(self):
+    def is_outcomes_constant(self):
         """
         Returns ``True`` if and only if the number of outcomes for each
         experiment is independent of the experiment being performed.
@@ -260,6 +471,18 @@ class BinomialModel(DerivedModel, FiniteOutcomeModel):
             property.
         """
         return expparams['n_meas'] + 1
+
+    def domain(self, expparams):
+        """
+        Returns a list of ``Domain``s, one for each input expparam.
+
+        :param numpy.ndarray expparams:  Array of experimental parameters. This
+            array must be of dtype agreeing with the ``expparams_dtype``
+            property.
+
+        :rtype: list of ``Domain``
+        """
+        return [IntegerDomain(min=0, max=ep['n_meas']) for ep in expparams]
     
     def likelihood(self, outcomes, modelparams, expparams):
         # By calling the superclass implementation, we can consolidate
@@ -275,6 +498,7 @@ class BinomialModel(DerivedModel, FiniteOutcomeModel):
             binomial_pdf(expparams['n_meas'][np.newaxis, :], outcomes[idx], pr1)
             for idx in range(outcomes.shape[0])
             ]) 
+
         assert not np.any(np.isnan(L))
         return L
             
@@ -330,11 +554,6 @@ class MultinomialModel(DerivedModel):
 
     def __init__(self, underlying_model):
         super(MultinomialModel, self).__init__(underlying_model)
-        
-        if not (underlying_model.is_n_outcomes_constant):
-            raise ValueError("Decorated model must have a finite and fixed number of outcomes, labeled by integers starting at 0.")
-        
-        self._n_sides = self.underlying_model.n_outcomes()
 
         if isinstance(underlying_model.expparams_dtype, str):
             # We default to calling the original experiment parameters "x".
@@ -353,14 +572,6 @@ class MultinomialModel(DerivedModel):
         return self.underlying_model
 
     @property
-    def n_sides(self):
-        """
-        Returns the number outcomes of the underlying model; the number of sides 
-        of the die we are rolling in this multinomial distribution.
-        """    
-        return self._n_sides
-
-    @property
     def expparams_dtype(self):
         return self._expparams_dtype
 
@@ -370,7 +581,7 @@ class MultinomialModel(DerivedModel):
     
     
     @property
-    def is_n_outcomes_constant(self):
+    def is_outcomes_constant(self):
         """
         Returns ``True`` if and only if the number of outcomes for each
         experiment is independent of the experiment being performed.
@@ -382,6 +593,19 @@ class MultinomialModel(DerivedModel):
         return False
     
     ## METHODS ##
+
+    def n_sides(self, expparams):
+        """
+        Returns an array of dtype ``uint`` describing the number of possible outcomes
+        of the underlying model for each experiment specified by ``expparams``.
+        
+        :param numpy.ndarray expparams: Array of experimental parameters. This
+            array must be of dtype agreeing with the ``expparams_dtype``
+            property.
+        """
+        
+        underlying_domains = self.underlying_model.domain(rmfield(expparams, 'n_meas'))
+        return np.array([ud.n_members for ud in underlying_domains])
     
     def n_outcomes(self, expparams):
         """
@@ -395,7 +619,24 @@ class MultinomialModel(DerivedModel):
         # Equal to the number of possible tuples whose non-negative 
         # integer entries sum to n_meas.
         n = expparams['n_meas']
-        return scipy.special.binom(n + self.n_sides -1, self.n_sides - 1)
+        k = self.n_sides(expparams)
+        return scipy.special.binom(n + k - 1, k - 1)
+
+    def domain(self, expparams):
+        """
+        Returns a list of ``Domain``s, one for each input expparam.
+
+        :param numpy.ndarray expparams:  Array of experimental parameters. This
+            array must be of dtype agreeing with the ``expparams_dtype``
+            property.
+
+        :rtype: list of ``Domain``
+        """
+        n_sides = self.n_sides(expparams)
+        return [
+            MultinomialDomain(n_elements=n_sides[idx_ep], n_meas=ep['n_meas']) 
+                for idx_ep, ep in enumerate(expparams)
+        ]
     
     def likelihood(self, outcomes, modelparams, expparams):
         # By calling the superclass implementation, we can consolidate

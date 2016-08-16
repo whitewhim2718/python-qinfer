@@ -49,6 +49,7 @@ from scipy.special import gammaln
 from .utils import binomial_pdf
 from functools import wraps 
 from .abstract_model import Model, DifferentiableModel
+from .domains import IntegerDomain, RealDomain
     
 ## CLASSES ###################################################################
 
@@ -58,29 +59,29 @@ class PoissonModel(DifferentiableModel):
 
     :math:`\Pr(k|f(\vec{x};\vec{c}))= \frac{f(\vec{x};\vec{c})^ke^{-f(\vec{x};\vec{c})}}{k!}`
 
-    Where :math:`k` is the number of outcomes observed per unit time, and :math:`f(\vec{x};\vec{c})`
-    is some underlying rate function with unknown parameters :math:`\vec{x}` and experimental 
-    parameters :math:`\vec{c}`.
+    Where :math:`k` is the number of events observed, and :math:`f(\vec{x};\vec{c})`
+    is the expected number of events observed given the model parameters :math:`\vec{x}` 
+    and experimental parameters :math:`\vec{c}`.
     """
 
     __metaclass__ = ABCMeta
     
     ## INITIALIZER ##
 
-    def __init__(self, num_outcome_samples=10000,always_resample_outcomes=False, 
-            initial_outcomes = None,initial_weights=None, allow_identical_outcomes=False):
-        super(PoissonModel, self).__init__(always_resample_outcomes=always_resample_outcomes,
-            initial_outcomes=initial_outcomes,initial_weights=initial_weights,
-            allow_identical_outcomes=allow_identical_outcomes)
+    def __init__(self, num_outcome_samples=10000, allow_identical_outcomes=False):
+        super(PoissonModel, self).__init__(allow_identical_outcomes=allow_identical_outcomes)
         self.num_outcome_samples = num_outcome_samples
+
+        self._domain = IntegerDomain(min=0, max=None)
 
     ## ABSTRACT METHODS##
 
     @abstractmethod
     def model_function(self,modelparams,expparams):
         """
-        Return model function :math:`f(\vec{x};\vec{c})` with unknown parameters :math:`\vec{x}` 
-        and experimental parameters :math:`\vec{c}` in the form [idx_modelparams,idx_expparams].
+        Return model function :math:`f(\vec{x};\vec{c})` specifying the expected 
+        number of Poisson events observed for every combination of 
+        model parameters :math:`\vec{x}` and experimental parameters :math:`\vec{c}`.
 
         :param np.ndarray modelparams: A shape ``(n_models, n_modelparams)``
             array of model parameter vectors describing the hypotheses for
@@ -90,8 +91,7 @@ class PoissonModel(DifferentiableModel):
             :attr:`~qinfer.Model.expparams_dtype`, describing the
             experiments from which the given outcomes were drawn.
         :rtype: np.ndarray
-        :return: A two-index tensor ``f[i, j]``, where ``i`` indexes which model parameters are
-            being considered, ``j`` indexes which experimental parameters was used.   
+        :return: A two-index tensor of shape ``(n_models, n_expparams)``.
         """
         pass
 
@@ -99,7 +99,7 @@ class PoissonModel(DifferentiableModel):
     def model_function_derivative(self,modelparams,expparams):
         """
         Return model functions derivatives :math:`\nabla_{\vec{x}}f(\vec{x};\vec{c})`
-        in form [idx_modelparam,idx_modelparams,idx_expparams].
+        in an array of shape ``(n_modelparams,n_models,n_expparams)``.
 
         :param np.ndarray modelparams: A shape ``(n_models, n_modelparams)``
         array of model parameter vectors describing the hypotheses for
@@ -109,8 +109,9 @@ class PoissonModel(DifferentiableModel):
             :attr:`~qinfer.Model.expparams_dtype`, describing the
             experiments from which the given outcomes were drawn.
         :rtype: np.ndarray
-        :return: A three-index tensor ``f[i, j,k]``, where ``i`` indexes which model parameter the derivative was taken with respect to,
-            ``j`` indexes which model parameters are being considered, 
+        :return: A three-index tensor ``f[i, j,k]``, where ``i`` 
+            indexes which model parameter the derivative was taken with respect to,
+            ``j`` indexes which model is being considered, 
             and ``k`` indexes which experimental parameters was used.   
         """
         pass
@@ -125,7 +126,7 @@ class PoissonModel(DifferentiableModel):
     @abstractproperty
     def n_model_function_params(self):
         """
-        Returns the number of real model function parameters admitted by this GaussianModel's,
+        Returns the number of real model function parameters admitted by this PoissonModel's,
         model function.
         
         This property is assumed by inference engines to be constant for
@@ -167,13 +168,8 @@ class PoissonModel(DifferentiableModel):
     def n_modelparams(self):
         return self.n_model_function_params   
     
-    
     @property
-    def outcomes_dtype(self):
-        return 'uint32'
-    
-    @property
-    def is_n_outcomes_constant(self):
+    def is_outcomes_constant(self):
         """
         Returns ``True`` if and only if the number of outcomes for each
         experiment is independent of the experiment being performed.
@@ -195,6 +191,18 @@ class PoissonModel(DifferentiableModel):
             property.
         """
         return self.num_outcome_samples
+
+    def domain(self, expparams):
+        """
+        Returns a list of ``Domain``s, one for each input expparam.
+
+        :param numpy.ndarray expparams:  Array of experimental parameters. This
+            array must be of dtype agreeing with the ``expparams_dtype``
+            property.
+
+        :rtype: list of ``Domain``
+        """
+        return [self._domain] if expparams is None else [self._domain for ep in expparams]
     
 
     def likelihood(self, outcomes, modelparams, expparams):
@@ -251,16 +259,17 @@ class PoissonModel(DifferentiableModel):
         
         lamb_das = self.model_function(modelparams,expparams)
         outcomes = np.asarray(np.random.poisson(np.tile(lamb_das[np.newaxis,...],(repeat,1,1)))
-                    ).reshape(repeat,modelparams.shape[0],expparams.shape[0]).astype(self.outcomes_dtype)
+                    ).reshape(repeat,modelparams.shape[0],expparams.shape[0]).astype(self.domain(None)[0].dtype)
 
         return (outcomes[0, 0, 0] if repeat == 1 and expparams.shape[0] == 1 and modelparams.shape[0] == 1 else outcomes
-                ).astype(self.outcomes_dtype)
+                ).astype(self.domain(None)[0].dtype)
         
 
 class BasicPoissonModel(PoissonModel):
     """
     The basic Poisson model consisting of a single model parameter :math:`\lambda`,
-    and no experimental parameters.
+    describing an event rate and a single experimental parameter :math:`\tau` describing 
+    how long we measure the event rate for.
     """
     @property 
     def n_model_function_params(self):
@@ -268,20 +277,18 @@ class BasicPoissonModel(PoissonModel):
 
     def model_function(self,modelparams,expparams):
         """
-        Return model functions in form [idx_expparams,idx_modelparams]. The model function 
+        Return model functions in form [idx_modelparams,idx_expparams]. The model function 
         therefore returns the plain model parameters, but tiles them over the number of experiments 
         to satisfy the requirements of the abstract method. The shape of `expparams` therefore signifies 
         the number of experiments that will be performed.
         """
-        return np.tile(modelparams,expparams.shape[0])
+        return modelparams.flatten()[:,np.newaxis] * expparams['tau'][np.newaxis,:]
     
     def model_function_derivative(self,modelparams,expparams):
         """
-        Return model functions derivatives in form [idx_modelparam,idx_expparams,idx_modelparams]
+        Return model functions derivatives in form [idx_modelparam,idx_model,idx_expparams]
         """
-        return np.ones((1,modelparams.shape[0],expparams.shape[0]))
-
-
+        return np.tile(expparams['tau'], (modelparams.shape[0],1))[np.newaxis,...]
     
     def are_models_valid(self, modelparams):
         return np.all(modelparams >= 0, axis=1)
@@ -293,7 +300,7 @@ class BasicPoissonModel(PoissonModel):
     
     @property
     def expparams_dtype(self):
-        []
+        return [('tau', 'float')]
 
 class ExponentialPoissonModel(PoissonModel):
     """
@@ -302,13 +309,10 @@ class ExponentialPoissonModel(PoissonModel):
     rate and a single experimental parameter :math:`\tau`.
     """
 
-    def __init__(self,max_rate=100, num_outcome_samples=10000,
-                always_resample_outcomes=False, initial_outcomes = None,
-                initial_weights=None, allow_identical_outcomes=False):
+    def __init__(self,max_rate=100, num_outcome_samples=10000, allow_identical_outcomes=False):
 
-        super(ExponentialPoissonModel, self).__init__(num_outcome_samples=num_outcome_samples,
-            always_resample_outcomes=always_resample_outcomes,initial_outcomes=initial_outcomes,
-            initial_weights=initial_weights,allow_identical_outcomes=allow_identical_outcomes)
+        super(ExponentialPoissonModel, self).__init__(num_outcome_samples=num_outcome_samples, 
+            allow_identical_outcomes=allow_identical_outcomes)
         self.max_rate = max_rate
 
     @property 
@@ -351,7 +355,7 @@ class GaussianModel(DifferentiableModel):
     r"""
     Abstract Gaussian model class that describes a Gaussian model with likelihood form 
 
-    :math:`\Pr(y|\mu,\sigma,f(\vec{x};\vec{c}))= \frac{1}{\sqrt{2\sigma^2\pi}}e^(-\frac{(x-\mu)^2}{2\sigma^2}`
+    :math:`\Pr(y|\mu,\sigma,f(\vec{x};\vec{c}))= \frac{1}{\sqrt{2\sigma^2\pi}}e^{-\frac{(x-\mu)^2}{2\sigma^2}}`
 
     Where :math:`y` is the observed outcome, and :math:`f(\vec{x};\vec{c})`
     is some underlying model function with unknown parameters :math:`\vec{x}` and experimental 
@@ -367,20 +371,15 @@ class GaussianModel(DifferentiableModel):
     ## INITIALIZER ##
 
     def __init__(self, sigma=None, num_outcome_samples=10000,
-                always_resample_outcomes=False, initial_outcomes = None,
-                initial_weights=None, allow_identical_outcomes=False,constant_noise_outcomes=False):
+                allow_identical_outcomes=False,constant_noise_outcomes=False):
 
         self.num_outcome_samples = num_outcome_samples
         self._sigma = sigma
         self._constant_noise_outcomes = constant_noise_outcomes
-        super(GaussianModel, self).__init__(always_resample_outcomes=always_resample_outcomes,
-            initial_outcomes=initial_outcomes,initial_weights=initial_weights,
-            allow_identical_outcomes=allow_identical_outcomes)
+        super(GaussianModel, self).__init__(allow_identical_outcomes=allow_identical_outcomes)
 
-
-    
-
-        
+        # The domain is always the set of all real numbers
+        self._domain = RealDomain(min=None, max=None)
 
     ## ABSTRACT METHODS##
 
@@ -475,16 +474,9 @@ class GaussianModel(DifferentiableModel):
         """
     ## PROPERTIES ##
     
-  
-        
-    
     
     @property
-    def outcomes_dtype(self):
-        return 'float32'
-    
-    @property
-    def is_n_outcomes_constant(self):
+    def is_outcomes_constant(self):
         """
         Returns ``True`` if and only if the number of outcomes for each
         experiment is independent of the experiment being performed.
@@ -522,6 +514,18 @@ class GaussianModel(DifferentiableModel):
             property.
         """
         return self.num_outcome_samples
+
+    def domain(self, expparams):
+        """
+        Returns a list of ``Domain``s, one for each input expparam.
+
+        :param numpy.ndarray expparams:  Array of experimental parameters. This
+            array must be of dtype agreeing with the ``expparams_dtype``
+            property.
+
+        :rtype: list of ``Domain``
+        """
+        return [self._domain] if expparams is None else [self._domain for ep in expparams]
     
 
     def likelihood(self, outcomes, modelparams, expparams):
@@ -624,9 +628,9 @@ class GaussianModel(DifferentiableModel):
        
         x = self.model_function(modelparams,expparams)
         outcomes = np.asarray(np.random.normal(x,np.tile(sigma[np.newaxis,:,np.newaxis],(repeat,1,1)))).reshape(
-            repeat,modelparams.shape[0],expparams.shape[0]).astype(self.outcomes_dtype)
+            repeat,modelparams.shape[0],expparams.shape[0]).astype(self.domain(None)[0].dtype)
         return (outcomes[0, 0, 0] if repeat == 1 and expparams.shape[0] == 1 and modelparams.shape[0] == 1 else outcomes
-                ).astype(self.outcomes_dtype)
+                ).astype(self.domain(None)[0].dtype)
 
 
 
@@ -642,7 +646,7 @@ class BasicGaussianModel(GaussianModel):
 
     def model_function(self,modelparams,expparams):
         """
-        Return model functions in form [idx_expparams,idx_modelparams]. The model function 
+        Return model functions in form [idx_modelparams,idx_expparams]. The model function 
         therefore returns the plain model parameters, but tiles them over the number of experiments 
         to satisfy the requirements of the abstract method. The shape of `expparams` therefore signifies 
         the number of experiments that will be performed.
@@ -651,7 +655,7 @@ class BasicGaussianModel(GaussianModel):
     
     def model_function_derivative(self,modelparams,expparams):
         """
-        Return model functions derivatives in form [idx_modelparam,idx_expparams,idx_modelparams]
+        Return model functions derivatives in form [idx_modelparam,idx_modelparams,idx_expparams]
         """
         return np.ones((1,modelparams.shape[0],expparams.shape[0]))
 
