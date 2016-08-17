@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 ##
-# test_abstract_model.py: Checks that FiniteOutcomeModel works properly.
+# test_abstract_model.py: Checks that Model works properly.
 ##
 # © 2014 Chris Ferrie (csferrie@gmail.com) and
 #        Christopher E. Granade (cgranade@gmail.com)
@@ -34,9 +34,7 @@ import numpy as np
 from numpy.testing import assert_equal, assert_almost_equal
 
 from qinfer.tests.base_test import DerandomizedTestCase
-from qinfer.abstract_model import (
-    FiniteOutcomeModel
-)
+from qinfer.abstract_model import Model, FiniteOutcomeModel
 from qinfer.domains import IntegerDomain
     
 ## CLASSES ####################################################################
@@ -46,6 +44,10 @@ class MockModel(FiniteOutcomeModel):
     Two-outcome model whose likelihood is always 0.5, irrespective of
     model parameters, outcomes or experiment parameters.
     """
+
+    def __init__(self):
+        super(MockModel, self).__init__()
+        self._domain = IntegerDomain(min=0, max=1)
     
     @property
     def n_modelparams(self):
@@ -56,14 +58,15 @@ class MockModel(FiniteOutcomeModel):
         return np.ones((modelparams.shape[0], ), dtype=bool)
         
     @property
-    def is_outcomes_constant(self):
+    def is_n_outcomes_constant(self):
         return True
         
     def n_outcomes(self, expparams):
         return 2
 
     def domain(self, expparams):
-        return [IntegerDomain(min=0, max=1) for ep in expparams]
+        return self._domain if expparams is None else [self._domain for ep in expparams]
+
         
     @property
     def expparams_dtype(self):
@@ -76,15 +79,15 @@ class MockModel(FiniteOutcomeModel):
         return FiniteOutcomeModel.pr0_to_likelihood_array(outcomes, pr0)
     
 
-class TestModel(DerandomizedTestCase):
+class TestAbstractModel(DerandomizedTestCase):
     
     def setUp(self):
-        super(TestModel, self).setUp()
+        super(TestAbstractModel, self).setUp()
         self.mock_model = MockModel()
 
     def test_pr0_shape(self):
         """
-        FiniteOutcomeModel: Checks that pr0-based FiniteOutcomeModel subtypes give the right shape.
+        Model: Checks that pr0-based Model subtypes give the right shape.
         """
         outcomes = np.array([0, 1], dtype=int)
         modelparams = np.random.random((3, 2))
@@ -94,7 +97,7 @@ class TestModel(DerandomizedTestCase):
         
     def test_simulate_experiment(self):
         """
-        FiniteOutcomeModel: Checks that simulate_experiment behaves correctly.
+        Model: Checks that simulate_experiment behaves correctly.
         """
         modelparams = np.random.random((1, 2))
         expparams = np.zeros((1,), dtype=self.mock_model.expparams_dtype)

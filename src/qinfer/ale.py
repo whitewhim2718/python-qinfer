@@ -45,7 +45,8 @@ import numpy as np
 
 from scipy.stats.distributions import binom
 
-from qinfer.abstract_model import FiniteOutcomeModel, Model
+from qinfer.abstract_model import Model, Simulatable, FiniteOutcomeModel
+from qinfer.domains import IntegerDomain
 from qinfer._exceptions import ApproximationWarning
 
 ## FUNCTIONS ##################################################################
@@ -77,10 +78,10 @@ def binom_est_error(p, N, hedge = float(0)):
 
 class ALEApproximateModel(FiniteOutcomeModel):
     r"""
-    Given a :class:`~qinfer.abstract_model.Model`, estiamtes the
+    Given a :class:`~qinfer.abstract_model.Simulatable`, estimates the
     likelihood of that simulator by using adaptive likelihood estimation (ALE).
     
-    :param qinfer.abstract_model.Model simulator: Simulator to estimate
+    :param qinfer.abstract_model.Simulatable simulator: Simulator to estimate
         the likelihood function of.
     :param float error_tol: Allowed error in the estimated likelihood. Note that
         the simulation cost scales as :math:`O(\epsilon^{-2})`, where
@@ -102,8 +103,8 @@ class ALEApproximateModel(FiniteOutcomeModel):
     ):
         
         ## INPUT VALIDATION ##
-        if not isinstance(simulator, Model):
-            raise TypeError("Simulator must be an instance of Model.")
+        if not isinstance(simulator, Simulatable):
+            raise TypeError("Simulator must be an instance of Simulatable.")
 
         if error_tol <= 0:
             raise ValueError("Error tolerance must be strictly positive.")
@@ -118,7 +119,11 @@ class ALEApproximateModel(FiniteOutcomeModel):
             raise ValueError("Estimator hedging (est_hedge) must be non-negative.")
         if adapt_hedge < 0:
             raise ValueError("Adaptive hedging (adapt_hedge) must be non-negative.")
-            
+
+        # this simulator constraint makes implementation easier
+        if not (simulator.is_n_outcomes_constant and simulator.n_outcomes(None) == 2):
+            raise ValueError("Decorated model must be a two-outcome model.")
+
         self._simulator = simulator
         # We had to have the simulator in place before we could call
         # the superclass.
@@ -132,7 +137,7 @@ class ALEApproximateModel(FiniteOutcomeModel):
         
     ## WRAPPED METHODS AND PROPERTIES ##
     # These methods and properties do nothing but pass along to the
-    # consumed Model instance, and so we present them here in a
+    # consumed Simulatable instance, and so we present them here in a
     # compressed form.
     
     @property
@@ -147,9 +152,12 @@ class ALEApproximateModel(FiniteOutcomeModel):
     def Q(self): return self._simulator.Q
     
     def n_outcomes(self, expparams): return self._simulator.n_outcomes(expparams)
+    def domain(self, expparams): return self._simulator.domain(expparams)
     def are_models_valid(self, modelparams): return self._simulator.are_models_valid(modelparams)
     def simulate_experiment(self, modelparams, expparams, repeat=1):
         return self._simulator.simulate_experiment(modelparams, expparams, repeat)
+    def update_timestep(self, modelparams, expparams): 
+        return self._simulator.update_timestep(modelparams, expparams)
     def experiment_cost(self, expparams): return self._simulator.experiment_cost(expparams)
     
     ## IMPLEMENTATIONS OF MODEL METHODS ##

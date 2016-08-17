@@ -42,7 +42,7 @@ from __future__ import unicode_literals
 
 from builtins import range, map
 
-from qinfer import FiniteOutcomeModel
+from qinfer import Model, IntegerDomain, FiniteOutcomeModel
 
 import numpy as np
 
@@ -70,13 +70,26 @@ def heisenberg_weyl_operators(d=2):
 
 ## CLASSES ###################################################################
 
-
 class TomographyModel(FiniteOutcomeModel):
+    r"""
+    Model for tomographically learning a quantum state using
+    two-outcome positive-operator valued measures (POVMs).
+
+    :param TomographyBasis basis: Basis used in representing
+        states as model parameter vectors.
+    :param bool allow_subnormalized: If `False`, states
+        :math:`\rho` are constrained during resampling such
+        that :math:`\Tr(\rho) = 1`. 
+    """
+
     def __init__(self, basis, allow_subnormalized=False):
         self._dim = basis.dim
         self._basis = basis
         self._allow_subnormalied = allow_subnormalized
         super(TomographyModel, self).__init__()
+
+        # TODO: allow more outcomes
+        self._domain = IntegerDomain(min=0, max=0)
 
     @property
     def dim(self):
@@ -121,6 +134,10 @@ class TomographyModel(FiniteOutcomeModel):
     def n_outcomes(self, expparams):
         return 2
 
+    def domain(self, expparams):
+        return self._domain if expparams is None else [self._domain for ep in expparams]
+
+
     def are_models_valid(self, modelparams):
         # This is wrong, but is wrong for the sake of speed.
         # As a future improvement, validity checking needs to
@@ -151,6 +168,16 @@ class TomographyModel(FiniteOutcomeModel):
         return modelparams
 
     def trunc_neg_eigs(self, particle):
+        """
+        Given a state represented as a model parameter vector,
+        returns a model parameter vector representing the same
+        state with any negative eigenvalues set to zero.
+
+        :param np.ndarray particle: Vector of length ``(dim ** 2, )``
+            representing a state.
+        :return: The same state with any negative eigenvalues
+            set to zero.
+        """
         arr = np.tensordot(particle, self._basis.data.conj(), 1)
         w, v = np.linalg.eig(arr)
         if np.all(w >= 0):
@@ -163,6 +190,15 @@ class TomographyModel(FiniteOutcomeModel):
             return new_particle
 
     def renormalize(self, modelparams):
+        """
+        Renormalizes one or more states represented as model
+        parameter vectors, such that each state has trace 1.
+
+        :param np.ndarray modelparams: Array of shape ``(n_states,
+            dim ** 2)`` representing one or more states as 
+            model parameter vectors.
+        :return: The same state, normalized to trace one.
+        """
         # The 0th basis element (identity) should have
         # a value 1 / sqrt{dim}, since the trace of that basis
         # element is fixed to be sqrt{dim} by convention.
