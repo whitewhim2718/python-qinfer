@@ -196,7 +196,7 @@ class TestExponentialGaussianModel(ConcreteDifferentiableModelTest, Derandomized
 
 class TestExponentialGaussianModelUnknownVariance(ConcreteDifferentiableModelTest, DerandomizedTestCase):
     """
-    Tests ExponentialGaussianModel with a fixed known variance.
+    Tests ExponentialGaussianModel where the variance is an extra model param.
     """
 
     def instantiate_model(self):
