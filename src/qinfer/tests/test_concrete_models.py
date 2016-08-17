@@ -45,11 +45,13 @@ import abc
 from qinfer import (
     SimplePrecessionModel, SimpleInversionModel,
     CoinModel, NoisyCoinModel, NDieModel,
+    BasicPoissonModel, ExponentialPoissonModel,
+    BasicGaussianModel, ExponentialGaussianModel,
     RandomizedBenchmarkingModel,
     PoisonedModel, BinomialModel, MultinomialModel,
     MLEModel, RandomWalkModel,
-    NormalDistribution,
-    BetaDistribution, UniformDistribution,
+    NormalDistribution, UniformDistribution,
+    BetaDistribution, GammaDistribution, 
     PostselectedDistribution,
     ConstrainedSumDistribution
 )
@@ -127,6 +129,86 @@ class TestNDieModel(ConcreteModelTest, DerandomizedTestCase):
         return ConstrainedSumDistribution(unif, desired_total=1)
     def instantiate_expparams(self):
         return np.arange(10).astype(self.model.expparams_dtype)
+
+## SIMPLE TEST MODELS -- INFINITE OUTCOMES ####################################
+
+class TestBasicPoissonModel(ConcreteModelTest, DerandomizedTestCase):
+    """
+    Tests BasicPoissonModel.
+    """
+
+    def instantiate_model(self):
+        return BasicPoissonModel()
+    def instantiate_prior(self):
+        return GammaDistribution(mean=100, var=10)
+    def instantiate_expparams(self):
+        return np.linspace(1,100,10).astype(self.model.expparams_dtype)
+
+class TestExponentialPoissonModel(ConcreteModelTest, DerandomizedTestCase):
+    """
+    Tests ExponentialPoissonModel.
+    """
+
+    def instantiate_model(self):
+        return ExponentialPoissonModel()
+    def instantiate_prior(self):
+        return GammaDistribution(mean=100, var=10)
+    def instantiate_expparams(self):
+        return np.linspace(1,100,10).astype(self.model.expparams_dtype)
+
+class TestBasicGaussianModel(ConcreteDifferentiableModelTest, DerandomizedTestCase):
+    """
+    Tests BasicGaussianModel with a fixed known variance.
+    """
+
+    def instantiate_model(self):
+        return BasicGaussianModel(sigma=1.2)
+    def instantiate_prior(self):
+        return UniformDistribution(np.array([[5,6]]))
+    def instantiate_expparams(self):
+        # only the length of this should matter as the model has no expparams
+        return np.ones(10).astype(self.model.expparams_dtype)
+
+class TestBasicGaussianModelUnknownVariance(ConcreteDifferentiableModelTest, DerandomizedTestCase):
+    """
+    Tests BasicGaussianModel where the variance is an extra model param.
+    """
+
+    def instantiate_model(self):
+        return BasicGaussianModel(sigma=None)
+    def instantiate_prior(self):
+        return UniformDistribution(np.array([[5,6],[0,1]]))
+    def instantiate_expparams(self):
+        # only the length of this should matter as the model has no expparams
+        return np.ones(10).astype(self.model.expparams_dtype)
+
+class TestExponentialGaussianModel(ConcreteDifferentiableModelTest, DerandomizedTestCase):
+    """
+    Tests ExponentialGaussianModel with a fixed known variance.
+    """
+
+    def instantiate_model(self):
+        return ExponentialGaussianModel(sigma=1.2)
+    def instantiate_prior(self):
+        return UniformDistribution(np.array([[5,6]]))
+    def instantiate_expparams(self):
+        return np.linspace(1,100,10).astype(self.model.expparams_dtype)
+
+class TestExponentialGaussianModelUnknownVariance(ConcreteDifferentiableModelTest, DerandomizedTestCase):
+    """
+    Tests ExponentialGaussianModel with a fixed known variance.
+    """
+
+    def instantiate_model(self):
+        return ExponentialGaussianModel(sigma=None)
+    def instantiate_prior(self):
+        return UniformDistribution(np.array([[5,6],[0,1]]))
+    def instantiate_expparams(self):
+        return np.linspace(1,100,10).astype(self.model.expparams_dtype)
+
+
+
+        
 
 ## TOMOGRAPHY MODELS ##########################################################
 
