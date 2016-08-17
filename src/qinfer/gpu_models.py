@@ -60,7 +60,7 @@ import time
 
 from qinfer.abstract_model import Model, FiniteOutcomeModel
 from qinfer.domains import IntegerDomain
-from qinfer.test_models import SimplePrecessionModel
+from qinfer.finite_test_models import SimplePrecessionModel
 from qinfer.smc import SMCUpdater
 from qinfer.distributions import UniformDistribution
 
@@ -86,7 +86,7 @@ __kernel void cos_model(
 
 class AcceleratedPrecessionModel(FiniteOutcomeModel):
     r"""
-    Reimplementation of `qinfer.test_models.SimplePrecessionModel`, using OpenCL
+    Reimplementation of `qinfer.finite_test_models.SimplePrecessionModel`, using OpenCL
     to accelerate computation.
     """
     

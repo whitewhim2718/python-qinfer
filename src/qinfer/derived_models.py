@@ -149,7 +149,6 @@ class DerivedModel(Model):
 PoisonModes = enum.enum("ALE", "MLE")
 
 class PoisonedModel(DerivedModel, FiniteOutcomeModel):
-    # TODO: refactor to use DerivedModel
     r"""
     FiniteOutcomeModel that simulates sampling error incurred by the MLE or ALE methods of
     reconstructing likelihoods from sample data. The true likelihood given by an
@@ -257,7 +256,7 @@ class ReferencedPoissonModel(DerivedModel):
     def __init__(self, underlying_model):
         super(ReferencedPoissonModel, self).__init__(underlying_model)
 
-        if not (underlying_model.is_outcomes_constant and underlying_model.domain(None)[0].n_members == 2):
+        if not (underlying_model.is_outcomes_constant and underlying_model.domain(None).n_members == 2):
             raise ValueError("Decorated model must be a two-outcome model.")
 
         if isinstance(underlying_model.expparams_dtype, str):
@@ -323,7 +322,7 @@ class ReferencedPoissonModel(DerivedModel):
 
         :rtype: list of ``Domain``
         """
-        return [self._domain] if expparams is None else [self._domain for ep in expparams]
+        return self._domain if expparams is None else [self._domain for ep in expparams]
 
     def likelihood(self, outcomes, modelparams, expparams):
         # By calling the superclass implementation, we can consolidate
@@ -408,7 +407,7 @@ class ReferencedPoissonModel(DerivedModel):
 
     def update_timestep(self, modelparams, expparams):
         return self.underlying_model.update_timestep(modelparams,
-            np.array([expparams['p']]) if self._expparams_scalar else expparam[0,:,0]
+            np.array([expparams['p']]) if self._expparams_scalar else expparams
         )
 
 
@@ -817,7 +816,7 @@ class RandomWalkModel(DerivedModel):
 if __name__ == "__main__":
     
     import operator as op
-    from .test_models import SimplePrecessionModel
+    from .finite_test_models import SimplePrecessionModel
     
     m = BinomialModel(SimplePrecessionModel())
     
