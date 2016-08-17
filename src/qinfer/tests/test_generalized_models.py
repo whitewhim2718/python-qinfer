@@ -46,7 +46,7 @@ class TestGaussianModel(DerandomizedTestCase):
     # True model parameter for test
     MODELPARAMS = np.array([79,3],dtype=np.float)
     ONLINE_SIGMA = 0.2
-    TEST_EXPPARAMS = np.linspace(1.,500.,10000,dtype=np.float)
+    TEST_EXPPARAMS = np.linspace(1.,1000.,10000,dtype=np.float)
     PRIOR_NO_SIGMA_PARAM = UniformDistribution([[0,100]])
     PRIOR_SIGMA_PARAM = UniformDistribution([[0,100],[0,10]])
     N_PARTICLES = 10000
@@ -160,7 +160,7 @@ class TestPoissonModel(DerandomizedTestCase):
     # True model parameter for test
     MODELPARAMS = np.array([79.,])
     MODELPARAMS_RISK = np.array([79.,])
-    TEST_EXPPARAMS = np.arange(50000,dtype=np.float)
+    TEST_EXPPARAMS = np.arange(0, 5000,50000,dtype=np.float)
     PRIOR = UniformDistribution([[0.,200.]])
     N_PARTICLES = 10000
     N_ONLINE = 25
@@ -178,8 +178,8 @@ class TestPoissonModel(DerandomizedTestCase):
         self.exponential_poisson_model = ExponentialPoissonModel(num_outcome_samples=TestPoissonModel.N_OUTCOME_SAMPLES)
 
 
-        self.expparams = TestPoissonModel.TEST_EXPPARAMS.reshape(-1,1)
-        self.expparams_risk = TestPoissonModel.TEST_EXPPARAMS_RISK.reshape(-1,1)
+        self.expparams = TestPoissonModel.TEST_EXPPARAMS.reshape(-1,1).astype(self.poisson_model.expparams_dtype)
+        self.expparams_risk = TestPoissonModel.TEST_EXPPARAMS_RISK.reshape(-1,1).astype(self.poisson_model.expparams_dtype)
 
         self.outcomes = self.poisson_model.simulate_experiment(TestPoissonModel.MODELPARAMS,
                 TestPoissonModel.TEST_EXPPARAMS,repeat=1 ).reshape(-1,1)

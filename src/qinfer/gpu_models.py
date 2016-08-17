@@ -58,8 +58,9 @@ import numpy as np
 import numpy.linalg as la
 import time
 
-from qinfer.abstract_model import FiniteOutcomeModel
-from qinfer.finite_test_models import SimplePrecessionModel
+from qinfer.abstract_model import Model, FiniteOutcomeModel
+from qinfer.domains import IntegerDomain
+from qinfer.test_models import SimplePrecessionModel
 from qinfer.smc import SMCUpdater
 from qinfer.distributions import UniformDistribution
 
@@ -85,7 +86,7 @@ __kernel void cos_model(
 
 class AcceleratedPrecessionModel(FiniteOutcomeModel):
     r"""
-    Reimplementation of `qinfer.finite_test_models.SimplePrecessionModel`, using OpenCL
+    Reimplementation of `qinfer.test_models.SimplePrecessionModel`, using OpenCL
     to accelerate computation.
     """
     
@@ -104,6 +105,8 @@ class AcceleratedPrecessionModel(FiniteOutcomeModel):
 
         
         self._prg = cl.Program(self._ctx, COS_MODEL_KERNEL).build()
+
+        self._domain = IntegerDomain(min=0,max=1)
         
     
     ## PROPERTIES ##
@@ -123,7 +126,7 @@ class AcceleratedPrecessionModel(FiniteOutcomeModel):
         experiment is independent of the experiment being performed.
         
         This property is assumed by inference engines to be constant for
-        the lifetime of a FiniteOutcomeModel instance.
+        the lifetime of a Model instance.
         """
         return True
     
@@ -146,6 +149,10 @@ class AcceleratedPrecessionModel(FiniteOutcomeModel):
             property.
         """
         return 2
+
+    def domain(self, expparams):
+        return self._domain if expparams is None else [self._domain for ep in expparams]
+
     
     def likelihood(self, outcomes, modelparams, expparams):
         # By calling the superclass implementation, we can consolidate

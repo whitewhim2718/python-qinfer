@@ -6,7 +6,7 @@
 ##
 # © 2012 Chris Ferrie (csferrie@gmail.com) and
 #        Christopher E. Granade (cgranade@gmail.com)
-#     
+#
 # This file is a part of the Qinfer project.
 # Licensed under the AGPL version 3.
 ##
@@ -32,6 +32,7 @@ from __future__ import division, unicode_literals
 ## EXPORTS ###################################################################
 
 __all__ = [
+    'Simulatable',
     'Model',
     'FiniteOutcomeModel',
     'DifferentiableModel'
@@ -48,7 +49,7 @@ import numpy as np
 import warnings
 
 from qinfer.utils import safe_shape
-    
+
 ## CLASSES ###################################################################
 
 class Simulatable(with_metaclass(abc.ABCMeta, object)):
@@ -64,6 +65,7 @@ class Simulatable(with_metaclass(abc.ABCMeta, object)):
         It will be more efficient to set this to ``True`` whenever it is likely 
         that multiple identical outcomes will occur.
     """
+
     def __init__(self):
         """
         Initialize Model model
@@ -96,24 +98,23 @@ class Simulatable(with_metaclass(abc.ABCMeta, object)):
         Returns the dtype of an experiment parameter array. For a
         model with single-parameter control, this will likely be a scalar dtype,
         such as ``"float64"``. More generally, this can be an example of a
-        record type, such as ``[('time', py.'float64'), ('axis', 'uint8')]``.
-        
+        record type, such as ``[('time', 'float64'), ('axis', 'uint8')]``.
+
         This property is assumed by inference engines to be constant for
         the lifetime of a Model instance.
         """
         pass
 
-            
     ## CONCRETE PROPERTIES ##
-    
+
     @property
-    def is_outcomes_constant(self):
+    def is_n_outcomes_constant(self):
         """
         Returns ``True`` if and only if both the domain and ``n_outcomes``
         are independent of the expparam.
         
         This property is assumed by inference engines to be constant for
-        the lifetime of a Model instance.
+        the lifetime of a Simulatable instance.
         """
         return True
 
@@ -143,7 +144,7 @@ class Simulatable(with_metaclass(abc.ABCMeta, object)):
         independent.
         """
         return self.model_chain[-1] if self.model_chain else None
-    
+
     @property
     def sim_count(self):
         """
@@ -153,26 +154,26 @@ class Simulatable(with_metaclass(abc.ABCMeta, object)):
         :rtype: int
         """
         return self._sim_count
-        
+
     @property
     def Q(self):
         r"""
         Returns the diagonal of the scale matrix :math:`\matr{Q}` that
         relates the scales of each of the model parameters. In particular,
-        the quadratic loss for this Model is defined as:
-        
+        the quadratic loss for this Simulatable is defined as:
+
         .. math::
             L_{\matr{Q}}(\vec{x}, \hat{\vec{x}}) =
             (\vec{x} - \hat{\vec{x}})^\T \matr{Q} (\vec{x} - \hat{\vec{x}})
 
         If a subclass does not explicitly define the scale matrix, it is taken
         to be the identity matrix of appropriate dimension.
-        
+
         :return: The diagonal elements of :math:`\matr{Q}`.
         :rtype: :class:`~numpy.ndarray` of shape ``(n_modelparams, )``.
         """
         return self._Q
-        
+
     @property
     def modelparam_names(self):
         """
@@ -201,9 +202,32 @@ class Simulatable(with_metaclass(abc.ABCMeta, object)):
                 for model in reversed(self.model_chain)
             ))
         return s
+
+    def are_expparam_dtypes_consistent(self, expparams):
+        """
+        Returns `True` iff all of the given expparams 
+        correspond to outcome domains with the same dtype.
+        For efficiency, concrete subclasses should override this method 
+        if the result is always `True`.
+
+        :param np.ndarray expparams: Array of expparamms 
+             of type `expparams_dtype`
+        :rtype: `bool`
+        """
+        if self.is_n_outcomes_constant:
+            # This implies that all domains are equal, so this must be true
+            return True
+
+        # otherwise we have to actually check all the dtypes
+        if expparams.size > 0:
+            domains = self.domain(expparams)
+            first_dtype = domains[0].dtype
+            return all(domain.dtype == first_dtype for domain in domains[1:])
+        else:
+            return True
     
     ## ABSTRACT METHODS ##
-    
+
     @abc.abstractmethod
     def n_outcomes(self, expparams):
         """
@@ -240,7 +264,7 @@ class Simulatable(with_metaclass(abc.ABCMeta, object)):
         each set of model parameters represents is valid under this model.
         """
         pass
-        
+
     @abc.abstractmethod
     def simulate_experiment(self, modelparams, expparams, repeat=1):
         """
@@ -252,7 +276,7 @@ class Simulatable(with_metaclass(abc.ABCMeta, object)):
             which data should be simulated.
         :param np.ndarray expparams: A shape ``(n_experiments, )`` array of
             experimental control settings, with ``dtype`` given by 
-            :attr:`~qinfer.Model.expparams_dtype`, describing the
+            :attr:`~qinfer.Simulatable.expparams_dtype`, describing the
             experiments whose outcomes should be simulated.
         :param int repeat: How many times the specified experiment should
             be repeated.
@@ -264,9 +288,10 @@ class Simulatable(with_metaclass(abc.ABCMeta, object)):
             datum is returned instead.
         """
         self._sim_count += modelparams.shape[0] * expparams.shape[0] * repeat
+        assert(self.are_expparam_dtypes_consistent(expparams))
 
     ## CONCRETE METHODS ##
-    
+
     def clear_cache(self):
         """
         Tells the model to clear any internal caches used in computing
@@ -275,30 +300,30 @@ class Simulatable(with_metaclass(abc.ABCMeta, object)):
         """
         # By default, no cache to clear.
         pass
-    
+
     def experiment_cost(self, expparams):
         """
         Given an array of experimental parameters, returns the cost associated
         with performing each experiment. By default, this cost is constant
         (one) for every experiment.
-        
+
         :param expparams: An array of experimental parameters for which the cost
             is to be evaluated.
         :type expparams: :class:`~numpy.ndarray` of ``dtype`` given by
-            :attr:`~Model.expparams_dtype`
+            :attr:`~Simulatable.expparams_dtype`
         :return: An array of costs corresponding to the specified experiments.
         :rtype: :class:`~numpy.ndarray` of ``dtype`` ``float`` and of the
             same shape as ``expparams``.
         """
         return np.ones(expparams.shape)
-        
+
     def distance(self, a, b):
         r"""
         Gives the distance between two model parameter vectors :math:`\vec{a}` and
         :math:`\vec{b}`. By default, this is the vector 1-norm of the difference
         :math:`\mathbf{Q} (\vec{a} - \vec{b})` rescaled by
-        :attr:`~Model.Q`.
-        
+        :attr:`~Simulatable.Q`.
+
         :param np.ndarray a: Array of model parameter vectors having shape
             ``(n_models, n_modelparams)``.
         :param np.ndarray b: Array of model parameters to compare to, having
@@ -330,7 +355,7 @@ class Simulatable(with_metaclass(abc.ABCMeta, object)):
             ``(n_models, n_modelparams, n_experiments)`` describing the update
             of each model according to each experiment.
         """
-        return modelparams[:, :, np.newaxis]
+        return np.tile(modelparams, (expparams.shape[0],1,1)).transpose((1,2,0))
 
     def canonicalize(self, modelparams):
         r"""
@@ -352,6 +377,20 @@ class Simulatable(with_metaclass(abc.ABCMeta, object)):
         call this method.
         """
         return modelparams
+
+
+class LinearCostModelMixin(Simulatable):
+    # FIXME: move this mixin to a new module.
+    # TODO: test this mixin.
+    """
+    This mixin implements :meth:`Simulatable.experiment_cost` by setting the
+    cost of an experiment equal to the value of a given field of each
+    ``expparams`` element (by default, ``t``).
+    """
+    _field = "t"
+
+    def experiment_cost(self, expparams):
+        return expparams[self._field]
 
 class Model(Simulatable):
     """
@@ -393,6 +432,7 @@ class Model(Simulatable):
         where a point consists of a hypothesis about the model (a vector of
         model parameters), an experimental control setting (expparams) and
         a hypothetical or actual datum.
+
         :rtype: int
         """
         return self._call_count
@@ -404,6 +444,7 @@ class Model(Simulatable):
         r"""
         Calculates the probability of each given outcome, conditioned on each
         given model parameter vector and each given experimental control setting.
+
         :param np.ndarray modelparams: A shape ``(n_models, n_modelparams)``
             array of model parameter vectors describing the hypotheses for
             which the likelihood function is to be calculated.
@@ -618,8 +659,8 @@ class FiniteOutcomeModel(Model):
     @property
     def n_outcomes_cutoff(self):
         """
-        If ``n_outcomes`` exceeds this value, 
-        ``representative_outcomes`` will use this 
+        If ``n_outcomes`` exceeds this value for 
+        some expparm, ``representative_outcomes`` will use this 
         value in its place. This is useful in the case
         of a finite yet untractible number of outcomes.
 
@@ -646,13 +687,16 @@ class FiniteOutcomeModel(Model):
     # change in each inheriting class.
 
     def simulate_experiment(self, modelparams, expparams, repeat=1):
+        # NOTE: implements abstract method of Simulatable.
+        # TODO: document
+        
         # Call the superclass simulate_experiment, not recording the result.
         # This is used to count simulation calls.
         super(FiniteOutcomeModel, self).simulate_experiment(modelparams, expparams, repeat)
         
-        if self.is_outcomes_constant:
-            # In this case, all expparams have the same domain, so just look at the first one
-            all_outcomes = self.domain(expparams)[0].values
+        if self.is_n_outcomes_constant:
+            # In this case, all expparams have the same domain
+            all_outcomes = self.domain(None).values
             probabilities = self.likelihood(all_outcomes, modelparams, expparams)
             cdf = np.cumsum(probabilities, axis=0)
             randnum = np.random.random((repeat, 1, modelparams.shape[0], expparams.shape[0]))
@@ -661,6 +705,7 @@ class FiniteOutcomeModel(Model):
         else:
             # Loop over each experiment, sadly.
             # Assume all domains have the same dtype
+            assert(self.are_expparam_dtypes_consistent(expparams))
             dtype = self.domain(expparams[0, np.newaxis])[0].dtype
             outcomes = np.empty((repeat, modelparams.shape[0], expparams.shape[0]), dtype=dtype)
             for idx_experiment, single_expparams in enumerate(expparams[:, np.newaxis]):
@@ -804,7 +849,7 @@ class DifferentiableModel(with_metaclass(abc.ABCMeta, Model)):
         #       slower.
         #       Here, we sketch the first case.
         # FIXME: completely untested!
-        if self.is_outcomes_constant:
+        if self.is_n_outcomes_constant:
             outcomes = np.arange(self.n_outcomes(expparams))
             scores, L = self.score(outcomes, modelparams, expparams, return_L=True)
             

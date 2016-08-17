@@ -1,7 +1,8 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 ##
-# finite_test_models.py: Simple models for testing inference engines.
+# finite_test_models.py: Simple models for testing inference engines 
+#       where the number of outcomes is not finite.
 ##
 # © 2012 Chris Ferrie (csferrie@gmail.com) and
 #        Christopher E. Granade (cgranade@gmail.com)
@@ -72,6 +73,7 @@ class PoissonModel(DifferentiableModel):
         super(PoissonModel, self).__init__(allow_identical_outcomes=allow_identical_outcomes)
         self.num_outcome_samples = num_outcome_samples
 
+        # domain is all non-negative integers
         self._domain = IntegerDomain(min=0, max=None)
 
     ## ABSTRACT METHODS##
@@ -202,7 +204,7 @@ class PoissonModel(DifferentiableModel):
 
         :rtype: list of ``Domain``
         """
-        return [self._domain] if expparams is None else [self._domain for ep in expparams]
+        return self._domain if expparams is None else [self._domain for ep in expparams]
     
 
     def likelihood(self, outcomes, modelparams, expparams):
@@ -259,10 +261,10 @@ class PoissonModel(DifferentiableModel):
         
         lamb_das = self.model_function(modelparams,expparams)
         outcomes = np.asarray(np.random.poisson(np.tile(lamb_das[np.newaxis,...],(repeat,1,1)))
-                    ).reshape(repeat,modelparams.shape[0],expparams.shape[0]).astype(self.domain(None)[0].dtype)
+                    ).reshape(repeat,modelparams.shape[0],expparams.shape[0]).astype(self.domain(None).dtype)
 
         return (outcomes[0, 0, 0] if repeat == 1 and expparams.shape[0] == 1 and modelparams.shape[0] == 1 else outcomes
-                ).astype(self.domain(None)[0].dtype)
+                ).astype(self.domain(None).dtype)
         
 
 class BasicPoissonModel(PoissonModel):
@@ -309,7 +311,7 @@ class ExponentialPoissonModel(PoissonModel):
     rate and a single experimental parameter :math:`\tau`.
     """
 
-    def __init__(self,max_rate=100, num_outcome_samples=10000, allow_identical_outcomes=False):
+    def __init__(self, max_rate=100, num_outcome_samples=10000, allow_identical_outcomes=False):
 
         super(ExponentialPoissonModel, self).__init__(num_outcome_samples=num_outcome_samples, 
             allow_identical_outcomes=allow_identical_outcomes)
@@ -406,7 +408,7 @@ class GaussianModel(DifferentiableModel):
     def model_function_derivative(self,modelparams,expparams):
         """
         Return model functions derivatives :math:`\nabla_{\vec{x}}f(\vec{x};\vec{c})`
-        in form [idx_modelparam,idx_expparams,idx_modelparams].
+        in form [idx_modelparam,idx_model,idx_expparam].
 
         :param np.ndarray modelparams: A shape ``(n_models, n_modelparams)``
         array of model parameter vectors describing the hypotheses for
@@ -417,7 +419,7 @@ class GaussianModel(DifferentiableModel):
             experiments from which the given outcomes were drawn.
         :rtype: np.ndarray
         :return: A three-index tensor ``f[i, j,k]``, where ``i`` indexes which model parameter the derivative was taken with respect to,
-            ``j`` indexes which model parameters are being considered, 
+            ``j`` indexes which model is being considered, 
             and ``k`` indexes which experimental parameters was used.   
         """
         pass
@@ -525,7 +527,7 @@ class GaussianModel(DifferentiableModel):
 
         :rtype: list of ``Domain``
         """
-        return [self._domain] if expparams is None else [self._domain for ep in expparams]
+        return self._domain if expparams is None else [self._domain for ep in expparams]
     
 
     def likelihood(self, outcomes, modelparams, expparams):
@@ -535,9 +537,8 @@ class GaussianModel(DifferentiableModel):
         super(GaussianModel, self).likelihood(outcomes, modelparams, expparams)
 
         
-        if len(modelparams.shape) == 1:
+        if modelparams.ndim == 1:
             modelparams = modelparams[np.newaxis, ...]
-        
       
         if len(outcomes.shape) == 1:
             outcomes = outcomes[...,np.newaxis, np.newaxis]
@@ -596,11 +597,6 @@ class GaussianModel(DifferentiableModel):
         if self._sigma is None:
             scr[sigma_index] = (outcomes_rs-x)**2/np.power(sigma,3) - 1/sigma
 
-
-        
-        
-        
-        
         if return_L:
             return scr, self.likelihood(outcomes, modelparams, expparams)
         else:
@@ -611,10 +607,10 @@ class GaussianModel(DifferentiableModel):
 
         super(GaussianModel, self).simulate_experiment(modelparams, expparams, repeat)
 
-        if len(modelparams.shape) == 1:
-            modelparams = modelparams = modelparams[np.newaxis, ...]  
+        if modelparams.ndim == 1:
+            modelparams = modelparams[np.newaxis, ...]  
         
-        if len(expparams.shape) == 1:
+        if expparams.ndim == 1:
             expparams = expparams[..., np.newaxis]
         
         if self._sigma is None:
@@ -622,15 +618,17 @@ class GaussianModel(DifferentiableModel):
             sigma = modelparams[:,sigma_index]
             modelparams = np.delete(modelparams,sigma_index,1)
         else: 
-            sigma = np.empty(modelparams.shape[0])
-            sigma[...] = self._sigma
-
+            sigma = self._sigma * np.ones(modelparams.shape[0])
        
         x = self.model_function(modelparams,expparams)
-        outcomes = np.asarray(np.random.normal(x,np.tile(sigma[np.newaxis,:,np.newaxis],(repeat,1,1)))).reshape(
-            repeat,modelparams.shape[0],expparams.shape[0]).astype(self.domain(None)[0].dtype)
-        return (outcomes[0, 0, 0] if repeat == 1 and expparams.shape[0] == 1 and modelparams.shape[0] == 1 else outcomes
-                ).astype(self.domain(None)[0].dtype)
+        print x.shape
+        x = np.tile(x, (repeat, 1, 1))
+        sigma = np.tile(sigma, (repeat, expparams.shape[0], 1)).transpose((0,2,1))
+        print x.shape, sigma.shape
+        outcomes = np.random.normal(x, sigma).astype(self.domain(None).dtype)
+
+        return outcomes[0, 0, 0] if repeat == 1 and expparams.shape[0] == 1 and modelparams.shape[0] == 1 else outcomes
+                
 
 
 
@@ -692,15 +690,18 @@ class ExponentialGaussianModel(GaussianModel):
         to satisfy the requirements of the abstract method. The shape of `expparams` therefore signifies 
         the number of experiments that will be performed.
         """
-   
-        return 1-np.exp(-expparams['tau']/modelparams)
+        # Note that this function does _not_ get passed sigma if it is a modelparam
+        result = 1-np.exp(-expparams['tau'].T/np.tile(modelparams, expparams.shape[0]))
+        return result
     
     def model_function_derivative(self,modelparams,expparams):
         """
         Return model functions derivatives in form [idx_modelparam,idx_expparams,idx_modelparams]
         """
-
-        return -(expparams['tau']/modelparams**2)*np.exp(-expparams['tau']/modelparams)
+        # Note that this function does _not_ get passed sigma if it is a modelparam
+        eps = expparams['tau'].T
+        mps = np.tile(modelparams, expparams.shape[0])
+        return (-(eps / mps**2) * np.exp(-eps / mps))[np.newaxis, :]
 
     def are_models_valid(self, modelparams):
         return np.logical_not(np.any(modelparams<0,axis=1))

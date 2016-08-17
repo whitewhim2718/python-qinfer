@@ -259,7 +259,9 @@ class RealDomain(Domain):
 
         :rtype: `bool`
         """
-        return np.all(points >= self._min) and np.all(points <= self._max)
+        are_bigger = True if self._min is None else np.all(points >= self._min)
+        are_smaller = True if self._max is None else np.all(points <= self._max)
+        return are_bigger and are_smaller
 
 class IntegerDomain(Domain):
     """
@@ -382,8 +384,10 @@ class IntegerDomain(Domain):
 
         :rtype: `bool`
         """
-        return np.all(np.mod(points,1) == 0) and np.all(points >= self._min) and np.all(points <= self._max)
-    
+        are_ints = np.all(np.mod(points,1) == 0)
+        are_bigger = True if self._min is None else np.all(points >= self._min)
+        are_smaller = True if self._max is None else np.all(points <= self._max)
+        return are_ints and are_bigger and are_smaller
 
 class MultinomialDomain(Domain):
     """
@@ -484,11 +488,11 @@ class MultinomialDomain(Domain):
             partition_array[i,:] = sum(c)
 
         # Convert to dtype before returning
-        return self._from_regular_array(partition_array)
+        return self.from_regular_array(partition_array)
         
     ## METHODS ##
 
-    def _to_regular_array(self, A):
+    def to_regular_array(self, A):
         """
         Converts from an array of type `self.dtype` to an array 
         of type `int` with an additional index labeling the 
@@ -498,9 +502,11 @@ class MultinomialDomain(Domain):
 
         :rtype: `np.ndarray`
         """
+        # this could be a static method, but we choose to be consistent with 
+        # from_regular_array
         return A.view((int, len(A.dtype.names))).reshape(A.shape + (-1,))
 
-    def _from_regular_array(self, A):
+    def from_regular_array(self, A):
         """
         Converts from an array of type `int` where the last index 
         is assumed to have length `self.n_elements` to an array 
@@ -510,7 +516,8 @@ class MultinomialDomain(Domain):
 
         :rtype: `np.ndarray`
         """
-        return A.view(dtype=self.dtype).squeeze(-1) 
+        dims = A.shape[:-1]
+        return A.reshape((np.prod(dims),-1)).view(dtype=self.dtype).squeeze(-1).reshape(dims)
 
     def in_domain(self, points):
         """
@@ -521,7 +528,7 @@ class MultinomialDomain(Domain):
 
         :rtype: `bool`
         """
-        array_view = self._to_regular_array(points)
+        array_view = self.to_regular_array(points)
         return np.all(array_view >= 0) and np.all(np.sum(array_view, axis=-1) == self.n_meas)
 
     

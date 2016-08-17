@@ -39,7 +39,8 @@ __all__ = [
 from itertools import starmap
 
 import numpy as np
-from qinfer.abstract_model import FiniteOutcomeModel, DifferentiableModel
+from qinfer.abstract_model import FiniteOutcomeModel, Model, DifferentiableModel
+from qinfer.domains import IntegerDomain
 
 from operator import mul
 
@@ -67,7 +68,7 @@ def F(p, d=2):
 
 ## CLASSES ####################################################################
 
-class RandomizedBenchmarkingModel(FiniteOutcomeModel,DifferentiableModel):
+class RandomizedBenchmarkingModel(FiniteOutcomeModel, DifferentiableModel):
     r"""
     Implements the randomized benchmarking or interleaved randomized
     benchmarking protocol, such that the depolarizing strength :math:`p`
@@ -103,6 +104,9 @@ class RandomizedBenchmarkingModel(FiniteOutcomeModel,DifferentiableModel):
             )
         super(RandomizedBenchmarkingModel, self).__init__()
 
+        # two outcomes
+        self._domain = IntegerDomain(min=0,max=1)
+
     @property
     def n_modelparams(self):
         return 3 + (1 if self._il else 0)
@@ -129,6 +133,9 @@ class RandomizedBenchmarkingModel(FiniteOutcomeModel,DifferentiableModel):
     
     def n_outcomes(self, expparams):
         return 2
+
+    def domain(self, expparams):
+        return self._domain if expparams is None else [self._domain for ep in expparams]
     
     def are_models_valid(self, modelparams):
         if self._il:

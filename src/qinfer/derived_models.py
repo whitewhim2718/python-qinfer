@@ -52,11 +52,11 @@ import scipy
 from scipy.stats import binom
 from scipy.special import xlogy, gammaln
 
-from qinfer.utils import binomial_pdf
+from qinfer.utils import binomial_pdf, multinomial_pdf, sample_multinomial
 from qinfer.abstract_model import Model, FiniteOutcomeModel, DifferentiableModel
 from qinfer._lib import enum # <- TODO: replace with flufl.enum!
 from qinfer.ale import binom_est_error
-from qinfer.domains import IntegerDomain
+from qinfer.domains import IntegerDomain, MultinomialDomain
 from qinfer.utils import safe_shape
 
 ## FUNCTIONS ###################################################################
@@ -124,6 +124,12 @@ class DerivedModel(Model):
     
     def are_models_valid(self, modelparams):
         return self.underlying_model.are_models_valid(modelparams)
+
+    def domain(self, expparams):
+        return self.underlying_model.domain(expparams)
+    
+    def are_expparam_dtypes_consistent(self, expparams):
+        return self.underlying_model.are_expparam_dtypes_consistent(expparams)
     
     def update_timestep(self, modelparams, expparams):
         return self.underlying_model.update_timestep(modelparams, expparams)
@@ -210,7 +216,7 @@ class PoisonedModel(DerivedModel, FiniteOutcomeModel):
         Simulates experimental data according to the original (unpoisoned)
         model. Note that this explicitly causes the simulated data and the
         likelihood function to disagree. This is, strictly speaking, a violation
-        of the assumptions made about `~qinfer.abstract_model.FiniteOutcomeModel` subclasses.
+        of the assumptions made about `~qinfer.abstract_model.Model` subclasses.
         This violation is by intention, and allows for testing the robustness
         of inference algorithms against errors in that assumption.
         """
@@ -425,7 +431,7 @@ class BinomialModel(DerivedModel, FiniteOutcomeModel):
     def __init__(self, underlying_model):
         super(BinomialModel, self).__init__(underlying_model)
         
-        if not (underlying_model.is_outcomes_constant and underlying_model.domain(None)[0].n_members == 2):
+        if not (underlying_model.is_n_outcomes_constant and underlying_model.n_outcomes(None) == 2):
             raise ValueError("Decorated model must be a two-outcome model.")
         
         if isinstance(underlying_model.expparams_dtype, str):
@@ -449,7 +455,7 @@ class BinomialModel(DerivedModel, FiniteOutcomeModel):
         return self._expparams_dtype
     
     @property
-    def is_outcomes_constant(self):
+    def is_n_outcomes_constant(self):
         """
         Returns ``True`` if and only if the number of outcomes for each
         experiment is independent of the experiment being performed.
@@ -475,15 +481,27 @@ class BinomialModel(DerivedModel, FiniteOutcomeModel):
     def domain(self, expparams):
         """
         Returns a list of ``Domain``s, one for each input expparam.
-
         :param numpy.ndarray expparams:  Array of experimental parameters. This
             array must be of dtype agreeing with the ``expparams_dtype``
             property.
-
         :rtype: list of ``Domain``
         """
-        return [IntegerDomain(min=0, max=ep['n_meas']) for ep in expparams]
+        return [IntegerDomain(min=0, max=ep['n_meas']) for ep in expparams] 
     
+    def are_expparam_dtypes_consistent(self, expparams):
+        """
+        Returns `True` iff all of the given expparams 
+        correspond to outcome domains with the same dtype.
+        For efficiency, concrete subclasses should override this method 
+        if the result is always `True`.
+
+        :param np.ndarray expparams: Array of expparamms 
+             of type `expparams_dtype`
+        :rtype: `bool`
+        """
+        # The output type is always the same, even though the domain is not.
+        return True
+
     def likelihood(self, outcomes, modelparams, expparams):
         # By calling the superclass implementation, we can consolidate
         # call counting there.
@@ -534,7 +552,7 @@ class BinomialModel(DerivedModel, FiniteOutcomeModel):
         )
 
 
-class MultinomialModel(DerivedModel):
+class MultinomialModel(DerivedModel, FiniteOutcomeModel):
     """
     Model representing finite numbers of iid samples from another model,
     using the multinomial distribution to calculate the new likelihood function.
@@ -563,6 +581,14 @@ class MultinomialModel(DerivedModel):
             self._expparams_scalar = False
             self._expparams_dtype = underlying_model.expparams_dtype + [('n_meas', 'uint')]
 
+        # Demand that the underlying model always has the same number of outcomes
+        # This assumption could in principle be generalized, but not worth the effort now.
+        assert(self.underlying_model.is_n_outcomes_constant)
+        self._underlying_domain = self.underlying_model.domain(None)
+        self._n_sides = self._underlying_domain.n_members
+        # Useful for getting the right type, etc.
+        self._example_domain = MultinomialDomain(n_elements=self.n_sides, n_meas=3) 
+
     ## PROPERTIES ##
     
 
@@ -573,15 +599,10 @@ class MultinomialModel(DerivedModel):
 
     @property
     def expparams_dtype(self):
-        return self._expparams_dtype
-
-    @property
-    def outcomes_dtype(self):
-        return np.dtype((np.uint32, (self.n_sides,)))
-    
+        return self._expparams_dtype  
     
     @property
-    def is_outcomes_constant(self):
+    def is_n_outcomes_constant(self):
         """
         Returns ``True`` if and only if the number of outcomes for each
         experiment is independent of the experiment being performed.
@@ -594,18 +615,19 @@ class MultinomialModel(DerivedModel):
     
     ## METHODS ##
 
-    def n_sides(self, expparams):
+    @property
+    def n_sides(self):
         """
-        Returns an array of dtype ``uint`` describing the number of possible outcomes
-        of the underlying model for each experiment specified by ``expparams``.
-        
-        :param numpy.ndarray expparams: Array of experimental parameters. This
-            array must be of dtype agreeing with the ``expparams_dtype``
-            property.
+        Returns the number of possible outcomes of the underlying model.
         """
-        
-        underlying_domains = self.underlying_model.domain(rmfield(expparams, 'n_meas'))
-        return np.array([ud.n_members for ud in underlying_domains])
+        return self._n_sides
+
+    @property
+    def underlying_domain(self):
+        """
+        Returns the `Domain` of the underlying model.
+        """
+        return self._underlying_domain
     
     def n_outcomes(self, expparams):
         """
@@ -616,10 +638,10 @@ class MultinomialModel(DerivedModel):
             array must be of dtype agreeing with the ``expparams_dtype``
             property.
         """
-        # Equal to the number of possible tuples whose non-negative 
-        # integer entries sum to n_meas.
+        # Standard combinatorial formula equal to the number of 
+        # possible tuples whose non-negative integer entries sum to n_meas.
         n = expparams['n_meas']
-        k = self.n_sides(expparams)
+        k = self.n_sides
         return scipy.special.binom(n + k - 1, k - 1)
 
     def domain(self, expparams):
@@ -632,62 +654,75 @@ class MultinomialModel(DerivedModel):
 
         :rtype: list of ``Domain``
         """
-        n_sides = self.n_sides(expparams)
         return [
-            MultinomialDomain(n_elements=n_sides[idx_ep], n_meas=ep['n_meas']) 
-                for idx_ep, ep in enumerate(expparams)
+            MultinomialDomain(n_elements=self.n_sides, n_meas=ep['n_meas']) 
+                for ep in expparams
         ]
     
+    def are_expparam_dtypes_consistent(self, expparams):
+        """
+        Returns `True` iff all of the given expparams 
+        correspond to outcome domains with the same dtype.
+        For efficiency, concrete subclasses should override this method 
+        if the result is always `True`.
+
+        :param np.ndarray expparams: Array of expparamms 
+             of type `expparams_dtype`
+        :rtype: `bool`
+        """
+        # The output type is always the same, even though the domain is not.
+        return True
+  
     def likelihood(self, outcomes, modelparams, expparams):
         # By calling the superclass implementation, we can consolidate
         # call counting there.
         super(MultinomialModel, self).likelihood(outcomes, modelparams, expparams)
-        # We can save a wee bit of time by only calculating the likelihoods of outcomes 0,...,d-2
-        prs = self.underlying_model.likelihood(
-            np.arange(self.n_sides - 1, dtype='uint'),
-            modelparams,
-            expparams['x'] if self._expparams_scalar else expparams)
         
-        # TODO: change this to multinomial pdf
-        L = np.concatenate([
-            binomial_pdf(expparams['n_meas'][np.newaxis, :], outcomes[idx], pr1)
-            for idx in range(outcomes.shape[0])
-            ]) 
+        # Save a wee bit of time by only calculating the likelihoods of outcomes 0,...,d-2
+        prs = self.underlying_model.likelihood(
+            self.underlying_domain.values[:-1],
+            modelparams,
+            expparams['x'] if self._expparams_scalar else expparams) 
+            # shape (sides-1, n_mps, n_eps)
+        
+        prs = np.tile(prs, (outcomes.shape[0],1,1,1)).transpose((1,0,2,3))
+        # shape (n_outcomes, sides-1, n_mps, n_eps)
+
+        os = self._example_domain.to_regular_array(outcomes)
+        # shape (n_outcomes, sides)
+        os = np.tile(os, (modelparams.shape[0],expparams.shape[0],1,1)).transpose((3,2,0,1))
+        # shape (n_outcomes, sides, n_mps, n_eps)
+
+        L = multinomial_pdf(os, prs) 
         assert not np.any(np.isnan(L))
         return L
 
     def simulate_experiment(self, modelparams, expparams, repeat=1):
-        #TODO: implement this. below was copied from BinomialModel.
-
-        # FIXME: uncommenting causes a slowdown, but we need to call
-        #        to track sim counts.
-        #super(BinomialModel, self).simulate_experiment(modelparams, expparams)
+        super(MultinomialModel, self).simulate_experiment(modelparams, expparams)
         
-        # Start by getting the pr(1) for the underlying model.
-        pr1 = self.underlying_model.likelihood(
-            np.array([1], dtype='uint'),
+        n_sides = self.n_sides
+        n_mps = modelparams.shape[0]
+        n_eps = expparams.shape[0]
+
+        # Save a wee bit of time by only calculating the likelihoods of outcomes 0,...,d-2
+        prs = np.empty((n_sides,n_mps,n_eps))
+        prs[:-1,...] = self.underlying_model.likelihood(
+            self.underlying_domain.values[:-1],
             modelparams,
-            expparams['x'] if self._expparams_scalar else expparams)
-            
-        dist = binom(
-            expparams['n_meas'].astype('int'), # ← Really, NumPy?
-            pr1[0, :, :]
-        )
-        sample = (
-            (lambda: dist.rvs()[np.newaxis, :, :])
-            if pr1.size != 1 else
-            (lambda: np.array([[[dist.rvs()]]]))
-        )
+            expparams['x'] if self._expparams_scalar else expparams) 
+            # shape (sides, n_mps, n_eps)
+
+
         os = np.concatenate([
-            sample()
-            for idx in range(repeat)
-        ], axis=0)
+            sample_multinomial(n_meas, prs[:,:,idx_n_meas], size=repeat)[np.newaxis,...]
+            for idx_n_meas, n_meas in enumerate(expparams['n_meas'].astype('int'))
+        ]).transpose((3,2,0,1))
+
+        # convert to fancy data type
+        os = self._example_domain.from_regular_array(os)
+
         return os[0,0,0] if os.size == 1 else os
 
-
-    def score(self, outcomes, modelparams, expparams, return_L=False):
-        # TODO: implement
-        pass
         
 class DifferentiableBinomialModel(BinomialModel, DifferentiableModel):
     """
@@ -730,6 +765,10 @@ class MLEModel(DerivedModel):
     def __init__(self, underlying_model, likelihood_power):
         super(MLEModel, self).__init__(underlying_model)
         self._pow = likelihood_power
+
+    def simulate_experiment(self, modelparams, expparams, repeat=1):
+        super(MLEModel, self).simulate_experiment(modelparams, expparams, repeat)
+        return self.underlying_model.simulate_experiment(modelparams, expparams, repeat)
 
     def likelihood(self, outcomes, modelparams, expparams):
         L = self.underlying_model.likelihood(outcomes, modelparams, expparams)
@@ -778,7 +817,7 @@ class RandomWalkModel(DerivedModel):
 if __name__ == "__main__":
     
     import operator as op
-    from .finite_test_models import SimplePrecessionModel
+    from .test_models import SimplePrecessionModel
     
     m = BinomialModel(SimplePrecessionModel())
     
