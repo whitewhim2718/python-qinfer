@@ -259,7 +259,9 @@ class RealDomain(Domain):
 
         :rtype: `bool`
         """
-        return np.all(points >= self._min) and np.all(points <= self._max)
+        are_bigger = True if self._min is None else np.all(points >= self._min)
+        are_smaller = True if self._max is None else np.all(points <= self._max)
+        return are_bigger and are_smaller
 
 class IntegerDomain(Domain):
     """
@@ -382,8 +384,10 @@ class IntegerDomain(Domain):
 
         :rtype: `bool`
         """
-        return np.all(np.mod(points,1) == 0) and np.all(points >= self._min) and np.all(points <= self._max)
-    
+        are_ints = np.all(np.mod(points,1) == 0)
+        are_bigger = True if self._min is None else np.all(points >= self._min)
+        are_smaller = True if self._max is None else np.all(points <= self._max)
+        return are_ints and are_bigger and are_smaller
 
 class MultinomialDomain(Domain):
     """
@@ -525,7 +529,6 @@ class MultinomialDomain(Domain):
         :rtype: `bool`
         """
         array_view = self.to_regular_array(points)
-        print(np.all(array_view>=0))
         return np.all(array_view >= 0) and np.all(np.sum(array_view, axis=-1) == self.n_meas)
 
     
