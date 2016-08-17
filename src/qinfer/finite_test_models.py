@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 ##
-# test_models.py: Simple models for testing inference engines where the 
+# finite_test_models.py: Simple models for testing inference engines where the 
 #       number of outcomes is finite.
 ##
 # © 2012 Chris Ferrie (csferrie@gmail.com) and
