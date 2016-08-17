@@ -56,7 +56,7 @@ from qinfer.utils import binomial_pdf, multinomial_pdf, sample_multinomial
 from qinfer.abstract_model import Model, FiniteOutcomeModel, DifferentiableModel
 from qinfer._lib import enum # <- TODO: replace with flufl.enum!
 from qinfer.ale import binom_est_error
-from qinfer.domains import IntegerDomain
+from qinfer.domains import IntegerDomain, MultinomialDomain
 from qinfer.utils import safe_shape
 
 ## FUNCTIONS ###################################################################
@@ -552,7 +552,7 @@ class BinomialModel(DerivedModel, FiniteOutcomeModel):
         )
 
 
-class MultinomialModel(DerivedModel):
+class MultinomialModel(DerivedModel, FiniteOutcomeModel):
     """
     Model representing finite numbers of iid samples from another model,
     using the multinomial distribution to calculate the new likelihood function.
@@ -654,7 +654,6 @@ class MultinomialModel(DerivedModel):
 
         :rtype: list of ``Domain``
         """
-        n_sides = self.n_sides(expparams)
         return [
             MultinomialDomain(n_elements=self.n_sides, n_meas=ep['n_meas']) 
                 for ep in expparams
