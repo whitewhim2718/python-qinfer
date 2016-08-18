@@ -311,6 +311,31 @@ class TestReferencedPoissonModel(ConcreteModelTest, DerandomizedTestCase):
         ps = np.arange(12).astype([('p','float')])
         return rfn.merge_arrays([modes, ps])
 
+class TestReferencedPoissonModel2(ConcreteModelTest, DerandomizedTestCase):
+    """
+    Tests ReferencedPoissonModel with NoisyCoinModel as the underlying model
+    (underlying model has 2 expparams).
+    """
+
+    def instantiate_model(self):
+        return ReferencedPoissonModel(CoinModel())
+    def instantiate_prior(self):
+        p_dist = BetaDistribution(mean=0.5, var=0.1)
+        ref_dist = PostselectedDistribution(
+            UniformDistribution(np.array([[6000,6100],[900,1000]])),
+            self.model
+        )
+        return ProductDistribution(p_dist, ref_dist)
+    def instantiate_expparams(self):
+        b = ReferencedPoissonModel.BRIGHT
+        d = ReferencedPoissonModel.DARK
+        s = ReferencedPoissonModel.SIGNAL
+        modes = np.repeat(np.array([b,d,s]),4).astype([('mode','int')])
+        # the ps values don't matter since CoinValue has no expparams
+        alphas = (0.1 * np.ones((10,))).astype([('alpha','float')])
+        betas = np.linspace(0,0.5,10, dtype=[('beta','float')])
+        return rfn.merge_arrays([alphas, betas, modes])
+
 class TestBinomialModel(ConcreteModelTest, DerandomizedTestCase):
     """
     Tests BinomialModel with CoinModel as the underlying model
