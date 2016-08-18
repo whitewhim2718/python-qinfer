@@ -286,7 +286,7 @@ class ReferencedPoissonModel(DerivedModel):
         return self._expparams_dtype
 
     @property
-    def is_outcomes_constant(self):
+    def is_n_outcomes_constant(self):
         """
         Returns ``True`` if and only if the number of outcomes for each
         experiment is independent of the experiment being performed.
@@ -294,9 +294,22 @@ class ReferencedPoissonModel(DerivedModel):
         This property is assumed by inference engines to be constant for
         the lifetime of a Model instance.
         """
-        return False
+        return True
 
     ## METHODS ##
+
+    def are_models_valid(self, modelparams):
+        u_valid = self.underlying_model.are_models_valid(modelparams[:,:-2])
+        s_valid = np.logical_and(modelparams[:,-1] <= modelparams[:,-2], modelparams[:,-2] >= 0)
+        return np.logical_and(u_valid, s_valid)
+
+    def canonicalize(self, modelparams):
+        u_model = self.underlying_model.canonicalize(modelparams[:,:-2])
+        mask = modelparams[:,-2] <= modelparams[:,-1]
+        avg = (modelparams[mask,-1] + modelparams[mask,-2]) / 2 
+        modelparams[mask,-2] = avg
+        modelparams[mask,-1] = avg
+        return modelparams
 
     def n_outcomes(self, expparams):
         """
@@ -330,7 +343,7 @@ class ReferencedPoissonModel(DerivedModel):
         super(ReferencedPoissonModel, self).likelihood(outcomes, modelparams, expparams)
 
         L = np.empty((outcomes.shape[0], modelparams.shape[0], expparams.shape[0]))
-        ot = np.tile(outcomes.T, (1, modelparams.shape[0]))
+        ot = np.tile(outcomes, (modelparams.shape[0],1)).T
 
         for idx_ep, expparam in enumerate(expparams):
 
@@ -340,7 +353,7 @@ class ReferencedPoissonModel(DerivedModel):
                 pr0 = self.underlying_model.likelihood(
                     np.array([0], dtype='uint'),
                     modelparams[:,:-2],
-                    np.array([expparam['p']]) if self._expparams_scalar else expparam)[0,:,0]
+                    np.array([expparam['p']]) if self._expparams_scalar else np.array([expparam]))[0,:,0]
                 pr0 = np.tile(pr0, (outcomes.shape[0], 1))
 
                 # Reference Rate
@@ -384,10 +397,14 @@ class ReferencedPoissonModel(DerivedModel):
         for idx_ep, expparam in enumerate(expparams):
             if expparam['mode'] == self.SIGNAL:
                 # Get the probability of outcome 1 for the underlying model.
+                print(self._expparams_scalar)
+ 
+                ep = np.array([expparam['p']]) if self._expparams_scalar else np.array([expparam])
+                print(ep.shape)
                 pr0 = self.underlying_model.likelihood(
                     np.array([0], dtype='uint'),
                     modelparams[:,:-2],
-                    np.array([expparam['p']]) if self._expparams_scalar else expparam)[0,:,0]
+                    ep)[0,:,0]
 
                 # Reference Rate
                 alpha = modelparams[:, -2]

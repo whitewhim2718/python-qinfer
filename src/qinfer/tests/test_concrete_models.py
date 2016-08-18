@@ -48,8 +48,10 @@ from qinfer import (
     BasicPoissonModel, ExponentialPoissonModel,
     BasicGaussianModel, ExponentialGaussianModel,
     RandomizedBenchmarkingModel,
+    ReferencedPoissonModel,
     PoisonedModel, BinomialModel, MultinomialModel,
     MLEModel, RandomWalkModel,
+    ProductDistribution,
     NormalDistribution, UniformDistribution,
     BetaDistribution, GammaDistribution, 
     PostselectedDistribution,
@@ -284,6 +286,30 @@ class TestALEApproximateModel(ConcreteModelTest, DerandomizedTestCase):
     def instantiate_expparams(self):
         ts = np.linspace(0,5,10, dtype=self.model.expparams_dtype)
         return ts
+
+class TestReferencedPoissonModel(ConcreteModelTest, DerandomizedTestCase):
+    """
+    Tests ReferencedPoissonModel with CoinModel as the underlying model
+    (underlying model has no expparams).
+    """
+
+    def instantiate_model(self):
+        return ReferencedPoissonModel(CoinModel())
+    def instantiate_prior(self):
+        p_dist = BetaDistribution(mean=0.5, var=0.1)
+        ref_dist = PostselectedDistribution(
+            UniformDistribution(np.array([[6000,6100],[900,1000]])),
+            self.model
+        )
+        return ProductDistribution(p_dist, ref_dist)
+    def instantiate_expparams(self):
+        b = ReferencedPoissonModel.BRIGHT
+        d = ReferencedPoissonModel.DARK
+        s = ReferencedPoissonModel.SIGNAL
+        modes = np.repeat(np.array([b,d,s]),4).astype([('mode','int')])
+        # the ps values don't matter since CoinValue has no expparams
+        ps = np.arange(12).astype([('p','float')])
+        return rfn.merge_arrays([modes, ps])
 
 class TestBinomialModel(ConcreteModelTest, DerandomizedTestCase):
     """
