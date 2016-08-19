@@ -46,11 +46,11 @@ class TestGaussianModel(DerandomizedTestCase):
     # True model parameter for test
     MODELPARAMS = np.array([79,3],dtype=np.float)
     ONLINE_SIGMA = 0.2
-    TEST_EXPPARAMS = np.linspace(1.,1000.,10000,dtype=np.float)
+    TEST_EXPPARAMS = np.linspace(1.,1000.,200,dtype=np.float)
     PRIOR_NO_SIGMA_PARAM = UniformDistribution([[0,100]])
     PRIOR_SIGMA_PARAM = UniformDistribution([[0,100],[0,10]])
     N_PARTICLES = 10000
-    N_BIM = 1000
+    N_BIM = TEST_EXPPARAMS.shape[0]
     N_ONLINE = 25  
     N_GUESSES = 25
     N_OUTCOME_SAMPLES = 250
@@ -71,12 +71,13 @@ class TestGaussianModel(DerandomizedTestCase):
         self.exponential_gaussian_model = ExponentialGaussianModel(sigma=TestGaussianModel.ONLINE_SIGMA,
                                             num_outcome_samples=TestGaussianModel.N_OUTCOME_SAMPLES)
 
-        self.expparams = TestGaussianModel.TEST_EXPPARAMS.reshape(-1,1)
-        self.expparams_risk = TestGaussianModel.TEST_EXPPARAMS_RISK.reshape(-1,1)
+        self.expparams = TestGaussianModel.TEST_EXPPARAMS.astype(self.gaussian_model_no_sigma_param.expparams_dtype)
+        self.expparams_risk = TestGaussianModel.TEST_EXPPARAMS_RISK.astype(self.gaussian_model_no_sigma_param.expparams_dtype)
+
         self.outcomes_no_sigma_param = self.gaussian_model_no_sigma_param.simulate_experiment(TestGaussianModel.MODELPARAMS[:1],
-                TestGaussianModel.TEST_EXPPARAMS,repeat=1 ).reshape(-1,1)
+                self.expparams,repeat=1 ).reshape(-1,1)
         self.outcomes_sigma_param = self.gaussian_model_sigma_param.simulate_experiment(TestGaussianModel.MODELPARAMS,
-                TestGaussianModel.TEST_EXPPARAMS,repeat=1 ).reshape(-1,1)
+                self.expparams,repeat=1 ).reshape(-1,1)
 
         self.outcomes_exponential = self.exponential_gaussian_model.simulate_experiment(TestGaussianModel.MODELPARAMS[:1],
                 TestGaussianModel.TEST_EXPPARAMS_RISK.astype(self.exponential_gaussian_model.expparams_dtype),
@@ -128,9 +129,10 @@ class TestGaussianModel(DerandomizedTestCase):
         bim_adaptives_sigma_param = []
 
         #track bims throughout experiments
-        for i in range(TestGaussianModel.N_BIM):         
-            self.updater_bayes_no_sigma_param.update(self.outcomes_no_sigma_param[i],self.expparams[i])
-            self.updater_bayes_sigma_param.update(self.outcomes_sigma_param[i],self.expparams[i])
+        
+        for i in range(TestGaussianModel.N_BIM):      
+            self.updater_bayes_no_sigma_param.update(self.outcomes_no_sigma_param[i:i+1],self.expparams[i:i+1])
+            self.updater_bayes_sigma_param.update(self.outcomes_sigma_param[i:i+1],self.expparams[i:i+1])
 
             bim_currents_no_sigma_param.append(self.updater_bayes_no_sigma_param.current_bim)
             bim_adaptives_no_sigma_param.append(self.updater_bayes_no_sigma_param.adaptive_bim)
@@ -160,7 +162,7 @@ class TestPoissonModel(DerandomizedTestCase):
     # True model parameter for test
     MODELPARAMS = np.array([79.,])
     MODELPARAMS_RISK = np.array([79.,])
-    TEST_EXPPARAMS = np.arange(0, 5000,50000,dtype=np.float)
+    TEST_EXPPARAMS = np.arange(1., 200,1,dtype=np.float)
     PRIOR = UniformDistribution([[0.,200.]])
     N_PARTICLES = 10000
     N_ONLINE = 25
@@ -168,7 +170,7 @@ class TestPoissonModel(DerandomizedTestCase):
     N_OUTCOME_SAMPLES = 250
     MAX_EXPPARAM = 500.
     TEST_EXPPARAMS_RISK = np.linspace(1.,MAX_EXPPARAM,N_ONLINE,dtype=np.float)
-    N_BIM = 1000
+    N_BIM = 100
     TEST_TARGET_COV = np.array([[0.1]])
 
     def setUp(self):
@@ -178,11 +180,12 @@ class TestPoissonModel(DerandomizedTestCase):
         self.exponential_poisson_model = ExponentialPoissonModel(num_outcome_samples=TestPoissonModel.N_OUTCOME_SAMPLES)
 
 
-        self.expparams = TestPoissonModel.TEST_EXPPARAMS.reshape(-1,1).astype(self.poisson_model.expparams_dtype)
-        self.expparams_risk = TestPoissonModel.TEST_EXPPARAMS_RISK.reshape(-1,1).astype(self.poisson_model.expparams_dtype)
+        self.expparams = TestPoissonModel.TEST_EXPPARAMS.astype(self.poisson_model.expparams_dtype)
+
+        self.expparams_risk = TestPoissonModel.TEST_EXPPARAMS_RISK.astype(self.poisson_model.expparams_dtype)
 
         self.outcomes = self.poisson_model.simulate_experiment(TestPoissonModel.MODELPARAMS,
-                TestPoissonModel.TEST_EXPPARAMS,repeat=1 ).reshape(-1,1)
+                TestPoissonModel.TEST_EXPPARAMS.astype(self.poisson_model.expparams_dtype),repeat=1 ).reshape(-1,1)
 
         self.outcomes_exponential = self.exponential_poisson_model.simulate_experiment(TestPoissonModel.MODELPARAMS_RISK,
                 TestPoissonModel.TEST_EXPPARAMS_RISK.astype(self.exponential_poisson_model.expparams_dtype),
@@ -205,9 +208,7 @@ class TestPoissonModel(DerandomizedTestCase):
                 TestPoissonModel.N_PARTICLES,TestPoissonModel.PRIOR)
         
     def test_poisson_model_fitting(self):
-
         self.updater.batch_update(self.outcomes,self.expparams,5)
-
 
         assert_almost_equal(self.updater.est_mean(),TestPoissonModel.MODELPARAMS,2)
         assert_array_less(self.updater.est_covariance_mtx(),TestPoissonModel.TEST_TARGET_COV)
@@ -221,15 +222,14 @@ class TestPoissonModel(DerandomizedTestCase):
         bim_adaptives = []
 
         #track bims throughout experiments
-        for i in range(TestPoissonModel.N_BIM):         
-            self.updater_bayes.update(self.outcomes[i],self.expparams[i])
+        for i in range(TestPoissonModel.N_BIM):
+            self.updater_bayes.update(self.outcomes[i:i+1],self.expparams[i:i+1])
 
             bim_currents.append(self.updater_bayes.current_bim)
             bim_adaptives.append(self.updater_bayes.adaptive_bim)
-
+            
         bim_currents = np.array(bim_currents)
         bim_adaptives = np.array(bim_adaptives)
-
 
         #verify that BCRB is approximately reached 
         assert_almost_equal(self.updater_bayes.est_covariance_mtx(),np.linalg.inv(self.updater_bayes.current_bim),1)

@@ -545,13 +545,16 @@ class Model(Simulatable):
         :param np.ndarray expparams: Set of experimental parameters of 
             type ``exparams_dtype``.
 
-        :return list: Returns a tuple ``(likelihoods, outcomes)``.
+        :return tuple: Returns a tuple ``(likelihoods, outcomes,weights,particles)``.
             Here, ``outcomes`` is a list of length ``n_experiments`` 
             with each member is an ``np.ndarray`` of shape ``(n_outcomes)`` 
             with type ``model.domain(expparam).dtype``,
             and ``likelihoods`` is a list of length ``n_experiments`` 
             with each member is an ``np.ndarray`` of floats of shape 
-            ``(n_outcomes, modelparams)``
+            ``(n_outcomes, modelparams)``. ``weights`` is a set of
+            of weights with shape ``(n_samples)`` which wait sampled
+            modelparams ``particles`` of shape ``(n_samples,n_modelparams)``
+            which are necessary for accurate evaluation with approximation
 
 
         Note: The outcomes and outcome weights can be used to compute generic 
@@ -567,22 +570,31 @@ class Model(Simulatable):
         outcomes = []
         L = []
         test_threshold = np.empty((n_expparams, ))
-
+        all_points = []
+        all_weights = []
         # We have to loop over expparams only because each one, unfortunately, might have 
         # a different dtype and/or number of outcomes .
+
         for idx_ep in range(n_expparams):
             # So that expparam is a numpy array when extracted
             expparam = expparams[idx_ep:idx_ep+1]
             n_o = n_outcomes if np.isscalar(n_outcomes) else n_outcomes[idx_ep]
             
             sample_points = modelparams[np.random.choice(modelparams.shape[0], size=n_o, p=weights)]
+            
+
             os = self.simulate_experiment(sample_points, expparam, repeat=1)[0,:,0]
             assert os.dtype == self.domain(expparam)[0].dtype
-
+            
             # The same outcome is likely to have resulted multiple times in the case that outcomes 
             # are discrete values and the modelparam distribution is not too wide.
             if not self.allow_identical_outcomes:
-                os = np.unique(os)
+                os,unique_idx,counts = np.unique(os,return_index=True,return_counts=True)
+                sample_points = modelparams
+                sample_weights = weights
+            else:
+                sample_weights = np.full(n_o,1./n_o,dtype=np.float32)
+
 
             # Find the likelihood for each outcome given each modelparam (irrespective 
             # of which modelparam the outcome resulted from)
@@ -600,11 +612,13 @@ class Model(Simulatable):
             else:
                 # TODO: figure out a test in this case.
                 pass
-
+        
             outcomes.append(os)
             L.append(L_ep)
+            all_points.append(sample_points)
+            all_weights.append(sample_weights)
 
-        return L, outcomes
+        return L, outcomes, all_weights, all_points
     
             
 class LinearCostModelMixin(Model):
@@ -737,13 +751,16 @@ class FiniteOutcomeModel(Model):
         :param np.ndarray expparams: Set of experimental parameters of 
             type ``exparams_dtype``.
 
-        :return list: Returns a tuple ``(likelihoods, outcomes)``.
+        :return tuple: Returns a tuple ``(likelihoods, outcomes,weights,particles)``.
             Here, ``outcomes`` is a list of length ``n_experiments`` 
             with each member is an ``np.ndarray`` of shape ``(n_outcomes)`` 
             with type ``model.domain(expparam).dtype``,
             and ``likelihoods`` is a list of length ``n_experiments`` 
             with each member is an ``np.ndarray`` of floats of shape 
-            ``(n_outcomes, modelparams)``
+            ``(n_outcomes, modelparams)``. ``weights`` is the set of
+            of weights input to method shape ``(n_particles)`` which wait sampled
+            modelparams ``particles`` of shape ``(n_particles,n_modelparams)``
+            which are necessary for accurate evaluation with approximation
 
 
         Note: The outcomes and outcome weights can be used to compute generic 
@@ -755,9 +772,10 @@ class FiniteOutcomeModel(Model):
         n_outcomes = self.n_outcomes(expparams)
         n_expparams = expparams.shape[0]
         n_modelparams = modelparams.shape[0]
-
         outcomes = []
         L = []
+        all_points = []
+        all_weights = []
         # We have to loop over expparams only because each one, unfortunately, might have 
         # a different dtype and/or number of outcomes .
         for idx_ep in range(expparams.shape[0]):
@@ -777,8 +795,10 @@ class FiniteOutcomeModel(Model):
 
             outcomes.append(os)
             L.append(self.likelihood(os, modelparams, expparam)[:,:,0])
+            all_weights.append(weights)
+            all_points.append(modelparams)
 
-        return L, outcomes
+        return L, outcomes, all_weights, all_points
 
     ## STATIC METHODS ##
     # These methods are provided as a convienence to make it easier to write
