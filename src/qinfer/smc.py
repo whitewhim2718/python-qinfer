@@ -689,6 +689,9 @@ class SMCUpdater(Distribution):
         """
 
         n_expparams = expparams.shape[0]
+        resample_weights, resampled_particles = \
+            self.resampler(self.model, self.particle_weights, self.particle_locations)
+            
         all_likelihoods, all_outcomes, all_sample_weights, all_sample_points, = self.model.representative_outcomes(
             self.particle_weights, self.particle_locations, expparams)
 
