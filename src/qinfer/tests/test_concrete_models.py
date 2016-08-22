@@ -164,7 +164,7 @@ class TestBasicGaussianModel(ConcreteDifferentiableModelTest, DerandomizedTestCa
     """
 
     def instantiate_model(self):
-        return BasicGaussianModel(sigma=1.2)
+        return BasicGaussianModel(var=1.2)
     def instantiate_prior(self):
         return UniformDistribution(np.array([[5,6]]))
     def instantiate_expparams(self):
@@ -177,7 +177,7 @@ class TestBasicGaussianModelUnknownVariance(ConcreteDifferentiableModelTest, Der
     """
 
     def instantiate_model(self):
-        return BasicGaussianModel(sigma=None)
+        return BasicGaussianModel(var=None)
     def instantiate_prior(self):
         return UniformDistribution(np.array([[5,6],[0,1]]))
     def instantiate_expparams(self):
@@ -190,7 +190,7 @@ class TestExponentialGaussianModel(ConcreteDifferentiableModelTest, Derandomized
     """
 
     def instantiate_model(self):
-        return ExponentialGaussianModel(sigma=1.2)
+        return ExponentialGaussianModel(var=1.2)
     def instantiate_prior(self):
         return UniformDistribution(np.array([[5,6]]))
     def instantiate_expparams(self):
@@ -202,7 +202,7 @@ class TestExponentialGaussianModelUnknownVariance(ConcreteDifferentiableModelTes
     """
 
     def instantiate_model(self):
-        return ExponentialGaussianModel(sigma=None)
+        return ExponentialGaussianModel(var=None)
     def instantiate_prior(self):
         return UniformDistribution(np.array([[5,6],[0,1]]))
     def instantiate_expparams(self):
