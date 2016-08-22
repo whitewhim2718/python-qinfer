@@ -48,8 +48,10 @@ from qinfer import (
     BasicPoissonModel, ExponentialPoissonModel,
     BasicGaussianModel, ExponentialGaussianModel,
     RandomizedBenchmarkingModel,
+    ReferencedPoissonModel,
     PoisonedModel, BinomialModel, MultinomialModel,
     MLEModel, RandomWalkModel,
+    ProductDistribution,
     NormalDistribution, UniformDistribution,
     BetaDistribution, GammaDistribution, 
     PostselectedDistribution,
@@ -162,7 +164,7 @@ class TestBasicGaussianModel(ConcreteDifferentiableModelTest, DerandomizedTestCa
     """
 
     def instantiate_model(self):
-        return BasicGaussianModel(sigma=1.2)
+        return BasicGaussianModel(var=1.2)
     def instantiate_prior(self):
         return UniformDistribution(np.array([[5,6]]))
     def instantiate_expparams(self):
@@ -175,7 +177,7 @@ class TestBasicGaussianModelUnknownVariance(ConcreteDifferentiableModelTest, Der
     """
 
     def instantiate_model(self):
-        return BasicGaussianModel(sigma=None)
+        return BasicGaussianModel(var=None)
     def instantiate_prior(self):
         return UniformDistribution(np.array([[5,6],[0,1]]))
     def instantiate_expparams(self):
@@ -188,7 +190,7 @@ class TestExponentialGaussianModel(ConcreteDifferentiableModelTest, Derandomized
     """
 
     def instantiate_model(self):
-        return ExponentialGaussianModel(sigma=1.2)
+        return ExponentialGaussianModel(var=1.2)
     def instantiate_prior(self):
         return UniformDistribution(np.array([[5,6]]))
     def instantiate_expparams(self):
@@ -200,7 +202,7 @@ class TestExponentialGaussianModelUnknownVariance(ConcreteDifferentiableModelTes
     """
 
     def instantiate_model(self):
-        return ExponentialGaussianModel(sigma=None)
+        return ExponentialGaussianModel(var=None)
     def instantiate_prior(self):
         return UniformDistribution(np.array([[5,6],[0,1]]))
     def instantiate_expparams(self):
@@ -284,6 +286,55 @@ class TestALEApproximateModel(ConcreteModelTest, DerandomizedTestCase):
     def instantiate_expparams(self):
         ts = np.linspace(0,5,10, dtype=self.model.expparams_dtype)
         return ts
+
+class TestReferencedPoissonModel(ConcreteModelTest, DerandomizedTestCase):
+    """
+    Tests ReferencedPoissonModel with CoinModel as the underlying model
+    (underlying model has no expparams).
+    """
+
+    def instantiate_model(self):
+        return ReferencedPoissonModel(CoinModel())
+    def instantiate_prior(self):
+        p_dist = BetaDistribution(mean=0.5, var=0.1)
+        ref_dist = PostselectedDistribution(
+            UniformDistribution(np.array([[6000,6100],[900,1000]])),
+            self.model
+        )
+        return ProductDistribution(p_dist, ref_dist)
+    def instantiate_expparams(self):
+        b = ReferencedPoissonModel.BRIGHT
+        d = ReferencedPoissonModel.DARK
+        s = ReferencedPoissonModel.SIGNAL
+        modes = np.repeat(np.array([b,d,s]),4).astype([('mode','int')])
+        # the ps values don't matter since CoinValue has no expparams
+        ps = np.arange(12).astype([('p','float')])
+        return rfn.merge_arrays([modes, ps])
+
+class TestReferencedPoissonModel2(ConcreteModelTest, DerandomizedTestCase):
+    """
+    Tests ReferencedPoissonModel with NoisyCoinModel as the underlying model
+    (underlying model has 2 expparams).
+    """
+
+    def instantiate_model(self):
+        return ReferencedPoissonModel(CoinModel())
+    def instantiate_prior(self):
+        p_dist = BetaDistribution(mean=0.5, var=0.1)
+        ref_dist = PostselectedDistribution(
+            UniformDistribution(np.array([[6000,6100],[900,1000]])),
+            self.model
+        )
+        return ProductDistribution(p_dist, ref_dist)
+    def instantiate_expparams(self):
+        b = ReferencedPoissonModel.BRIGHT
+        d = ReferencedPoissonModel.DARK
+        s = ReferencedPoissonModel.SIGNAL
+        modes = np.repeat(np.array([b,d,s]),4).astype([('mode','int')])
+        # the ps values don't matter since CoinValue has no expparams
+        alphas = (0.1 * np.ones((10,))).astype([('alpha','float')])
+        betas = np.linspace(0,0.5,10, dtype=[('beta','float')])
+        return rfn.merge_arrays([alphas, betas, modes])
 
 class TestBinomialModel(ConcreteModelTest, DerandomizedTestCase):
     """

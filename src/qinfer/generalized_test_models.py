@@ -602,9 +602,6 @@ class GaussianModel(DifferentiableModel):
         if modelparams.ndim == 1:
             modelparams = modelparams[np.newaxis, ...]  
         
-        if expparams.ndim == 1:
-            expparams = expparams[..., np.newaxis]
-        
         if self._var is None:
             var_index = self.modelparam_names.index(r'\var')
             var = modelparams[:,var_index][np.newaxis,:,np.newaxis]
