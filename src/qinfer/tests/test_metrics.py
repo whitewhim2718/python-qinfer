@@ -50,8 +50,8 @@ class TestBayesRisk(DerandomizedTestCase):
     PRIOR_BETA = BetaDistribution(alpha=ALPHA, beta=BETA)
     PRIOR_GAMMA = GammaDistribution(alpha=ALPHA, beta=BETA)
     PRIOR_NORMAL = NormalDistribution(mean=MU,var=VAR)
-    N_PARTICLES = 5000
-    N_OUTCOME_SAMPLES = 15000
+    N_PARTICLES = 10000
+    N_OUTCOME_SAMPLES = 2000
     TAU_EXPPARAMS = np.arange(1, 11, dtype=int)
     NMEAS_EXPPARAMS = np.arange(1, 11, dtype=int)
     

@@ -570,8 +570,7 @@ class Model(Simulatable):
         outcomes = []
         L = []
         test_threshold = np.empty((n_expparams, ))
-        all_points = []
-        all_weights = []
+
         # We have to loop over expparams only because each one, unfortunately, might have 
         # a different dtype and/or number of outcomes .
 
@@ -579,22 +578,13 @@ class Model(Simulatable):
             # So that expparam is a numpy array when extracted
             expparam = expparams[idx_ep:idx_ep+1]
             n_o = n_outcomes if np.isscalar(n_outcomes) else n_outcomes[idx_ep]
-            
-            sample_points = modelparams[np.random.choice(modelparams.shape[0], size=n_o, p=weights)]
-            
-
-            os = self.simulate_experiment(sample_points, expparam, repeat=1)[0,:,0]
+            os = self.simulate_experiment(modelparams, expparam, repeat=1)[0,:,0]
             assert os.dtype == self.domain(expparam)[0].dtype
             
             # The same outcome is likely to have resulted multiple times in the case that outcomes 
             # are discrete values and the modelparam distribution is not too wide.
             if not self.allow_identical_outcomes:
-                os,unique_idx,counts = np.unique(os,return_index=True,return_counts=True)
-                sample_points = modelparams
-                sample_weights = weights
-            else:
-                sample_weights = np.full(n_o,1./n_o,dtype=np.float32)
-
+                os,unique_idx,counts = np.unique(os)
 
             # Find the likelihood for each outcome given each modelparam (irrespective 
             # of which modelparam the outcome resulted from)
@@ -615,10 +605,9 @@ class Model(Simulatable):
         
             outcomes.append(os)
             L.append(L_ep)
-            all_points.append(sample_points)
-            all_weights.append(sample_weights)
+          
 
-        return L, outcomes, all_weights, all_points
+        return L, outcomes
     
             
 class LinearCostModelMixin(Model):
@@ -774,8 +763,6 @@ class FiniteOutcomeModel(Model):
         n_modelparams = modelparams.shape[0]
         outcomes = []
         L = []
-        all_points = []
-        all_weights = []
         # We have to loop over expparams only because each one, unfortunately, might have 
         # a different dtype and/or number of outcomes .
         for idx_ep in range(expparams.shape[0]):
@@ -787,19 +774,19 @@ class FiniteOutcomeModel(Model):
             if self.n_outcomes_cutoff is None or n_o <= self.n_outcomes_cutoff:
                 # If we don't have to many outcomes, just report them all.
                 os = self.domain(expparam)[0].values
+                L.append(self.likelihood(os, modelparams, expparam)[:,:,0])
             else:
                 # Otherwise, use the generic method to pick some randomly.
-                os = super(FiniteOutcomeModel, self).representative_outcomes(
+                L_s,os = super(FiniteOutcomeModel, self).representative_outcomes(
                     weights, modelparams, expparam)[0]
+                L.append(L_s)
 
 
             outcomes.append(os)
-            L.append(self.likelihood(os, modelparams, expparam)[:,:,0])
-            all_weights.append(weights)
-            all_points.append(modelparams)
+            
+          
 
-        return L, outcomes, all_weights, all_points
-
+        return L, outcomes
     ## STATIC METHODS ##
     # These methods are provided as a convienence to make it easier to write
     # simple models.

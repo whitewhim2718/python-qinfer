@@ -83,8 +83,8 @@ import logging
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
-## CLASSES #####################################################################
 
+## CLASSES #####################################################################
 class SMCUpdater(Distribution):
     r"""
     Creates a new Sequential Monte carlo updater, using the algorithm of
@@ -673,7 +673,8 @@ class SMCUpdater(Distribution):
             self.particle_weights,
             self.particle_locations)
 
-    def bayes_risk(self, expparams):
+    def bayes_risk(self, expparams, sampled_weights=None, sampled_modelparams=None, sampled_outcomes=None,
+                    return_sampled_parameters=False):
         r"""
         Calculates the Bayes risk for each hypothetical experiment, assuming the
         quadratic loss function defined by the current model's scale matrix
@@ -689,21 +690,53 @@ class SMCUpdater(Distribution):
         """
 
         n_expparams = expparams.shape[0]
-        resample_weights, resampled_particles = \
-            self.resampler(self.model, self.particle_weights, self.particle_locations)
+        n_outcomes = self.model.n_outcomes(expparams)
+
+        import pdb
+        pdb.set_trace()
+        if sampled_weights is None:
+            if sampled_modelparams is None:
+                sampled_weights, sampled_modelparams = \
+                    self.resampler(self.model, self.particle_weights, self.particle_locations,
+                        n_particles=n_outcomes)
+                import pdb
+                pdb.set_trace()
+            else:
+                n_mp = sampled_modelparams.shape[0]
+                sampled_weights = np.full(n_mp,1./n_mp,dtype=np.float32)
+            import pdb
+            pdb.set_trace()
+        else:
+            if sampled_modelparams is None:
+                _, sampled_modelparams = \
+                    self.resampler(self.model, self.particle_weights, self.particle_locations,
+                        n_particles=n_outcomes)
+
+        if sampled_outcomes is None: 
+            all_likelihoods, all_outcomes = self.model.representative_outcomes(
+                sampled_weights, sampled_modelparams, expparams)
+        else:
+            if isinstance(sampled_outcomes,list):
+                assert len(expparams) == len(sampled_outcomes)
+                all_outcomes = sampled_outcomes
+            else:
+                all_outcomes = [ sampled_outcomes for i in expparams]
             
-        all_likelihoods, all_outcomes, all_sample_weights, all_sample_points, = self.model.representative_outcomes(
-            self.particle_weights, self.particle_locations, expparams)
+            all_likelihoods = []
+            for idx_exp in range(n_expparams):
+                all_likelihoods.append(self.likelihood(all_outcomes[idx_exp], 
+                    sampled_modelparams, expparams[idx_exp:idx_exp+1])[:,:,0])
+
+        import pdb
+        pdb.set_trace()
 
         risk = np.empty((n_expparams, ))
 
         for idx_exp in xrange(n_expparams):
             L = all_likelihoods[idx_exp]     # shape (n_outcomes, n_particles)
             outcomes = all_outcomes[idx_exp] # shape (n_outcomes)
-            sample_points = all_sample_points[idx_exp]
-            sample_weights = all_sample_weights[idx_exp]
             # (unnormalized) hypothetical posterior weights for this experiment
-            hyp_weights = self.particle_weights * L   # shape (n_outcomes, n_particles)
+            hyp_weights = L*sampled_weights # shape (n_outcomes, n_particles)
             # Sum up the weights to find the renormalization scale.
          
             norm_scale = np.sum(hyp_weights, axis=1)                 # shape (n_outcomes)
@@ -711,7 +744,9 @@ class SMCUpdater(Distribution):
           
             
             # compute the expected mean for each of the outcomes
-            est_posterior_means = np.tensordot(norm_weights, self.particle_locations, axes=(1, 0)) # shape(n_outcomes, n_mps)
+            import pdb
+            pdb.set_trace()
+            est_posterior_means = np.tensordot(norm_weights, sampled_modelparams, axes=(1, 0)) # shape(n_outcomes, n_mps)
             # compute the second moment of these means over the outcome distribution
             if self.model.allow_identical_outcomes:
                 est_posterior_mom2 = (1./norm_scale.shape[0])*np.sum(est_posterior_means**2, axis=0) # shape (n_mps)
@@ -719,12 +754,19 @@ class SMCUpdater(Distribution):
                 est_posterior_mom2 = np.tensordot(norm_scale, est_posterior_means**2, axes=(0, 0)) # shape (n_mps)
 
             # compute the second moment of the particles
-            est_mom2 = np.tensordot(sample_weights, sample_points**2, axes=(0,0))
+            est_mom2 = np.tensordot(sampled_weights, sampled_modelparams**2, axes=(0,0))
             #est_mom2 = np.tensordot(self.particle_weights, self.particle_locations**2, axes=(0,0))      # shape (n_mps)
             # finally, weight their difference by Q and return
             risk[idx_exp] = np.sum(self.model.Q * (est_mom2 - est_posterior_mom2), axis=0)
          
-        return risk.clip(min=0)  
+        risk = risk.clip(min=0)  
+
+        if return_sampled_parameters:
+            return risk, sampled_weights, sampled_modelparams, sampled_outcomes
+        else:
+            return risk
+      
+
 
         
     def expected_information_gain(self, expparams):
