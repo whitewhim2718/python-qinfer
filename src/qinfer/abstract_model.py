@@ -584,7 +584,7 @@ class Model(Simulatable):
             # The same outcome is likely to have resulted multiple times in the case that outcomes 
             # are discrete values and the modelparam distribution is not too wide.
             if not self.allow_identical_outcomes:
-                os,unique_idx,counts = np.unique(os)
+                os = np.unique(os)
 
             # Find the likelihood for each outcome given each modelparam (irrespective 
             # of which modelparam the outcome resulted from)

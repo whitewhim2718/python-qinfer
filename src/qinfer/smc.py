@@ -692,20 +692,15 @@ class SMCUpdater(Distribution):
         n_expparams = expparams.shape[0]
         n_outcomes = self.model.n_outcomes(expparams)
 
-        import pdb
-        pdb.set_trace()
+    
         if sampled_weights is None:
             if sampled_modelparams is None:
                 sampled_weights, sampled_modelparams = \
                     self.resampler(self.model, self.particle_weights, self.particle_locations,
                         n_particles=n_outcomes)
-                import pdb
-                pdb.set_trace()
             else:
                 n_mp = sampled_modelparams.shape[0]
                 sampled_weights = np.full(n_mp,1./n_mp,dtype=np.float32)
-            import pdb
-            pdb.set_trace()
         else:
             if sampled_modelparams is None:
                 _, sampled_modelparams = \
@@ -727,12 +722,10 @@ class SMCUpdater(Distribution):
                 all_likelihoods.append(self.likelihood(all_outcomes[idx_exp], 
                     sampled_modelparams, expparams[idx_exp:idx_exp+1])[:,:,0])
 
-        import pdb
-        pdb.set_trace()
 
         risk = np.empty((n_expparams, ))
 
-        for idx_exp in xrange(n_expparams):
+        for idx_exp in range(n_expparams):
             L = all_likelihoods[idx_exp]     # shape (n_outcomes, n_particles)
             outcomes = all_outcomes[idx_exp] # shape (n_outcomes)
             # (unnormalized) hypothetical posterior weights for this experiment
@@ -744,8 +737,6 @@ class SMCUpdater(Distribution):
           
             
             # compute the expected mean for each of the outcomes
-            import pdb
-            pdb.set_trace()
             est_posterior_means = np.tensordot(norm_weights, sampled_modelparams, axes=(1, 0)) # shape(n_outcomes, n_mps)
             # compute the second moment of these means over the outcome distribution
             if self.model.allow_identical_outcomes:
@@ -769,7 +760,8 @@ class SMCUpdater(Distribution):
 
 
         
-    def expected_information_gain(self, expparams):
+    def expected_information_gain(self, expparams, sampled_weights=None, sampled_modelparams=None, sampled_outcomes=None,
+                    return_sampled_parameters=False):
         r"""
         Calculates the expected information gain for each hypothetical experiment.
         
@@ -784,18 +776,50 @@ class SMCUpdater(Distribution):
         """
 
         n_expparams = expparams.shape[0]
-        all_likelihoods, all_outcomes, all_sample_points, all_sample_weights  = self.model.representative_outcomes(
-            self.particle_weights, self.particle_locations, expparams)
+        n_outcomes = self.model.n_outcomes(expparams)
+
+        if isinstance(self.model,FiniteOutcomeModel):
+            if self.model.n_outcomes_cutoff is None or n_outcomes <= self.model.n_outcomes_cutoff:
+                n_outcomes = self.model.n_outcomes_cutoff
+                
+        if sampled_weights is None:
+            if sampled_modelparams is None:
+                sampled_weights, sampled_modelparams = \
+                    self.resampler(self.model, self.particle_weights, self.particle_locations,
+                        n_particles=n_outcomes)
+            else:
+                n_mp = sampled_modelparams.shape[0]
+                sampled_weights = np.full(n_mp,1./n_mp,dtype=np.float32)
+        else:
+            if sampled_modelparams is None:
+                _, sampled_modelparams = \
+                    self.resampler(self.model, self.particle_weights, self.particle_locations,
+                        n_particles=n_outcomes)
+
+        if sampled_outcomes is None: 
+            all_likelihoods, all_outcomes = self.model.representative_outcomes(
+                sampled_weights, sampled_modelparams, expparams)
+        else:
+            if isinstance(sampled_outcomes,list):
+                assert len(expparams) == len(sampled_outcomes)
+                all_outcomes = sampled_outcomes
+            else:
+                all_outcomes = [ sampled_outcomes for i in expparams]
+            
+            all_likelihoods = []
+            for idx_exp in range(n_expparams):
+                all_likelihoods.append(self.likelihood(all_outcomes[idx_exp], 
+                    sampled_modelparams, expparams[idx_exp:idx_exp+1])[:,:,0])
 
         # preallocate information gain array
         ig = np.empty((n_expparams, ))
 
-        for idx_exp in xrange(n_expparams):
+        for idx_exp in range(n_expparams):
             L = all_likelihoods[idx_exp]     # shape (n_outcomes, n_particles)
             outcomes = all_outcomes[idx_exp] # shape (n_outcomes)
 
             # (unnormalized) hypothetical posterior weights for this experiment
-            hyp_weights = self.particle_weights * L   # shape (n_outcomes, n_particles)
+            hyp_weights = L*sampled_weights# shape (n_outcomes, n_particles)
             # Sum up the weights to find the renormalization scale.
         
             # Sum over particles and outcomes. It may take some fiddling to convince yourself
@@ -804,12 +828,18 @@ class SMCUpdater(Distribution):
             if self.model.allow_identical_outcomes:
                 hyp_weights = hyp_weights/np.sum(hyp_weights,axis=1)[...,np.newaxis]
                 #ig[idx_exp] = np.sum(hyp_weights * np.log(L / norm_scale), axis=(0,1))
-                ig[idx_exp] = np.sum(xlogy(hyp_weights,hyp_weights/self.particle_weights),axis=(0,1))/hyp_weights.shape[0]
+                ig[idx_exp] = np.sum(xlogy(hyp_weights,hyp_weights/sampled_weights),axis=(0,1))/hyp_weights.shape[0]
             else:
                 norm_scale = np.sum(hyp_weights, axis=1)
                 ig[idx_exp] = np.sum(xlogy(hyp_weights ,L / norm_scale[..., np.newaxis]), axis=(0,1))
 
-        return risk.clip(min=0)  
+        ig = ig.clip(min=0)  
+        if return_sampled_parameters:
+            return ig, sampled_weights, sampled_modelparams, sampled_outcomes
+        else:
+            return ig
+      
+
         
     def est_entropy(self):
         r"""
