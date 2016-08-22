@@ -30,10 +30,10 @@ from __future__ import absolute_import
 ## IMPORTS ####################################################################
 
 import numpy as np
-from numpy.testing import assert_equal, assert_almost_equal, assert_array_less
+from numpy.testing import assert_equal, assert_almost_equal, assert_array_less,assert_approx_equal
 
 from qinfer.tests.base_test import DerandomizedTestCase
-from qinfer import (BasicPoissonModel,BinomialModel,CoinModel,GammaDistribution,BetaDistribution)
+from qinfer import (BasicPoissonModel,BasicGaussianModel,BinomialModel,CoinModel,GammaDistribution,BetaDistribution,NormalDistribution)
 
 from qinfer.smc import SMCUpdater,SMCUpdaterBCRB
 
@@ -42,12 +42,16 @@ class TestBayesRisk(DerandomizedTestCase):
     # formulas which exist for models with conjugate priors, in particular,
     # we look at binomial with beta prior and poisson with gamma prior.
 
-    ALPHA = 1
-    BETA = 3
+    ALPHA = 1.
+    BETA = 3.
+    MU = 1.0
+    VAR = 1.0
+    VAR_LIKELIHOOD = 0.5
     PRIOR_BETA = BetaDistribution(alpha=ALPHA, beta=BETA)
     PRIOR_GAMMA = GammaDistribution(alpha=ALPHA, beta=BETA)
-    N_PARTICLES = 50000
-    N_OUTCOME_SAMPLES = 50000
+    PRIOR_NORMAL = NormalDistribution(mean=MU,var=VAR)
+    N_PARTICLES = 5000
+    N_OUTCOME_SAMPLES = 15000
     TAU_EXPPARAMS = np.arange(1, 11, dtype=int)
     NMEAS_EXPPARAMS = np.arange(1, 11, dtype=int)
     
@@ -57,6 +61,8 @@ class TestBayesRisk(DerandomizedTestCase):
         
         # Set up relevant models.
         self.poisson_model = BasicPoissonModel(num_outcome_samples=TestBayesRisk.N_OUTCOME_SAMPLES)
+        self.gaussian_model = BasicGaussianModel(var=TestBayesRisk.VAR_LIKELIHOOD,
+            num_outcome_samples=TestBayesRisk.N_OUTCOME_SAMPLES)
         self.coin_model = CoinModel()
 
         self.binomial_model = BinomialModel(self.coin_model)
@@ -67,7 +73,8 @@ class TestBayesRisk(DerandomizedTestCase):
                 TestBayesRisk.N_PARTICLES,TestBayesRisk.PRIOR_GAMMA)
         self.updater_binomial = SMCUpdater(self.binomial_model,
                 TestBayesRisk.N_PARTICLES,TestBayesRisk.PRIOR_BETA)
-
+        self.updater_gaussian = SMCUpdater(self.gaussian_model,
+                TestBayesRisk.N_PARTICLES,TestBayesRisk.PRIOR_NORMAL)
 
     def test_finite_outcomes_risk(self):
         # The binomial model has a finite number of outcomes. Test the 
@@ -83,7 +90,7 @@ class TestBayesRisk(DerandomizedTestCase):
         exact_risk = a * b / ((a + b) * (a + b + 1) * (a + b + expparams['n_meas']))
 
         # see if they roughly match
-        assert_almost_equal(est_risk, exact_risk, decimal=4)
+        assert_almost_equal(est_risk, exact_risk, decimal=2)
 
     def test_infinite_outcomes_risk(self):
         # The poisson model has a (countably) infinite number of outcomes. Test the 
@@ -99,7 +106,26 @@ class TestBayesRisk(DerandomizedTestCase):
         exact_risk = a / (b * (b + expparams['tau']))
 
         # see if they roughly match
-        assert_almost_equal(est_risk, exact_risk, decimal=3)
+        assert_almost_equal(est_risk, exact_risk, decimal=2)
+
+    def test_continuous_outcomes_risk(self):
+        # The gaussian model has a (uncountably) infinite number of outcomes. Test the
+        # risk calculation in this case. 
+
+        expparams = self.TAU_EXPPARAMS.astype(self.gaussian_model.expparams_dtype)
+
+        # estimate the risk
+        est_risk = self.updater_gaussian.bayes_risk(expparams)
+
+        #compute the exact risk 
+        mu, var, var_lik = TestBayesRisk.MU, TestBayesRisk.VAR, \
+                            TestBayesRisk.VAR_LIKELIHOOD
+
+        exact_risk = var*var_lik/(var*expparams['tau']**2+var_lik)
+
+        assert_almost_equal(est_risk, exact_risk, decimal=2)
+
+
 
 class TestInformationGain(DerandomizedTestCase):
     # Test the implementation of information gain by comparing to 
@@ -110,11 +136,14 @@ class TestInformationGain(DerandomizedTestCase):
 
     ALPHA = 1
     BETA = 3
+    MU = 1.0
+    VAR = 1.0
+    VAR_LIKELIHOOD = 0.5
     PRIOR_BETA = BetaDistribution(alpha=ALPHA, beta=BETA)
     PRIOR_GAMMA = GammaDistribution(alpha=ALPHA, beta=BETA)
-    N_PARTICLES = 50000
-    N_OUTCOME_SAMPLES = 50000
-    
+    PRIOR_NORMAL = NormalDistribution(mean=MU,var=VAR)
+    N_PARTICLES = 5000
+    N_OUTCOME_SAMPLES = 5000
     # Calculated in Mathematica, IG for the binomial model and the given expparams
     NMEAS_EXPPARAMS = np.arange(1, 11, dtype=int)
     BINOM_IG = np.array([0.104002,0.189223,0.261496,0.324283,0.379815,0.429613,0.474764,0.516069,0.554138,0.589446])
@@ -131,6 +160,8 @@ class TestInformationGain(DerandomizedTestCase):
         self.poisson_model = BasicPoissonModel(num_outcome_samples=TestInformationGain.N_OUTCOME_SAMPLES)
         self.coin_model = CoinModel()
         self.binomial_model = BinomialModel(self.coin_model)
+        self.gaussian_model = BasicGaussianModel(var=TestInformationGain.VAR_LIKELIHOOD,
+            num_outcome_samples=TestInformationGain.N_OUTCOME_SAMPLES)
 
         # Set up updaters for these models using particle approximations 
         # of conjugate priors
@@ -138,6 +169,8 @@ class TestInformationGain(DerandomizedTestCase):
                 TestInformationGain.N_PARTICLES,TestInformationGain.PRIOR_GAMMA)
         self.updater_binomial = SMCUpdater(self.binomial_model,
                 TestInformationGain.N_PARTICLES,TestInformationGain.PRIOR_BETA)
+        self.updater_gaussian = SMCUpdater(self.gaussian_model,
+                TestInformationGain.N_PARTICLES,TestInformationGain.PRIOR_NORMAL)
 
 
     def test_finite_outcomes_ig(self):
@@ -163,3 +196,21 @@ class TestInformationGain(DerandomizedTestCase):
 
         # see if they roughly match
         assert_almost_equal(est_ig, TestInformationGain.POISSON_IG, decimal=2)
+
+
+    def test_continuous_outcomes_ig(self):
+        # The gaussian model has a (uncountably) infinite number of outcomes. Test the
+        # ig calculation in this case. 
+
+        expparams = self.TAU_EXPPARAMS.astype(self.gaussian_model.expparams_dtype)
+
+        # estimate the ig
+        est_ig = self.updater_gaussian.expected_information_gain(expparams)
+
+        #compute the exact ig
+        mu, var, var_lik = TestInformationGain.MU, TestInformationGain.VAR, \
+                            TestInformationGain.VAR_LIKELIHOOD
+
+        exact_ig = 1./2*np.log(1+(var*expparams['tau']/var_lik)**2)
+
+        assert_almost_equal(est_ig, exact_ig, decimal=2)

@@ -51,6 +51,7 @@ from scipy.spatial import Delaunay
 import scipy.linalg as la
 import scipy.stats
 import scipy.interpolate
+from scipy.special import xlogy
 from scipy.ndimage.filters import gaussian_filter1d
 
 from qinfer.abstract_model import DifferentiableModel
@@ -688,7 +689,7 @@ class SMCUpdater(Distribution):
         """
 
         n_expparams = expparams.shape[0]
-        all_likelihoods, all_outcomes = self.model.representative_outcomes(
+        all_likelihoods, all_outcomes, all_sample_weights, all_sample_points, = self.model.representative_outcomes(
             self.particle_weights, self.particle_locations, expparams)
 
         risk = np.empty((n_expparams, ))
@@ -696,27 +697,31 @@ class SMCUpdater(Distribution):
         for idx_exp in xrange(n_expparams):
             L = all_likelihoods[idx_exp]     # shape (n_outcomes, n_particles)
             outcomes = all_outcomes[idx_exp] # shape (n_outcomes)
-
+            sample_points = all_sample_points[idx_exp]
+            sample_weights = all_sample_weights[idx_exp]
             # (unnormalized) hypothetical posterior weights for this experiment
             hyp_weights = self.particle_weights * L   # shape (n_outcomes, n_particles)
             # Sum up the weights to find the renormalization scale.
+         
             norm_scale = np.sum(hyp_weights, axis=1)                 # shape (n_outcomes)
             norm_weights = hyp_weights / norm_scale[..., np.newaxis] # shape(n_outcomes, n_particles)
-
+          
             
             # compute the expected mean for each of the outcomes
             est_posterior_means = np.tensordot(norm_weights, self.particle_locations, axes=(1, 0)) # shape(n_outcomes, n_mps)
-
             # compute the second moment of these means over the outcome distribution
-            est_posterior_mom2 = np.tensordot(norm_scale, est_posterior_means**2, axes=(0, 0)) # shape (n_mps)
+            if self.model.allow_identical_outcomes:
+                est_posterior_mom2 = (1./norm_scale.shape[0])*np.sum(est_posterior_means**2, axis=0) # shape (n_mps)
+            else:
+                est_posterior_mom2 = np.tensordot(norm_scale, est_posterior_means**2, axes=(0, 0)) # shape (n_mps)
 
             # compute the second moment of the particles
-            est_mom2 = np.tensordot(self.particle_weights, self.particle_locations**2, axes=(0,0))      # shape (n_mps)
-
+            est_mom2 = np.tensordot(sample_weights, sample_points**2, axes=(0,0))
+            #est_mom2 = np.tensordot(self.particle_weights, self.particle_locations**2, axes=(0,0))      # shape (n_mps)
             # finally, weight their difference by Q and return
             risk[idx_exp] = np.sum(self.model.Q * (est_mom2 - est_posterior_mom2), axis=0)
-
-        return risk  
+         
+        return risk.clip(min=0)  
 
         
     def expected_information_gain(self, expparams):
@@ -734,7 +739,7 @@ class SMCUpdater(Distribution):
         """
 
         n_expparams = expparams.shape[0]
-        all_likelihoods, all_outcomes = self.model.representative_outcomes(
+        all_likelihoods, all_outcomes, all_sample_points, all_sample_weights  = self.model.representative_outcomes(
             self.particle_weights, self.particle_locations, expparams)
 
         # preallocate information gain array
@@ -747,14 +752,19 @@ class SMCUpdater(Distribution):
             # (unnormalized) hypothetical posterior weights for this experiment
             hyp_weights = self.particle_weights * L   # shape (n_outcomes, n_particles)
             # Sum up the weights to find the renormalization scale.
-            norm_scale = np.sum(hyp_weights, axis=1)                 # shape (n_outcomes)
-
+        
             # Sum over particles and outcomes. It may take some fiddling to convince yourself
             # that this is the correct formula. See the second last formula of the second 
             # page of derivations here: https://github.com/QInfer/python-qinfer/pull/70
-            ig[idx_exp] = np.sum(hyp_weights * np.log(L / norm_scale[..., np.newaxis]), axis=(0,1))
+            if self.model.allow_identical_outcomes:
+                hyp_weights = hyp_weights/np.sum(hyp_weights,axis=1)[...,np.newaxis]
+                #ig[idx_exp] = np.sum(hyp_weights * np.log(L / norm_scale), axis=(0,1))
+                ig[idx_exp] = np.sum(xlogy(hyp_weights,hyp_weights/self.particle_weights),axis=(0,1))/hyp_weights.shape[0]
+            else:
+                norm_scale = np.sum(hyp_weights, axis=1)
+                ig[idx_exp] = np.sum(xlogy(hyp_weights ,L / norm_scale[..., np.newaxis]), axis=(0,1))
 
-        return ig
+        return risk.clip(min=0)  
         
     def est_entropy(self):
         r"""

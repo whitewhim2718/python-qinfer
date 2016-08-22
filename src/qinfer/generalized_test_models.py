@@ -256,8 +256,8 @@ class PoissonModel(DifferentiableModel):
 
         super(PoissonModel, self).simulate_experiment(modelparams, expparams, repeat)
 
-        if len(modelparams.shape) == 1:
-            modelparams = modelparams[np.newaxis, :]    
+        if modelparams.ndim == 1:
+            modelparams = modelparams[np.newaxis, ...]   
         
         lamb_das = self.model_function(modelparams,expparams)
         outcomes = np.asarray(np.random.poisson(np.tile(lamb_das[np.newaxis,...],(repeat,1,1)))
@@ -294,8 +294,7 @@ class BasicPoissonModel(PoissonModel):
     
     def are_models_valid(self, modelparams):
         return np.all(modelparams >= 0, axis=1)
-
-    ## ABSTRACT PROPERTIES ##
+  
     @property
     def model_function_param_names(self):
         return [r'\lambda']
@@ -338,12 +337,8 @@ class ExponentialPoissonModel(PoissonModel):
 
         return -self.max_rate*(expparams['tau']/modelparams**2)*np.exp(-expparams['tau']/modelparams)
 
-
-    
     def are_models_valid(self, modelparams):
         return np.logical_not(np.any(modelparams<0,axis=1))
-
-    ## ABSTRACT PROPERTIES ##
     
     @property
     def model_function_param_names(self):
@@ -357,14 +352,14 @@ class GaussianModel(DifferentiableModel):
     r"""
     Abstract Gaussian model class that describes a Gaussian model with likelihood form 
 
-    :math:`\Pr(y|\mu,\sigma,f(\vec{x};\vec{c}))= \frac{1}{\sqrt{2\sigma^2\pi}}e^{-\frac{(x-\mu)^2}{2\sigma^2}}`
+    :math:`\Pr(y|\mu,\var,f(\vec{x};\vec{c}))= \frac{1}{\sqrt{2\var\pi}}e^{-\frac{(x-\mu)^2}{2\var}}`
 
     Where :math:`y` is the observed outcome, and :math:`f(\vec{x};\vec{c})`
     is some underlying model function with unknown parameters :math:`\vec{x}` and experimental 
     parameters :math:`\vec{c}`. The distribution is defined by the mean :math:`\mu` and the variance,
-    :math:`\sigma^2`. These may be either unknown model parameters to be learned, or fixed parameters. 
+    :math:`\var`. These may be either unknown model parameters to be learned, or fixed parameters. 
 
-    Can optionally add model parameters for unknown :math:`\mu`, and :math:`\sigma` you should not use these
+    Can optionally add model parameters for unknown :math:`\mu`, and :math:`\var` you should not use these
     as modelparameter names. 
     """
 
@@ -372,13 +367,12 @@ class GaussianModel(DifferentiableModel):
     
     ## INITIALIZER ##
 
-    def __init__(self, sigma=None, num_outcome_samples=10000,
-                allow_identical_outcomes=False,constant_noise_outcomes=False):
+    def __init__(self, var=None, num_outcome_samples=10000,constant_noise_outcomes=False):
 
         self.num_outcome_samples = num_outcome_samples
-        self._sigma = sigma
+        self._var = var
         self._constant_noise_outcomes = constant_noise_outcomes
-        super(GaussianModel, self).__init__(allow_identical_outcomes=allow_identical_outcomes)
+        super(GaussianModel, self).__init__(allow_identical_outcomes=True)
 
         # The domain is always the set of all real numbers
         self._domain = RealDomain(min=None, max=None)
@@ -489,14 +483,14 @@ class GaussianModel(DifferentiableModel):
     
     @property
     def modelparam_names(self):
-        if self._sigma is None:
-            return self.model_function_param_names+[r'\sigma']
+        if self._var is None:
+            return self.model_function_param_names+[r'\var']
         else:
             return self.model_function_param_names
 
     @property
     def n_modelparams(self):
-        if self._sigma is None:
+        if self._var is None:
             return self.n_model_function_params+1
         else:
             return self.n_model_function_params
@@ -545,20 +539,18 @@ class GaussianModel(DifferentiableModel):
         else:
             outcomes = outcomes[:,np.newaxis,:]
 
-        # Check to see if sigma/mu are model parameters, and if 
+        # Check to see if var/mu are model parameters, and if 
         # so remove from model parameter array 
-        if self._sigma is None:
-            sigma_index = self.modelparam_names.index(r'\sigma')
-            sigma = modelparams[:,sigma_index][np.newaxis,:,np.newaxis]
-            modelparams = np.delete(modelparams,sigma_index,1)
+        if self._var is None:
+            var_index = self.modelparam_names.index(r'\var')
+            var = modelparams[:,var_index][np.newaxis,:,np.newaxis]
+            modelparams = np.delete(modelparams,var_index,1)
         else: 
-            sigma = np.empty((1,modelparams.shape[0],1))
-            sigma[...] = self._sigma
-
+            var = np.full((1,modelparams.shape[0],1),self._var)
 
         x = self.model_function(modelparams,expparams)
 
-        return 1/(np.sqrt(2*np.pi)*sigma)*np.exp(-(outcomes-x)**2/(2*sigma**2))
+        return 1/(np.sqrt(2*np.pi*var))*np.exp(-(outcomes-x)**2/(2*var))
 
 
     def score(self, outcomes, modelparams, expparams, return_L=False):
@@ -574,13 +566,13 @@ class GaussianModel(DifferentiableModel):
             outcomes_rs = outcomes[np.newaxis,:,np.newaxis,:]
 
 
-        if self._sigma is None:
-            sigma_index = self.modelparam_names.index(r'\sigma')
-            sigma = modelparams[:,sigma_index][np.newaxis,:,np.newaxis]
-            modelparams_rs = np.delete(modelparams,sigma_index,1)
+        if self._var is None:
+            var_index = self.modelparam_names.index(r'\var')
+            var = modelparams[:,var_index][np.newaxis,:,np.newaxis]
+            modelparams_rs = np.delete(modelparams,var_index,1)
         else: 
-            sigma = np.empty((1,modelparams.shape[0],1))
-            sigma[...] = self._sigma
+            var = np.empty((1,modelparams.shape[0],1))
+            var[...] = self._var
             modelparams_rs = modelparams
 
 
@@ -588,14 +580,14 @@ class GaussianModel(DifferentiableModel):
         fns_deriv = self.model_function_derivative(modelparams_rs,expparams)[:,np.newaxis,:,:]
         
    
-        scr = ((outcomes_rs-x)/sigma**2)*fns_deriv
+        scr = ((outcomes_rs-x)/var)*fns_deriv
 
   
-        # make room in array for sigma and mu derivatives
+        # make room in array for var and mu derivatives
         scr = np.pad(scr,((0,self.n_modelparams-scr.shape[0]),(0,0),(0,0),(0,0)),mode='constant',constant_values=0)
         
-        if self._sigma is None:
-            scr[sigma_index] = (outcomes_rs-x)**2/np.power(sigma,3) - 1/sigma
+        if self._var is None:
+            scr[var_index] = (outcomes_rs-x)**2/(2*np.power(var,2)) - 1/(2*var)
 
         if return_L:
             return scr, self.likelihood(outcomes, modelparams, expparams)
@@ -613,19 +605,18 @@ class GaussianModel(DifferentiableModel):
         if expparams.ndim == 1:
             expparams = expparams[..., np.newaxis]
         
-        if self._sigma is None:
-            sigma_index = self.modelparam_names.index(r'\sigma')
-            sigma = modelparams[:,sigma_index]
-            modelparams = np.delete(modelparams,sigma_index,1)
+        if self._var is None:
+            var_index = self.modelparam_names.index(r'\var')
+            var = modelparams[:,var_index][np.newaxis,:,np.newaxis]
+            modelparams = np.delete(modelparams,var_index,1)
         else: 
-            sigma = self._sigma * np.ones(modelparams.shape[0])
-       
+            var = (self._var * np.ones(modelparams.shape[0]))[np.newaxis,:,np.newaxis]
+        
         x = self.model_function(modelparams,expparams)
-        print x.shape
         x = np.tile(x, (repeat, 1, 1))
-        sigma = np.tile(sigma, (repeat, expparams.shape[0], 1)).transpose((0,2,1))
-        print x.shape, sigma.shape
-        outcomes = np.random.normal(x, sigma).astype(self.domain(None).dtype)
+        var = np.tile(var, (repeat, 1,expparams.shape[0]))
+
+        outcomes = np.random.normal(x, var).astype(self.domain(None).dtype)
 
         return outcomes[0, 0, 0] if repeat == 1 and expparams.shape[0] == 1 and modelparams.shape[0] == 1 else outcomes
                 
@@ -634,8 +625,9 @@ class GaussianModel(DifferentiableModel):
 
 class BasicGaussianModel(GaussianModel):
     """
-    The basic Gaussian model consisting of a single model parameter :math:`\mu`,
-    and no experimental parameters.
+    The basic Gaussian model consisting of a single model parameter :math:`\lambda`,
+    and a single experiment parameter :math:`\tau`: which corresponds to a linear model
+    function :math:`f(\tau)=\lambda\tau`.
     """
 
     @property 
@@ -649,28 +641,24 @@ class BasicGaussianModel(GaussianModel):
         to satisfy the requirements of the abstract method. The shape of `expparams` therefore signifies 
         the number of experiments that will be performed.
         """
-        return np.tile(modelparams,expparams.shape[0])
+        return modelparams.flatten()[:,np.newaxis] * expparams['tau'][np.newaxis,:]
     
     def model_function_derivative(self,modelparams,expparams):
         """
-        Return model functions derivatives in form [idx_modelparam,idx_modelparams,idx_expparams]
+        Return model functions derivatives in form [idx_modelparam,idx_model,idx_expparams]
         """
-        return np.ones((1,modelparams.shape[0],expparams.shape[0]))
-
-
+        return np.tile(expparams['tau'], (modelparams.shape[0],1))[np.newaxis,...]
     
     def are_models_valid(self, modelparams):
         return np.ones(modelparams.shape[0],dtype=bool)
-
-    ## ABSTRACT PROPERTIES ##
     
     @property
     def model_function_param_names(self):
-        return [r'\mu']
+        return [r'\lambda']
     
     @property
     def expparams_dtype(self):
-        []
+        return [('tau', 'float')]
 
 class ExponentialGaussianModel(GaussianModel):
     """
@@ -690,7 +678,7 @@ class ExponentialGaussianModel(GaussianModel):
         to satisfy the requirements of the abstract method. The shape of `expparams` therefore signifies 
         the number of experiments that will be performed.
         """
-        # Note that this function does _not_ get passed sigma if it is a modelparam
+        # Note that this function does _not_ get passed var if it is a modelparam
         result = 1-np.exp(-expparams['tau'].T/np.tile(modelparams, expparams.shape[0]))
         return result
     
@@ -698,15 +686,13 @@ class ExponentialGaussianModel(GaussianModel):
         """
         Return model functions derivatives in form [idx_modelparam,idx_expparams,idx_modelparams]
         """
-        # Note that this function does _not_ get passed sigma if it is a modelparam
+        # Note that this function does _not_ get passed var if it is a modelparam
         eps = expparams['tau'].T
         mps = np.tile(modelparams, expparams.shape[0])
         return (-(eps / mps**2) * np.exp(-eps / mps))[np.newaxis, :]
 
     def are_models_valid(self, modelparams):
         return np.logical_not(np.any(modelparams<0,axis=1))
-
-    ## ABSTRACT PROPERTIES ##
     
     @property
     def model_function_param_names(self):
