@@ -68,3 +68,5 @@ nosetests.xml
 
 # cprofile profile file
 profile
+# line profile extension 
+*.lprof
