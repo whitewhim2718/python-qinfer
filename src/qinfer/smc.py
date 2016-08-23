@@ -719,7 +719,7 @@ class SMCUpdater(Distribution):
         n_const = self.model.is_n_outcomes_constant
 
         cache_available = False
-        if use_cached_samples
+        if use_cached_samples:
             if not n_const:
                 warnings.warn("Cached values are not supported if n_outcomes is constant. Reverting to sampling")
             if self._sampled_modelparams and self._sampled_weights:

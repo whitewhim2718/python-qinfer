@@ -75,14 +75,13 @@ class TestGaussianModel(DerandomizedTestCase):
         self.expparams_risk = TestGaussianModel.TEST_EXPPARAMS_RISK.astype(self.gaussian_model_no_var_param.expparams_dtype)
 
         self.outcomes_no_var_param = self.gaussian_model_no_var_param.simulate_experiment(TestGaussianModel.MODELPARAMS[:1],
-                self.expparams,repeat=1 ).reshape(-1,1)
+                self.expparams,repeat=1 ).reshape(-1)
         self.outcomes_var_param = self.gaussian_model_var_param.simulate_experiment(TestGaussianModel.MODELPARAMS,
-                self.expparams,repeat=1 ).reshape(-1,1)
+                self.expparams,repeat=1 ).reshape(-1)
 
         self.outcomes_exponential = self.exponential_gaussian_model.simulate_experiment(TestGaussianModel.MODELPARAMS[:1],
                 TestGaussianModel.TEST_EXPPARAMS_RISK.astype(self.exponential_gaussian_model.expparams_dtype),
-                repeat=1 ).reshape(-1,1)
-
+                repeat=1 ).reshape(-1)
 
         self.updater_no_var_param = SMCUpdater(self.gaussian_model_no_var_param,
                 TestGaussianModel.N_PARTICLES,TestGaussianModel.PRIOR_NO_VAR_PARAM)
@@ -107,7 +106,7 @@ class TestGaussianModel(DerandomizedTestCase):
 
 
     def test_gaussian_model_fitting(self):
-
+    
         self.updater_no_var_param.batch_update(self.outcomes_no_var_param,self.expparams,2)
         self.updater_var_param.batch_update(self.outcomes_var_param,self.expparams,2)
 

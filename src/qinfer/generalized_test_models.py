@@ -548,9 +548,12 @@ class GaussianModel(DifferentiableModel):
         else: 
             var = np.full((1,modelparams.shape[0],1),self._var)
 
-        x = self.model_function(modelparams,expparams)
+        x = self.model_function(modelparams,expparams)[np.newaxis,:,:]
+        if np.any(np.isnan(1./(np.sqrt(2*np.pi*var))*np.exp(-(outcomes-x)**2/(2*var)))):
+            import pdb
+            pdb.set_trace()
 
-        return 1/(np.sqrt(2*np.pi*var))*np.exp(-(outcomes-x)**2/(2*var))
+        return 1./(np.sqrt(2*np.pi*var))*np.exp(-(outcomes-x)**2/(2*var))
 
 
     def score(self, outcomes, modelparams, expparams, return_L=False):
