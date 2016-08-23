@@ -44,11 +44,11 @@ from qinfer.smc import SMCUpdater,SMCUpdaterBCRB
     
 class TestGaussianModel(DerandomizedTestCase):
     # True model parameter for test
-    MODELPARAMS = np.array([79,3],dtype=np.float)
-    ONLINE_SIGMA = 0.2
+    MODELPARAMS = np.array([79,1.],dtype=np.float)
+    ONLINE_VAR = 0.8
     TEST_EXPPARAMS = np.linspace(1.,1000.,200,dtype=np.float)
-    PRIOR_NO_SIGMA_PARAM = UniformDistribution([[0,100]])
-    PRIOR_SIGMA_PARAM = UniformDistribution([[0,100],[0,10]])
+    PRIOR_NO_VAR_PARAM = UniformDistribution([[0,100]])
+    PRIOR_VAR_PARAM = UniformDistribution([[0,100],[0,10]])
     N_PARTICLES = 10000
     N_BIM = TEST_EXPPARAMS.shape[0]
     N_ONLINE = 25  
@@ -56,27 +56,27 @@ class TestGaussianModel(DerandomizedTestCase):
     N_OUTCOME_SAMPLES = 250
     TEST_EXPPARAMS_RISK = np.linspace(1.,500.,N_ONLINE,dtype=np.float)
     MAX_EXPPARAM = 500.,
-    TEST_TARGET_COV_NO_SIGMA_PARAM = np.array([[0.1]])
-    TEST_TARGET_COV_SIGMA_PARAM = np.array([[0.1,0.1],[0.1,0.1]])
+    TEST_TARGET_COV_NO_VAR_PARAM = np.array([[0.1]])
+    TEST_TARGET_COV_VAR_PARAM = np.array([[0.1,0.1],[0.1,0.1]])
 
 
     def setUp(self):
 
         super(TestGaussianModel,self).setUp()
-        sigma = TestGaussianModel.MODELPARAMS[1]
+        var = TestGaussianModel.MODELPARAMS[1]
         
-        self.gaussian_model_no_sigma_param = BasicGaussianModel(sigma=sigma,
+        self.gaussian_model_no_var_param = BasicGaussianModel(var=var,
                                             num_outcome_samples=TestGaussianModel.N_OUTCOME_SAMPLES)
-        self.gaussian_model_sigma_param = BasicGaussianModel(num_outcome_samples=TestGaussianModel.N_OUTCOME_SAMPLES)
-        self.exponential_gaussian_model = ExponentialGaussianModel(sigma=TestGaussianModel.ONLINE_SIGMA,
+        self.gaussian_model_var_param = BasicGaussianModel(num_outcome_samples=TestGaussianModel.N_OUTCOME_SAMPLES)
+        self.exponential_gaussian_model = ExponentialGaussianModel(var=TestGaussianModel.ONLINE_VAR,
                                             num_outcome_samples=TestGaussianModel.N_OUTCOME_SAMPLES)
 
-        self.expparams = TestGaussianModel.TEST_EXPPARAMS.astype(self.gaussian_model_no_sigma_param.expparams_dtype)
-        self.expparams_risk = TestGaussianModel.TEST_EXPPARAMS_RISK.astype(self.gaussian_model_no_sigma_param.expparams_dtype)
+        self.expparams = TestGaussianModel.TEST_EXPPARAMS.astype(self.gaussian_model_no_var_param.expparams_dtype)
+        self.expparams_risk = TestGaussianModel.TEST_EXPPARAMS_RISK.astype(self.gaussian_model_no_var_param.expparams_dtype)
 
-        self.outcomes_no_sigma_param = self.gaussian_model_no_sigma_param.simulate_experiment(TestGaussianModel.MODELPARAMS[:1],
+        self.outcomes_no_var_param = self.gaussian_model_no_var_param.simulate_experiment(TestGaussianModel.MODELPARAMS[:1],
                 self.expparams,repeat=1 ).reshape(-1,1)
-        self.outcomes_sigma_param = self.gaussian_model_sigma_param.simulate_experiment(TestGaussianModel.MODELPARAMS,
+        self.outcomes_var_param = self.gaussian_model_var_param.simulate_experiment(TestGaussianModel.MODELPARAMS,
                 self.expparams,repeat=1 ).reshape(-1,1)
 
         self.outcomes_exponential = self.exponential_gaussian_model.simulate_experiment(TestGaussianModel.MODELPARAMS[:1],
@@ -84,77 +84,77 @@ class TestGaussianModel(DerandomizedTestCase):
                 repeat=1 ).reshape(-1,1)
 
 
-        self.updater_no_sigma_param = SMCUpdater(self.gaussian_model_no_sigma_param,
-                TestGaussianModel.N_PARTICLES,TestGaussianModel.PRIOR_NO_SIGMA_PARAM)
+        self.updater_no_var_param = SMCUpdater(self.gaussian_model_no_var_param,
+                TestGaussianModel.N_PARTICLES,TestGaussianModel.PRIOR_NO_VAR_PARAM)
 
-        self.updater_sigma_param = SMCUpdater(self.gaussian_model_sigma_param,
-                TestGaussianModel.N_PARTICLES,TestGaussianModel.PRIOR_SIGMA_PARAM)
+        self.updater_var_param = SMCUpdater(self.gaussian_model_var_param,
+                TestGaussianModel.N_PARTICLES,TestGaussianModel.PRIOR_VAR_PARAM)
 
-        self.updater_bayes_no_sigma_param = SMCUpdaterBCRB(self.gaussian_model_no_sigma_param,
-                TestGaussianModel.N_PARTICLES,TestGaussianModel.PRIOR_NO_SIGMA_PARAM,adaptive=True)
+        self.updater_bayes_no_var_param = SMCUpdaterBCRB(self.gaussian_model_no_var_param,
+                TestGaussianModel.N_PARTICLES,TestGaussianModel.PRIOR_NO_VAR_PARAM,adaptive=True)
 
-        self.updater_bayes_sigma_param = SMCUpdaterBCRB(self.gaussian_model_sigma_param,
-                TestGaussianModel.N_PARTICLES,TestGaussianModel.PRIOR_SIGMA_PARAM,adaptive=True)
+        self.updater_bayes_var_param = SMCUpdaterBCRB(self.gaussian_model_var_param,
+                TestGaussianModel.N_PARTICLES,TestGaussianModel.PRIOR_VAR_PARAM,adaptive=True)
 
         self.exponential_updater_one_guess = SMCUpdater(self.exponential_gaussian_model,
-                TestGaussianModel.N_PARTICLES,TestGaussianModel.PRIOR_NO_SIGMA_PARAM)
+                TestGaussianModel.N_PARTICLES,TestGaussianModel.PRIOR_NO_VAR_PARAM)
 
         self.exponential_updater_many_guess = SMCUpdater(self.exponential_gaussian_model,
-                TestGaussianModel.N_PARTICLES,TestGaussianModel.PRIOR_NO_SIGMA_PARAM)
+                TestGaussianModel.N_PARTICLES,TestGaussianModel.PRIOR_NO_VAR_PARAM)
 
         self.exponential_updater_sweep = SMCUpdater(self.exponential_gaussian_model,
-                TestGaussianModel.N_PARTICLES,TestGaussianModel.PRIOR_NO_SIGMA_PARAM)
+                TestGaussianModel.N_PARTICLES,TestGaussianModel.PRIOR_NO_VAR_PARAM)
 
 
     def test_gaussian_model_fitting(self):
 
-        self.updater_no_sigma_param.batch_update(self.outcomes_no_sigma_param,self.expparams,5)
-        self.updater_sigma_param.batch_update(self.outcomes_sigma_param,self.expparams,5)
+        self.updater_no_var_param.batch_update(self.outcomes_no_var_param,self.expparams,2)
+        self.updater_var_param.batch_update(self.outcomes_var_param,self.expparams,2)
 
-        assert_almost_equal(self.updater_no_sigma_param.est_mean(),TestGaussianModel.MODELPARAMS[:1],0)
-        assert_almost_equal(self.updater_sigma_param.est_mean(),TestGaussianModel.MODELPARAMS,0)
+        assert_almost_equal(self.updater_no_var_param.est_mean(),TestGaussianModel.MODELPARAMS[:1],0)
+        assert_almost_equal(self.updater_var_param.est_mean(),TestGaussianModel.MODELPARAMS,0)
 
-        assert_array_less(self.updater_no_sigma_param.est_covariance_mtx(),TestGaussianModel.TEST_TARGET_COV_NO_SIGMA_PARAM)
-        assert_array_less(self.updater_sigma_param.est_covariance_mtx(),TestGaussianModel.TEST_TARGET_COV_SIGMA_PARAM)
+        assert_array_less(self.updater_no_var_param.est_covariance_mtx(),TestGaussianModel.TEST_TARGET_COV_NO_VAR_PARAM)
+        assert_array_less(self.updater_var_param.est_covariance_mtx(),TestGaussianModel.TEST_TARGET_COV_VAR_PARAM)
 
     def test_gaussian_bim(self):
         """
         Checks that the fitters converge on true value on simple precession_model. Is a stochastic
         test but I ran 100 times and there were no fails, with these parameters.
         """
-        bim_currents_no_sigma_param = []
-        bim_adaptives_no_sigma_param = []
+        bim_currents_no_var_param = []
+        bim_adaptives_no_var_param = []
 
-        bim_currents_sigma_param = []
-        bim_adaptives_sigma_param = []
+        bim_currents_var_param = []
+        bim_adaptives_var_param = []
 
         #track bims throughout experiments
         
         for i in range(TestGaussianModel.N_BIM):      
-            self.updater_bayes_no_sigma_param.update(self.outcomes_no_sigma_param[i:i+1],self.expparams[i:i+1])
-            self.updater_bayes_sigma_param.update(self.outcomes_sigma_param[i:i+1],self.expparams[i:i+1])
+            self.updater_bayes_no_var_param.update(self.outcomes_no_var_param[i:i+1],self.expparams[i:i+1])
+            self.updater_bayes_var_param.update(self.outcomes_var_param[i:i+1],self.expparams[i:i+1])
 
-            bim_currents_no_sigma_param.append(self.updater_bayes_no_sigma_param.current_bim)
-            bim_adaptives_no_sigma_param.append(self.updater_bayes_no_sigma_param.adaptive_bim)
-            bim_currents_sigma_param.append(self.updater_bayes_sigma_param.current_bim)
-            bim_adaptives_sigma_param.append(self.updater_bayes_sigma_param.adaptive_bim)
+            bim_currents_no_var_param.append(self.updater_bayes_no_var_param.current_bim)
+            bim_adaptives_no_var_param.append(self.updater_bayes_no_var_param.adaptive_bim)
+            bim_currents_var_param.append(self.updater_bayes_var_param.current_bim)
+            bim_adaptives_var_param.append(self.updater_bayes_var_param.adaptive_bim)
 
-        bim_currents_no_sigma_param = np.array(bim_currents_no_sigma_param)
-        bim_adaptives_no_sigma_param = np.array(bim_adaptives_no_sigma_param)
-        bim_currents_sigma_param = np.array(bim_currents_sigma_param)
-        bim_adaptives_sigma_param = np.array(bim_adaptives_sigma_param)
+        bim_currents_no_var_param = np.array(bim_currents_no_var_param)
+        bim_adaptives_no_var_param = np.array(bim_adaptives_no_var_param)
+        bim_currents_var_param = np.array(bim_currents_var_param)
+        bim_adaptives_var_param = np.array(bim_adaptives_var_param)
 
 
         #verify that BCRB is approximately reached 
-        assert_almost_equal(self.updater_bayes_no_sigma_param.est_covariance_mtx(),
-            np.linalg.inv(self.updater_bayes_no_sigma_param.current_bim),1)
-        assert_almost_equal(self.updater_bayes_no_sigma_param.est_covariance_mtx(),
-            np.linalg.inv(self.updater_bayes_no_sigma_param.adaptive_bim),1)
+        assert_almost_equal(self.updater_bayes_no_var_param.est_covariance_mtx(),
+            np.linalg.inv(self.updater_bayes_no_var_param.current_bim),1)
+        assert_almost_equal(self.updater_bayes_no_var_param.est_covariance_mtx(),
+            np.linalg.inv(self.updater_bayes_no_var_param.adaptive_bim),1)
 
-        assert_almost_equal(self.updater_bayes_sigma_param.est_covariance_mtx(),
-            np.linalg.inv(self.updater_bayes_sigma_param.current_bim),1)
-        assert_almost_equal(self.updater_bayes_sigma_param.est_covariance_mtx(),
-            np.linalg.inv(self.updater_bayes_sigma_param.adaptive_bim),1)
+        assert_almost_equal(self.updater_bayes_var_param.est_covariance_mtx(),
+            np.linalg.inv(self.updater_bayes_var_param.current_bim),1)
+        assert_almost_equal(self.updater_bayes_var_param.est_covariance_mtx(),
+            np.linalg.inv(self.updater_bayes_var_param.adaptive_bim),1)
 
 
 

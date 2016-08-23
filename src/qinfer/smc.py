@@ -682,7 +682,7 @@ class SMCUpdater(Distribution):
             self.particle_weights,
             self.particle_locations)
 
-    def bayes_risk(self, expparams, use_cached_samples_if_available=False,cache_samples=True,
+    def bayes_risk(self, expparams, use_cached_samples=False,cache_samples=True,
                     return_sampled_parameters=False):
         r"""
         Calculates the Bayes risk for each hypothetical experiment, assuming the
@@ -693,6 +693,21 @@ class SMCUpdater(Distribution):
         :type expparams: :class:`~numpy.ndarray` of dtype given by the current
             model's :attr:`~qinfer.abstract_model.Model.expparams_dtype` property,
             and of shape ``(n_experiments,)``
+        :param use_cached_samples: If set to ``True`` will use previously cached
+            sampled model weights, and modelparams. If none are available both 
+            will be resampled 
+        :type use_cached_samples: bool
+        :param cache_samples: Whether or not to cache new samples, if samples are 
+                            drawn. If set to ``True`` newly cached samples will be 
+                            used in future method call if ``use_cached_samples`` 
+                            is ``True``
+        :type cache_samples: bool
+        :param return_sampled_parameters: If set to ``True`` will return in addition
+                to risks, sampled weights, modelparams, outcomes, and likelihoods in 
+                a tuple of theform (risk, all_sampled_weights, all_sampled_modelparams,
+                 all_sampled_outcomes, all_likelihoods).
+        :param return_sampled_parameters: bool
+
             
         :return float: The Bayes risk for the current posterior distribution
             of the hypothetical experiment ``expparams``.
@@ -704,7 +719,7 @@ class SMCUpdater(Distribution):
         n_const = self.model.is_n_outcomes_constant
 
         cache_available = False
-        if use_cached_samples_if_available:
+        if use_cached_samples
             if not n_const:
                 warnings.warn("Cached values are not supported if n_outcomes is constant. Reverting to sampling")
             if self._sampled_modelparams and self._sampled_weights:
@@ -793,7 +808,7 @@ class SMCUpdater(Distribution):
 
 
         
-    def expected_information_gain(self, expparams, use_cached_samples_if_available=False,cache_samples=True,
+    def expected_information_gain(self, expparams, use_cached_samples=False,cache_samples=True,
                     return_sampled_parameters=False):
         r"""
         Calculates the expected information gain for each hypothetical experiment.
@@ -803,6 +818,21 @@ class SMCUpdater(Distribution):
         :type expparams: :class:`~numpy.ndarray` of dtype given by the current
             model's :attr:`~qinfer.abstract_model.Model.expparams_dtype` property,
             and of shape ``(1,)``
+        :param use_cached_samples: If set to ``True`` will use previously cached
+            sampled model weights, and modelparams. If none are available both 
+            will be resampled 
+        :type use_cached_samples: bool
+        :param cache_samples: Whether or not to cache new samples, if samples are 
+                            drawn. If set to ``True`` newly cached samples will be 
+                            used in future method call if ``use_cached_samples`` 
+                            is ``True``
+        :type cache_samples: bool
+        :param return_sampled_parameters: If set to ``True`` will return in addition
+                to information gains, sampled weights, modelparams, outcomes, and likelihoods in 
+                a tuple of theform (igs, all_sampled_weights, all_sampled_modelparams,
+                 all_sampled_outcomes, all_likelihoods).
+        :param return_sampled_parameters: bool
+
             
         :return float: The Bayes risk for the current posterior distribution
             of the hypothetical experiment ``expparams``.
@@ -814,7 +844,7 @@ class SMCUpdater(Distribution):
         n_const = self.model.is_n_outcomes_constant
 
         cache_available = False
-        if use_cached_samples_if_available:
+        if use_cached_samples:
             if not n_const:
                 warnings.warn("Cached values are not supported if n_outcomes is constant. Reverting to sampling")
             if self._sampled_modelparams and self._sampled_weights:

@@ -777,16 +777,12 @@ class FiniteOutcomeModel(Model):
                 L.append(self.likelihood(os, modelparams, expparam)[:,:,0])
             else:
                 # Otherwise, use the generic method to pick some randomly.
-                
                 L_s,os = super(FiniteOutcomeModel, self).representative_outcomes(
                     weights, modelparams, expparam)[0]
                 L.append(L_s)
 
-
             outcomes.append(os)
-            
-          
-
+        
         return L, outcomes
     ## STATIC METHODS ##
     # These methods are provided as a convienence to make it easier to write
