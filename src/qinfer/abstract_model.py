@@ -777,6 +777,7 @@ class FiniteOutcomeModel(Model):
                 L.append(self.likelihood(os, modelparams, expparam)[:,:,0])
             else:
                 # Otherwise, use the generic method to pick some randomly.
+                
                 L_s,os = super(FiniteOutcomeModel, self).representative_outcomes(
                     weights, modelparams, expparam)[0]
                 L.append(L_s)

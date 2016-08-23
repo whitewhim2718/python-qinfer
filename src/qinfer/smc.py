@@ -164,6 +164,10 @@ class SMCUpdater(Distribution):
             if zero_weight_thresh is not None else
             10 * np.spacing(1)
         )
+
+        #initialize risk/ig samples cache
+        self._sampled_weights = None
+        self._sampled_modelparams = None
         
         ## PARTICLE INITIALIZATION ##
         self.reset(n_particles)
@@ -489,8 +493,13 @@ class SMCUpdater(Distribution):
         self.particle_locations = self.model.update_timestep(
             self.particle_locations, expparams
         )[:, :, 0]
-        
+        #notify model update callback
         self.model.needs_outcome_resample = True
+
+        #reset risk/ig cache
+        self._sampled_weights = None
+        self._sampled_modelparams = None
+
         # Resample if needed.
         if check_for_resample:
             self._maybe_resample()
@@ -673,7 +682,7 @@ class SMCUpdater(Distribution):
             self.particle_weights,
             self.particle_locations)
 
-    def bayes_risk(self, expparams, sampled_weights=None, sampled_modelparams=None, sampled_outcomes=None,
+    def bayes_risk(self, expparams, use_cached_samples_if_available=False,cache_samples=True,
                     return_sampled_parameters=False):
         r"""
         Calculates the Bayes risk for each hypothetical experiment, assuming the
@@ -691,53 +700,77 @@ class SMCUpdater(Distribution):
 
         n_expparams = expparams.shape[0]
         n_outcomes = self.model.n_outcomes(expparams)
+        scalar_n_o = not np.isscalar(n_outcomes)
+        n_const = self.model.is_n_outcomes_constant
 
-    
-        if sampled_weights is None:
-            if sampled_modelparams is None:
+        cache_available = False
+        if use_cached_samples_if_available:
+            if not n_const:
+                warnings.warn("Cached values are not supported if n_outcomes is constant. Reverting to sampling")
+            if self._sampled_modelparams and self._sampled_weights:
+                cache_available = True
+                sampled_modelparams = self._sampled_modelparams
+                sampled_weights = self._sampled_weights
+                
+ 
+
+        if not cache_available:
+            if n_const:
                 sampled_weights, sampled_modelparams = \
-                    self.resampler(self.model, self.particle_weights, self.particle_locations,
-                        n_particles=n_outcomes)
-            else:
-                n_mp = sampled_modelparams.shape[0]
-                sampled_weights = np.full(n_mp,1./n_mp,dtype=np.float32)
-        else:
-            if sampled_modelparams is None:
-                _, sampled_modelparams = \
-                    self.resampler(self.model, self.particle_weights, self.particle_locations,
-                        n_particles=n_outcomes)
+                        self.resampler(self.model, self.particle_weights, self.particle_locations,
+                            n_particles=n_outcomes)
+                if cache_samples:
+                    self._sampled_weights = sampled_weights
+                    self._sampled_modelparams = sampled_modelparams
 
-        if sampled_outcomes is None: 
-            all_likelihoods, all_outcomes = self.model.representative_outcomes(
-                sampled_weights, sampled_modelparams, expparams)
+        if not n_const:
+                all_sampled_weights = []
+                all_sampled_modelparams = []
+                all_sampled_outcomes = []
+                all_likelihoods = []
+                for idx_exp in range(expparams.shape[0]):
+                    n_o = n_outcomes[idx_exp]
+                    exp = expparams[idx_exp:idx_exp+1]
+              
+                    if n_o > self.model.n_outcomes_cutoff and self.model.n_outcomes_cutoff is not None:                       
+                        sampled_weights, sampled_modelparams = \
+                            self.resampler(self.model, self.particle_weights, self.particle_locations,
+                                n_particles=n_o)
+                    else:
+                        sampled_weights = self.particle_weights
+                        sampled_modelparams = self.particle_locations
+
+                    likelihoods, sampled_outcomes = self.model.representative_outcomes(
+                            sampled_weights, sampled_modelparams, exp)
+
+                    all_sampled_weights.append(sampled_weights)
+                    all_sampled_modelparams.append(sampled_modelparams)
+                    all_sampled_outcomes.append(sampled_outcomes[0])
+                    all_likelihoods.append(likelihoods[0])
         else:
-            if isinstance(sampled_outcomes,list):
-                assert len(expparams) == len(sampled_outcomes)
-                all_outcomes = sampled_outcomes
-            else:
-                all_outcomes = [ sampled_outcomes for i in expparams]
-            
-            all_likelihoods = []
-            for idx_exp in range(n_expparams):
-                all_likelihoods.append(self.likelihood(all_outcomes[idx_exp], 
-                    sampled_modelparams, expparams[idx_exp:idx_exp+1])[:,:,0])
+            all_sampled_weights = np.tile(sampled_weights,(n_expparams,1))
+            all_sampled_modelparams = np.tile(sampled_modelparams,(n_expparams,1,1))
+
+            all_likelihoods,all_sampled_outcomes = self.model.representative_outcomes(
+                            sampled_weights, sampled_modelparams, expparams)
 
 
         risk = np.empty((n_expparams, ))
 
         for idx_exp in range(n_expparams):
+            weights = all_sampled_weights[idx_exp]
+            modelparams = all_sampled_modelparams[idx_exp]
             L = all_likelihoods[idx_exp]     # shape (n_outcomes, n_particles)
-            outcomes = all_outcomes[idx_exp] # shape (n_outcomes)
+            outcomes = all_sampled_outcomes[idx_exp] # shape (n_outcomes)
             # (unnormalized) hypothetical posterior weights for this experiment
-            hyp_weights = L*sampled_weights # shape (n_outcomes, n_particles)
+            hyp_weights = L*weights # shape (n_outcomes, n_particles)
             # Sum up the weights to find the renormalization scale.
-         
             norm_scale = np.sum(hyp_weights, axis=1)                 # shape (n_outcomes)
             norm_weights = hyp_weights / norm_scale[..., np.newaxis] # shape(n_outcomes, n_particles)
           
-            
+         
             # compute the expected mean for each of the outcomes
-            est_posterior_means = np.tensordot(norm_weights, sampled_modelparams, axes=(1, 0)) # shape(n_outcomes, n_mps)
+            est_posterior_means = np.tensordot(norm_weights, modelparams, axes=(1, 0)) # shape(n_outcomes, n_mps)
             # compute the second moment of these means over the outcome distribution
             if self.model.allow_identical_outcomes:
                 est_posterior_mom2 = (1./norm_scale.shape[0])*np.sum(est_posterior_means**2, axis=0) # shape (n_mps)
@@ -745,7 +778,7 @@ class SMCUpdater(Distribution):
                 est_posterior_mom2 = np.tensordot(norm_scale, est_posterior_means**2, axes=(0, 0)) # shape (n_mps)
 
             # compute the second moment of the particles
-            est_mom2 = np.tensordot(sampled_weights, sampled_modelparams**2, axes=(0,0))
+            est_mom2 = np.tensordot(weights, modelparams**2, axes=(0,0))
             #est_mom2 = np.tensordot(self.particle_weights, self.particle_locations**2, axes=(0,0))      # shape (n_mps)
             # finally, weight their difference by Q and return
             risk[idx_exp] = np.sum(self.model.Q * (est_mom2 - est_posterior_mom2), axis=0)
@@ -753,14 +786,14 @@ class SMCUpdater(Distribution):
         risk = risk.clip(min=0)  
 
         if return_sampled_parameters:
-            return risk, sampled_weights, sampled_modelparams, sampled_outcomes
+            return risk, all_sampled_weights, all_sampled_modelparams, all_sampled_outcomes, all_likelihoods
         else:
             return risk
       
 
 
         
-    def expected_information_gain(self, expparams, sampled_weights=None, sampled_modelparams=None, sampled_outcomes=None,
+    def expected_information_gain(self, expparams, use_cached_samples_if_available=False,cache_samples=True,
                     return_sampled_parameters=False):
         r"""
         Calculates the expected information gain for each hypothetical experiment.
@@ -777,49 +810,72 @@ class SMCUpdater(Distribution):
 
         n_expparams = expparams.shape[0]
         n_outcomes = self.model.n_outcomes(expparams)
+        scalar_n_o = not np.isscalar(n_outcomes)
+        n_const = self.model.is_n_outcomes_constant
 
-        if isinstance(self.model,FiniteOutcomeModel):
-            if self.model.n_outcomes_cutoff is None or n_outcomes <= self.model.n_outcomes_cutoff:
-                n_outcomes = self.model.n_outcomes_cutoff
+        cache_available = False
+        if use_cached_samples_if_available:
+            if not n_const:
+                warnings.warn("Cached values are not supported if n_outcomes is constant. Reverting to sampling")
+            if self._sampled_modelparams and self._sampled_weights:
+                cache_available = True
+                sampled_modelparams = self._sampled_modelparams
+                sampled_weights = self._sampled_weights
                 
-        if sampled_weights is None:
-            if sampled_modelparams is None:
-                sampled_weights, sampled_modelparams = \
-                    self.resampler(self.model, self.particle_weights, self.particle_locations,
-                        n_particles=n_outcomes)
-            else:
-                n_mp = sampled_modelparams.shape[0]
-                sampled_weights = np.full(n_mp,1./n_mp,dtype=np.float32)
-        else:
-            if sampled_modelparams is None:
-                _, sampled_modelparams = \
-                    self.resampler(self.model, self.particle_weights, self.particle_locations,
-                        n_particles=n_outcomes)
+ 
 
-        if sampled_outcomes is None: 
-            all_likelihoods, all_outcomes = self.model.representative_outcomes(
-                sampled_weights, sampled_modelparams, expparams)
+        if not cache_available:
+            if n_const:
+                sampled_weights, sampled_modelparams = \
+                        self.resampler(self.model, self.particle_weights, self.particle_locations,
+                            n_particles=n_outcomes)
+                if cache_samples:
+                    self._sampled_weights = sampled_weights
+                    self._sampled_modelparams = sampled_modelparams
+
+        if not n_const:
+                all_sampled_weights = []
+                all_sampled_modelparams = []
+                all_sampled_outcomes = []
+                all_likelihoods = []
+                for idx_exp in range(expparams.shape[0]):
+                    n_o = n_outcomes[idx_exp]
+                    exp = expparams[idx_exp:idx_exp+1]
+              
+                    if n_o > self.model.n_outcomes_cutoff and self.model.n_outcomes_cutoff is not None:                       
+                        sampled_weights, sampled_modelparams = \
+                            self.resampler(self.model, self.particle_weights, self.particle_locations,
+                                n_particles=n_o)
+                    else:
+                        sampled_weights = self.particle_weights
+                        sampled_modelparams = self.particle_locations
+
+                    likelihoods, sampled_outcomes = self.model.representative_outcomes(
+                            sampled_weights, sampled_modelparams, exp)
+
+                    all_sampled_weights.append(sampled_weights)
+                    all_sampled_modelparams.append(sampled_modelparams)
+                    all_sampled_outcomes.append(sampled_outcomes[0])
+                    all_likelihoods.append(likelihoods[0])
         else:
-            if isinstance(sampled_outcomes,list):
-                assert len(expparams) == len(sampled_outcomes)
-                all_outcomes = sampled_outcomes
-            else:
-                all_outcomes = [ sampled_outcomes for i in expparams]
-            
-            all_likelihoods = []
-            for idx_exp in range(n_expparams):
-                all_likelihoods.append(self.likelihood(all_outcomes[idx_exp], 
-                    sampled_modelparams, expparams[idx_exp:idx_exp+1])[:,:,0])
+            all_sampled_weights = np.tile(sampled_weights,(n_expparams,1))
+            all_sampled_modelparams = np.tile(sampled_modelparams,(n_expparams,1,1))
+
+            all_likelihoods,all_sampled_outcomes = self.model.representative_outcomes(
+                            sampled_weights, sampled_modelparams, expparams)
 
         # preallocate information gain array
         ig = np.empty((n_expparams, ))
 
         for idx_exp in range(n_expparams):
+            weights = all_sampled_weights[idx_exp]
+            modelparams = all_sampled_modelparams[idx_exp]
             L = all_likelihoods[idx_exp]     # shape (n_outcomes, n_particles)
-            outcomes = all_outcomes[idx_exp] # shape (n_outcomes)
+            outcomes = all_sampled_outcomes[idx_exp] # shape (n_outcomes)
+
 
             # (unnormalized) hypothetical posterior weights for this experiment
-            hyp_weights = L*sampled_weights# shape (n_outcomes, n_particles)
+            hyp_weights = L*weights# shape (n_outcomes, n_particles)
             # Sum up the weights to find the renormalization scale.
         
             # Sum over particles and outcomes. It may take some fiddling to convince yourself
@@ -828,14 +884,15 @@ class SMCUpdater(Distribution):
             if self.model.allow_identical_outcomes:
                 hyp_weights = hyp_weights/np.sum(hyp_weights,axis=1)[...,np.newaxis]
                 #ig[idx_exp] = np.sum(hyp_weights * np.log(L / norm_scale), axis=(0,1))
-                ig[idx_exp] = np.sum(xlogy(hyp_weights,hyp_weights/sampled_weights),axis=(0,1))/hyp_weights.shape[0]
+                ig[idx_exp] = np.sum(xlogy(hyp_weights,hyp_weights/weights),axis=(0,1))/hyp_weights.shape[0]
             else:
                 norm_scale = np.sum(hyp_weights, axis=1)
                 ig[idx_exp] = np.sum(xlogy(hyp_weights ,L / norm_scale[..., np.newaxis]), axis=(0,1))
 
-        ig = ig.clip(min=0)  
+        ig = ig.clip(min=0)
+
         if return_sampled_parameters:
-            return ig, sampled_weights, sampled_modelparams, sampled_outcomes
+            return ig, all_sampled_weights, all_sampled_modelparams, all_sampled_outcomes, all_likelihoods
         else:
             return ig
       

@@ -50,8 +50,8 @@ class TestBayesRisk(DerandomizedTestCase):
     PRIOR_BETA = BetaDistribution(alpha=ALPHA, beta=BETA)
     PRIOR_GAMMA = GammaDistribution(alpha=ALPHA, beta=BETA)
     PRIOR_NORMAL = NormalDistribution(mean=MU,var=VAR)
-    N_PARTICLES = 5000
-    N_OUTCOME_SAMPLES = 2500
+    N_PARTICLES = 10000
+    N_OUTCOME_SAMPLES = 1000
     TAU_EXPPARAMS = np.arange(1, 11, dtype=int)
     NMEAS_EXPPARAMS = np.arange(1, 11, dtype=int)
     
@@ -115,7 +115,7 @@ class TestBayesRisk(DerandomizedTestCase):
         expparams = self.TAU_EXPPARAMS.astype(self.gaussian_model.expparams_dtype)
 
         # estimate the risk
-        est_risk = self.updater_gaussian.bayes_risk(expparams)
+        est_risk = self.updater_gaussian.bayes_risk(expparams,use_cached_samples_if_available=True)
 
         #compute the exact risk 
         mu, var, var_lik = TestBayesRisk.MU, TestBayesRisk.VAR, \
@@ -143,7 +143,7 @@ class TestInformationGain(DerandomizedTestCase):
     PRIOR_GAMMA = GammaDistribution(alpha=ALPHA, beta=BETA)
     PRIOR_NORMAL = NormalDistribution(mean=MU,var=VAR)
     N_PARTICLES = 10000
-    N_OUTCOME_SAMPLES =2500
+    N_OUTCOME_SAMPLES = 1000
     # Calculated in Mathematica, IG for the binomial model and the given expparams
     NMEAS_EXPPARAMS = np.arange(1, 11, dtype=int)
     BINOM_IG = np.array([0.104002,0.189223,0.261496,0.324283,0.379815,0.429613,0.474764,0.516069,0.554138,0.589446])
@@ -205,7 +205,7 @@ class TestInformationGain(DerandomizedTestCase):
         expparams = self.TAU_EXPPARAMS.astype(self.gaussian_model.expparams_dtype)
 
         # estimate the ig
-        est_ig = self.updater_gaussian.expected_information_gain(expparams)
+        est_ig = self.updater_gaussian.expected_information_gain(expparams,use_cached_samples_if_available=True)
 
         #compute the exact ig
         mu, var, var_lik = TestInformationGain.MU, TestInformationGain.VAR, \
