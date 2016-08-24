@@ -110,6 +110,9 @@ class SMCUpdater(Distribution):
     :param bool canonicalize: If `True`, particle locations will be updated
         to canonical locations as described by the model class after each
         prior sampling and resampling.
+    :param bool reset_sample_cache_on_update: If `True` the sample cache 
+        used in evaluating utility metrics bayes_risk/expected_information_gain
+        will be reset whenever the updater is updated. 
     """
     def __init__(self,
             model, n_particles, prior,
@@ -117,7 +120,7 @@ class SMCUpdater(Distribution):
             debug_resampling=False,
             track_resampling_divergence=False,
             zero_weight_policy='error', zero_weight_thresh=None,
-            canonicalize=True
+            canonicalize=True,reset_sample_cache_on_update=True
         ):
 
         # Initialize zero-element arrays such that n_particles is always
@@ -133,7 +136,8 @@ class SMCUpdater(Distribution):
 
         # Record whether we are to canonicalize or not.
         self._canonicalize = bool(canonicalize)
-
+        # Whether or not we reset sampling cache on update
+        self._reset_sample_cache_on_update = bool(reset_sample_cache_on_update)
         ## RESAMPLER CONFIGURATION ##
         # Backward compatibility with the old resample_a keyword argument,
         # which assumed that the Liu and West resampler was being used.
@@ -497,8 +501,8 @@ class SMCUpdater(Distribution):
         self.model.needs_outcome_resample = True
 
         #reset risk/ig cache
-        self._sampled_weights = None
-        self._sampled_modelparams = None
+        if self._reset_sample_cache_on_update:
+            self.reset_sample_cache()
 
         # Resample if needed.
         if check_for_resample:
@@ -925,6 +929,14 @@ class SMCUpdater(Distribution):
             return ig, all_sampled_weights, all_sampled_modelparams, all_sampled_outcomes, all_likelihoods
         else:
             return ig
+
+    def reset_sample_cache(self):
+        """
+        Reset the sampling cache used in utility metrics
+        bayes_risk/expected_information_gain
+        """
+        self._sampled_weights = None
+        self._sampled_modelparams = None
       
 
         
@@ -1390,7 +1402,8 @@ class MixedApproximateSMCUpdater(SMCUpdater):
             good_model, approximate_model,
             n_particles, prior,
             resample_a=None, resampler=None, resample_thresh=0.5,
-            mixture_ratio=0.5, mixture_thresh=1.0, min_good=0
+            mixture_ratio=0.5, mixture_thresh=1.0, min_good=0,
+            reset_sample_cache_on_update=True
             ):
             
         self._good_model = good_model
@@ -1398,7 +1411,8 @@ class MixedApproximateSMCUpdater(SMCUpdater):
         
         super(MixedApproximateSMCUpdater, self).__init__(
             good_model, n_particles, prior,
-            resample_a, resampler, resample_thresh
+            resample_a, resampler, resample_thresh,
+            reset_sample_cache_on_update=reset_sample_cache_on_update
         )
         
         self._mixture_ratio = mixture_ratio
@@ -1530,7 +1544,7 @@ class SMCUpdaterBCRB(SMCUpdater):
             key: kwargs[key] for key in kwargs
             if key in [
                 'resampler_a', 'resampler', 'resample_thresh', 'model',
-                'prior', 'n_particles'
+                'prior', 'n_particles', 'reset_sample_cache_on_update'
             ]
         })
         

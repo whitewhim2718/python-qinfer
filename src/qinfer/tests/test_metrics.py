@@ -115,7 +115,7 @@ class TestBayesRisk(DerandomizedTestCase):
         expparams = self.TAU_EXPPARAMS.astype(self.gaussian_model.expparams_dtype)
 
         # estimate the risk
-        est_risk = self.updater_gaussian.bayes_risk(expparams,use_cached_samples_if_available=True)
+        est_risk = self.updater_gaussian.bayes_risk(expparams,use_cached_samples=True)
 
         #compute the exact risk 
         mu, var, var_lik = TestBayesRisk.MU, TestBayesRisk.VAR, \
@@ -205,7 +205,7 @@ class TestInformationGain(DerandomizedTestCase):
         expparams = self.TAU_EXPPARAMS.astype(self.gaussian_model.expparams_dtype)
 
         # estimate the ig
-        est_ig = self.updater_gaussian.expected_information_gain(expparams,use_cached_samples_if_available=True)
+        est_ig = self.updater_gaussian.expected_information_gain(expparams,use_cached_samples=True)
 
         #compute the exact ig
         mu, var, var_lik = TestInformationGain.MU, TestInformationGain.VAR, \

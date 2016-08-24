@@ -120,7 +120,12 @@ class PoissonModel(DifferentiableModel):
 
 
     @abstractmethod
-    def are_models_valid(self, modelparams):
+    def are_model_functions_valid(self, modelparams):
+        """
+        Given a shape ``(n_models, n_modelparams)`` array of model function parameters,
+        returns a boolean array of shape ``(n_models)`` specifying whether
+        each set of model function parameters represents is valid under this model.
+        """
         pass
 
     ## ABSTRACT PROPERTIES ##
@@ -181,6 +186,8 @@ class PoissonModel(DifferentiableModel):
     
     ## METHODS ##
     
+    def are_models_valid(self,modelparams):
+        return self.are_model_functions_valid(modelparams)
 
     
     def n_outcomes(self, expparams):
@@ -292,7 +299,7 @@ class BasicPoissonModel(PoissonModel):
         """
         return np.tile(expparams['tau'], (modelparams.shape[0],1))[np.newaxis,...]
     
-    def are_models_valid(self, modelparams):
+    def are_model_functions_valid(self, modelparams):
         return np.all(modelparams >= 0, axis=1)
   
     @property
@@ -337,7 +344,7 @@ class ExponentialPoissonModel(PoissonModel):
 
         return -self.max_rate*(expparams['tau']/modelparams**2)*np.exp(-expparams['tau']/modelparams)
 
-    def are_models_valid(self, modelparams):
+    def are_model_functions_valid(self, modelparams):
         return np.logical_not(np.any(modelparams<0,axis=1))
     
     @property
@@ -420,7 +427,12 @@ class GaussianModel(DifferentiableModel):
 
 
     @abstractmethod
-    def are_models_valid(self, modelparams):
+    def are_model_functions_valid(self, modelparams):
+        """
+        Given a shape ``(n_models, n_modelparams)`` array of model function parameters,
+        returns a boolean array of shape ``(n_models)`` specifying whether
+        each set of model function parameters represents is valid under this model.
+        """
         pass
 
     ## ABSTRACT PROPERTIES ##
@@ -498,6 +510,21 @@ class GaussianModel(DifferentiableModel):
     
     ## METHODS ##
     
+    def are_models_valid(self,modelparams):
+        if self._var is None:
+            var_index = self.modelparam_names.index(r'\var')
+            var = modelparams[:,var_index][np.newaxis,:,np.newaxis]
+            valid_var = np.all(var>0,axis=0).reshape(-1)
+
+            modelparams = np.delete(modelparams,var_index,1)
+            models_valid = self.are_model_functions_valid(modelparams)
+
+            return np.logical_and(valid_var,models_valid)
+        else:
+            if self._var<=0:
+                return np.zeros(modelparams.shape[0],dtype=bool)
+            else:
+                return self.are_model_functions_valid(modelparams)
 
     
     def n_outcomes(self, expparams):
@@ -549,11 +576,12 @@ class GaussianModel(DifferentiableModel):
             var = np.full((1,modelparams.shape[0],1),self._var)
 
         x = self.model_function(modelparams,expparams)[np.newaxis,:,:]
-        if np.any(np.isnan(1./(np.sqrt(2*np.pi*var))*np.exp(-(outcomes-x)**2/(2*var)))):
-            import pdb
-            pdb.set_trace()
+        likelihood =  1./(np.sqrt(2*np.pi*var))*np.exp(-(outcomes-x)**2/(2*var))
 
-        return 1./(np.sqrt(2*np.pi*var))*np.exp(-(outcomes-x)**2/(2*var))
+        if np.any(np.isnan(likelihood)):
+            import pdb;pdb.set_trace()
+
+        return likelihood
 
 
     def score(self, outcomes, modelparams, expparams, return_L=False):
@@ -649,7 +677,7 @@ class BasicGaussianModel(GaussianModel):
         """
         return np.tile(expparams['tau'], (modelparams.shape[0],1))[np.newaxis,...]
     
-    def are_models_valid(self, modelparams):
+    def are_model_functions_valid(self, modelparams):
         return np.ones(modelparams.shape[0],dtype=bool)
     
     @property
@@ -691,7 +719,7 @@ class ExponentialGaussianModel(GaussianModel):
         mps = np.tile(modelparams, expparams.shape[0])
         return (-(eps / mps**2) * np.exp(-eps / mps))[np.newaxis, :]
 
-    def are_models_valid(self, modelparams):
+    def are_model_functions_valid(self, modelparams):
         return np.logical_not(np.any(modelparams<0,axis=1))
     
     @property
