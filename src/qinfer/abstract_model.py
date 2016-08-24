@@ -853,9 +853,40 @@ class DifferentiableModel(with_metaclass(abc.ABCMeta, Model)):
         #       slower.
         #       Here, we sketch the first case.
         # FIXME: completely untested!
+        
+        print "hello"
         if self.is_n_outcomes_constant:
-            outcomes = np.arange(self.n_outcomes(expparams))
-            scores, L = self.score(outcomes, modelparams, expparams, return_L=True)
+            n_o = self.n_outcomes(expparams)
+            #n_o = n_o if np.isscalar(n_o) else n_0[0]
+            n_o = 250
+            if isinstance(self,FiniteOutcomeModel):
+                outcomes = np.arange(self.n_outcomes(expparams))
+                scores, L = self.score(outcomes, modelparams, expparams, return_L=True)
+            
+            # We need to sample outcomes for each point
+            # this is nasty, and will be slow
+            else:
+                scores = np.empty((
+                self.n_modelparams, n_o,
+                modelparams.shape[0], expparams.shape[0]
+                ),dtype=np.float32)
+                L = np.empty((n_o,modelparams.shape[0],expparams.shape[0]),dtype=np.float32)
+
+                outcomes = self.simulate_experiment(modelparams,expparams,repeat=n_o)
+                import time 
+                st = time.time()
+                for idx_mp in range(modelparams.shape[0]):
+                    for idx_exp in range(expparams.shape[0]):
+                        mp = modelparams[idx_mp:idx_mp+1]
+                        exp = expparams[idx_exp:idx_exp+1]
+                        os = outcomes[:,idx_mp,idx_exp]
+                        score,L_os = self.score(os,mp,exp,return_L=True)
+                        scores[:,:,idx_mp,idx_exp] = score[:,:,0,0]
+                        L[:,idx_mp,idx_exp] = L_os[:,0,0]
+                        import pdb
+                        pdb.set_trace()
+                print time.time()-st    
+
             
             assert len(scores.shape) in (3, 4)
             
@@ -864,6 +895,7 @@ class DifferentiableModel(with_metaclass(abc.ABCMeta, Model)):
             
             # Note that E[score] = 0 by regularity assumptions, so we only
             # need the expectation over the outer product.
+            
             return np.einsum("ome,iome,jome->ijme",
                 L, scores, scores
             )

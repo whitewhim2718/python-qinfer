@@ -50,7 +50,7 @@ class TestGaussianModel(DerandomizedTestCase):
     PRIOR_NO_VAR_PARAM = UniformDistribution([[0,100]])
     PRIOR_VAR_PARAM = UniformDistribution([[0,100],[0,10]])
     N_PARTICLES = 10000
-    N_BIM = TEST_EXPPARAMS.shape[0]
+    N_BIM = 20
     N_ONLINE = 25  
     N_GUESSES = 25
     N_OUTCOME_SAMPLES = 250
