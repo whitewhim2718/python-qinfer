@@ -38,9 +38,11 @@ from qinfer import (BasicPoissonModel,BasicGaussianModel,BinomialModel,CoinModel
 from qinfer.smc import SMCUpdater,SMCUpdaterBCRB
 
 class TestBayesRisk(DerandomizedTestCase):
-    # Test the implementation of Bayes' risk by comparing to exact 
-    # formulas which exist for models with conjugate priors, in particular,
-    # we look at binomial with beta prior and poisson with gamma prior.
+    # Test the implementation of numerical Bayes Risk by comparing to 
+    # numbers which were derived by doing analytic/numeric
+    # integrals of simple models (binomialm, poisson, and gaussian) in 
+    # Mathematica. This test trusts that these calculations
+    # were done correctly.
 
     ALPHA = 1.
     BETA = 3.
@@ -128,9 +130,9 @@ class TestBayesRisk(DerandomizedTestCase):
 
 
 class TestInformationGain(DerandomizedTestCase):
-    # Test the implementation of information gain by comparing to 
-    # numbers which were numerically derived by doing numeric 
-    # integrals of simple models (binomial and poisson) in 
+    # Test the implementation of numerical information gain by comparing to 
+    # numbers which were derived by doing analytic/numeric
+    # integrals of simple models (binomialm, poisson, and gaussian) in 
     # Mathematica. This test trusts that these calculations
     # were done correctly.
 
@@ -214,3 +216,105 @@ class TestInformationGain(DerandomizedTestCase):
         exact_ig = 1./2*np.log(1+(var/var_lik)*expparams['tau']**2)
 
         assert_almost_equal(est_ig, exact_ig, decimal=1)
+
+
+class TestFisherInformation(DerandomizedTestCase):
+    # Test the implementation of numerical Fisher Information by comparing to 
+    # numbers which were derived by doing analytic/numeric
+    # integrals of simple models (binomialm, poisson, and gaussian) in 
+    # Mathematica. This test trusts that these calculations
+    # were done correctly.
+
+    ALPHA = 1
+    BETA = 3
+    MU = 1.0
+    VAR = 10.0
+    VAR_LIKELIHOOD = 1.0
+    PRIOR_BETA = BetaDistribution(alpha=ALPHA, beta=BETA)
+    PRIOR_GAMMA = GammaDistribution(alpha=ALPHA, beta=BETA)
+    PRIOR_NORMAL = NormalDistribution(mean=MU,var=VAR)
+    N_PARTICLES = 10000
+    N_OUTCOME_SAMPLES = 10000
+    # Calculated in Mathematica, IG for the binomial model and the given expparams
+    FI_MODELPARAMS = np.arange(1,5,dtype=np.float32).reshape(-1,1)
+    BIN_FI_MODELPARAMS = np.linspace(0.01,0.99,5)
+    NMEAS_EXPPARAMS = np.arange(1, 11, dtype=int)
+    
+    # Calculated in Mathematica, IG for the poisson model and the given expparams
+    TAU_EXPPARAMS = np.arange(1, 11, dtype=int)
+
+
+    def setUp(self):
+
+        super(TestFisherInformation,self).setUp()
+        
+        # Set up relevant models.
+        self.poisson_model = BasicPoissonModel(num_outcome_samples=TestFisherInformation.N_OUTCOME_SAMPLES)
+        self.coin_model = CoinModel()
+        self.binomial_model = BinomialModel(self.coin_model)
+        self.gaussian_model = BasicGaussianModel(var=TestFisherInformation.VAR_LIKELIHOOD,
+            num_outcome_samples=TestFisherInformation.N_OUTCOME_SAMPLES)
+
+        # Set up updaters for these models using particle approximations 
+        # of conjugate priors
+        self.updater_poisson = SMCUpdater(self.poisson_model,
+                TestFisherInformation.N_PARTICLES,TestFisherInformation.PRIOR_GAMMA)
+        self.updater_binomial = SMCUpdater(self.binomial_model,
+                TestFisherInformation.N_PARTICLES,TestFisherInformation.PRIOR_BETA)
+        self.updater_gaussian = SMCUpdater(self.gaussian_model,
+                TestFisherInformation.N_PARTICLES,TestFisherInformation.PRIOR_NORMAL)
+
+
+    def test_finite_outcomes_fi(self):
+        # The binomial model has a finite number of outcomes. Test the 
+        # ig calculation in this case.
+
+        expparams = self.NMEAS_EXPPARAMS.astype(self.binomial_model.expparams_dtype)
+        p = TestFisherInformation.BIN_FI_MODELPARAMS
+        # estimate the information gain
+        est_fi = self.binomial_model.fisher_information(TestFisherInformation.BIN_FI_MODELPARAMS,expparams)[0,0]
+        p = p[:,np.newaxis]
+        n = expparams.astype(np.float32)[np.newaxis,:]
+
+        exact_fi = n/((1-p)*p) 
+        # see if they roughly match
+       
+        assert_almost_equal(est_fi,exact_fi, decimal=1)
+
+    def test_infinite_outcomes_fi(self):
+        # The poisson model has a (countably) infinite number of outcomes. Test the 
+        # ig calculation in this case.
+
+        expparams = self.TAU_EXPPARAMS.astype(self.poisson_model.expparams_dtype)
+
+        # estimate the information gain
+        est_fi = self.poisson_model.fisher_information(TestFisherInformation.FI_MODELPARAMS,expparams)[0,0]
+
+        tau = expparams.astype(np.float32)[np.newaxis,:]
+        lam = TestFisherInformation.FI_MODELPARAMS
+
+
+        exact_fi = tau/lam
+
+        # see if they roughly match
+        assert_almost_equal(est_fi, exact_fi, decimal=0)
+
+
+    def test_continuous_outcomes_fi(self):
+        # The gaussian model has a (uncountably) infinite number of outcomes. Test the
+        # ig calculation in this case. 
+
+        expparams = self.TAU_EXPPARAMS.astype(self.gaussian_model.expparams_dtype)
+
+        # estimate the ig
+        est_fi = self.gaussian_model.fisher_information(TestFisherInformation.FI_MODELPARAMS,expparams)[0,0]
+        
+        mu, var, var_lik = TestFisherInformation.MU, TestFisherInformation.VAR, \
+                            TestFisherInformation.VAR_LIKELIHOOD
+        
+        exact_fi = expparams.astype(np.float32)**2/var_lik
+        
+
+        
+        # compare against mean est_fi
+        assert_almost_equal(np.mean(est_fi,axis=0), exact_fi, decimal=0)

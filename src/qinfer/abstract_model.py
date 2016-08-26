@@ -848,79 +848,85 @@ class DifferentiableModel(with_metaclass(abc.ABCMeta, Model)):
             give significant speed advantages.
         """
         
-        # TODO: break into two cases, one for constant outcomes, one for
-        #       variable. The latter will have to be a loop, which is much
-        #       slower.
-        #       Here, we sketch the first case.
-        # FIXME: completely untested!
         
-        print "hello"
-        if self.is_n_outcomes_constant:
-            n_o = self.n_outcomes(expparams)
-            #n_o = n_o if np.isscalar(n_o) else n_0[0]
-            n_o = 250
-            if isinstance(self,FiniteOutcomeModel):
+        # FIXME: completely untested!
+
+        # Perform exact evaluation of fisher information for case where
+        # model is FiniteOutcomeModel
+        if isinstance(self,FiniteOutcomeModel): 
+            # TODO: break into two cases, one for constant outcomes, one for
+            #       variable. The latter will have to be a loop, which is much
+            #       slower.
+            #       Here, we sketch the first case.
+            if self.is_n_outcomes_constant:
                 outcomes = np.arange(self.n_outcomes(expparams))
                 scores, L = self.score(outcomes, modelparams, expparams, return_L=True)
-            
-            # We need to sample outcomes for each point
-            # this is nasty, and will be slow
-            else:
-                scores = np.empty((
-                self.n_modelparams, n_o,
-                modelparams.shape[0], expparams.shape[0]
-                ),dtype=np.float32)
-                L = np.empty((n_o,modelparams.shape[0],expparams.shape[0]),dtype=np.float32)
-
-                outcomes = self.simulate_experiment(modelparams,expparams,repeat=n_o)
-                import time 
-                st = time.time()
-                for idx_mp in range(modelparams.shape[0]):
-                    for idx_exp in range(expparams.shape[0]):
-                        mp = modelparams[idx_mp:idx_mp+1]
-                        exp = expparams[idx_exp:idx_exp+1]
-                        os = outcomes[:,idx_mp,idx_exp]
-                        score,L_os = self.score(os,mp,exp,return_L=True)
-                        scores[:,:,idx_mp,idx_exp] = score[:,:,0,0]
-                        L[:,idx_mp,idx_exp] = L_os[:,0,0]
-                        import pdb
-                        pdb.set_trace()
-                print time.time()-st    
-
-            
-            assert len(scores.shape) in (3, 4)
-            
-            if len(scores.shape) == 3:
-                scores = scores[np.newaxis, :, :, :]
-            
-            # Note that E[score] = 0 by regularity assumptions, so we only
-            # need the expectation over the outer product.
-            
-            return np.einsum("ome,iome,jome->ijme",
-                L, scores, scores
-            )
-        else:
-            # Indexing will be a major pain here, so we need to start
-            # by making an empty array, so that index errors will be raised
-            # when (not if!) we make mistakes.
-            fisher = np.empty((
-                self.n_modelparams, self.n_modelparams,
-                modelparams.shape[0], expparams.shape[0]
-            ))
-            
-            # Now we loop over experiments, since we cannot vectorize the
-            # expectation value over data.
-            for idx_experiment, experiment in enumerate(expparams):
-                experiment = experiment.reshape((1,))
-                n_o = self.n_outcomes(experiment)
-            
-                outcomes = np.arange(n_o)
-                scores, L = self.score(outcomes, modelparams, experiment, return_L=True)
                 
-                fisher[:, :, :, idx_experiment] = np.einsum("ome,iome,jome->ijme",
+                assert len(scores.shape) in (3, 4)
+                
+                if len(scores.shape) == 3:
+                    scores = scores[np.newaxis, :, :, :]
+                
+                # Note that E[score] = 0 by regularity assumptions, so we only
+                # need the expectation over the outer product.
+        
+                return np.einsum("ome,iome,jome->ijme",
                     L, scores, scores
                 )
+
+            else:
+                # Indexing will be a major pain here, so we need to start
+                # by making an empty array, so that index errors will be raised
+                # when (not if!) we make mistakes.
+                fisher = np.empty((
+                    self.n_modelparams, self.n_modelparams,
+                    modelparams.shape[0], expparams.shape[0]
+                ))
+                
+                # Now we loop over experiments, since we cannot vectorize the
+                # expectation value over data.
+                for idx_exp in range(expparams.shape[0]):
+                    experiment = expparams[idx_exp:idx_exp+1]
+                    n_o = self.n_outcomes(experiment)
+                    
+                    outcomes = np.arange(n_o)
+                    scores, L = self.score(outcomes, modelparams, experiment, return_L=True)
             
-            return fisher
-            
-            
+                    fisher[:, :, :, idx_exp] = np.einsum("ome,iome,jome->ijme",
+                        L, scores, scores
+                    )[...,0]
+                
+                return fisher
+        
+        #else perform maximum importance sampling of fisher information
+        #for generalized outcomes models
+        else:
+            n_o = self.n_outcomes(expparams)
+            n_o = n_o if np.isscalar(n_o) else n_o.shape[0]
+            mps = modelparams[np.random.choice(modelparams.shape[0],n_o),:]
+            outcomes = self.simulate_experiment(mps,expparams,repeat=1)[0,:,:]
+            scores = np.empty((
+            self.n_modelparams, n_o,
+            modelparams.shape[0], expparams.shape[0]
+            ),dtype=np.float32)
+            L = np.empty((n_o,modelparams.shape[0],expparams.shape[0]),dtype=np.float32)
+
+            for idx_exp in range(expparams.shape[0]):
+                exp = expparams[idx_exp:idx_exp+1]
+                os = outcomes[:,idx_exp]
+                score,L_os = self.score(os,modelparams,exp,return_L=True)
+                L[:,:,idx_exp] = L_os[:,:,0]
+                scores[:,:,:,idx_exp] = score[:,:,:,0]
+                
+
+            L = np.nan_to_num(L/np.sum(L,axis=1)[:,np.newaxis,:])
+            #no_zero = np.sum((L != 0),axis=0)
+            scores = np.nan_to_num(scores)
+            #no_zero_scores = np.sum((scores !=0),axis=2).transpose([1,0,2])
+
+            fi= modelparams.shape[0]/n_o*np.einsum("ome,iome,jome->ijme",
+             L,scores, scores
+            )
+        
+        
+            return fi

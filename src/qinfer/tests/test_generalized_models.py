@@ -50,7 +50,7 @@ class TestGaussianModel(DerandomizedTestCase):
     PRIOR_NO_VAR_PARAM = UniformDistribution([[0,100]])
     PRIOR_VAR_PARAM = UniformDistribution([[0,100],[0,10]])
     N_PARTICLES = 10000
-    N_BIM = 20
+    N_BIM = 50
     N_ONLINE = 25  
     N_GUESSES = 25
     N_OUTCOME_SAMPLES = 250
@@ -145,11 +145,14 @@ class TestGaussianModel(DerandomizedTestCase):
 
 
         #verify that BCRB is approximately reached 
+
         assert_almost_equal(self.updater_bayes_no_var_param.est_covariance_mtx(),
             np.linalg.inv(self.updater_bayes_no_var_param.current_bim),1)
         assert_almost_equal(self.updater_bayes_no_var_param.est_covariance_mtx(),
             np.linalg.inv(self.updater_bayes_no_var_param.adaptive_bim),1)
 
+        print (self.updater_bayes_no_var_param.est_covariance_mtx(), np.linalg.inv(self.updater_bayes_no_var_param.current_bim))
+      
         assert_almost_equal(self.updater_bayes_var_param.est_covariance_mtx(),
             np.linalg.inv(self.updater_bayes_var_param.current_bim),1)
         assert_almost_equal(self.updater_bayes_var_param.est_covariance_mtx(),
@@ -231,6 +234,7 @@ class TestPoissonModel(DerandomizedTestCase):
         bim_adaptives = np.array(bim_adaptives)
 
         #verify that BCRB is approximately reached 
+     
         assert_almost_equal(self.updater_bayes.est_covariance_mtx(),np.linalg.inv(self.updater_bayes.current_bim),1)
         assert_almost_equal(self.updater_bayes.est_covariance_mtx(),np.linalg.inv(self.updater_bayes.adaptive_bim),1)
 

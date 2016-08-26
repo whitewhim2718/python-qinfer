@@ -278,7 +278,6 @@ class CoinModel(FiniteOutcomeModel, DifferentiableModel):
                   
         # Our job is easy.
         pr0 = np.tile(modelparams.flatten(), (expparams.shape[0], 1)).T
-        
         # Now we concatenate over outcomes.
         return FiniteOutcomeModel.pr0_to_likelihood_array(outcomes, pr0)
 

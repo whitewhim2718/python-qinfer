@@ -428,7 +428,7 @@ class ReferencedPoissonModel(DerivedModel):
         )
 
 
-class BinomialModel(DerivedModel, FiniteOutcomeModel):
+class BinomialModel(DerivedModel,DifferentiableModel, FiniteOutcomeModel):
     """
     Model representing finite numbers of iid samples from another model,
     using the binomial distribution to calculate the new likelihood function.
@@ -566,6 +566,31 @@ class BinomialModel(DerivedModel, FiniteOutcomeModel):
         return self.underlying_model.update_timestep(modelparams,
             expparams['x'] if self._expparams_scalar else expparams
         )
+
+    def score(self, outcomes, modelparams, expparams, return_L=False):
+        super(BinomialModel, self).score(outcomes, modelparams, expparams, return_L) 
+
+        scr_underlying = self.underlying_model.score(np.array([1], dtype='uint'),modelparams,
+                            expparams['x'] if self._expparams_scalar else expparams)
+
+        pr1 = self.underlying_model.likelihood(
+            np.array([1], dtype='uint'),
+            modelparams,
+            expparams['x'] if self._expparams_scalar else expparams)[np.newaxis,:,:,:]
+
+        
+        n = expparams['n_meas'][np.newaxis,np.newaxis,np.newaxis, :].astype(np.float32)
+        k = outcomes[np.newaxis,:,np.newaxis,np.newaxis].astype(np.float32)
+
+        scr = (pr1*n-k)*scr_underlying/((pr1-1)*pr1)
+        
+        if return_L:
+            return scr, self.likelihood(outcomes,modelparams,expparams)
+        else:
+            return scr
+
+
+
 
 
 class MultinomialModel(DerivedModel, FiniteOutcomeModel):
