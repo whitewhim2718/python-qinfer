@@ -813,6 +813,7 @@ class FiniteOutcomeModel(Model):
         
 class DifferentiableModel(with_metaclass(abc.ABCMeta, Model)):
     
+    ### ABSTRACT METHODS ###
     @abc.abstractmethod
     def score(self, outcomes, modelparams, expparams, return_L=False):
         r"""
@@ -829,37 +830,38 @@ class DifferentiableModel(with_metaclass(abc.ABCMeta, Model)):
         If return_L is True, both `q` and the likelihood `L` are returned as `q, L`.
         """
         pass
-        
-    def fisher_information(self, modelparams, expparams):
-        """
-        Returns the covariance of the score taken over possible outcomes,
-        known as the Fisher information.
-        
-        The result is represented as the four-index tensor
-        ``fisher[idx_modelparam_i, idx_modelparam_j, idx_model, idx_experiment]``,
-        which gives the Fisher information matrix for each model vector
-        and each experiment vector.
-        
-        .. note::
-            
-            The default implementation of this method calls
-            :meth:`~DifferentiableModel.score()` for each possible outcome,
-            which can be quite slow. If possible, overriding this method can
-            give significant speed advantages.
-        """
-        
-        
-        # FIXME: completely untested!
 
-        # Perform exact evaluation of fisher information for case where
-        # model is FiniteOutcomeModel
-        if isinstance(self,FiniteOutcomeModel): 
-            # TODO: break into two cases, one for constant outcomes, one for
+
+
+    ### CONCRETE METHODS ###
+    
+    def n_fisher_information_outcomes(self,expparams):
+        """
+        Returns an array of dtype ``uint`` describing the number of outcomes
+        to sample for evaluation of fisher information for each experiment 
+        specified by ``expparams``.
+        If there are an infinite (or intractibly large) number of outcomes, 
+        this value specifies the number of outcomes to randomly sample. By 
+        default this function calls ``n_outcomes``, should be changed if extra
+        percision in evaluation of fisher information is required. 
+        
+        :param numpy.ndarray expparams: Array of experimental parameters. This
+            array must be of dtype agreeing with the ``expparams_dtype``
+            property.
+        """
+        return self.n_outcomes(expparams)
+
+
+    def _finite_fisher_information(self,modelparams,expparams):
+         # TODO: break into two cases, one for constant outcomes, one for
             #       variable. The latter will have to be a loop, which is much
             #       slower.
             #       Here, we sketch the first case.
+
+            n_o = self.n_outcomes(expparams)
+            n_o_fi = self.n_fisher_information_outcomes(expparams)
             if self.is_n_outcomes_constant:
-                outcomes = np.arange(self.n_outcomes(expparams))
+                outcomes = np.arange(n_o_fi)
                 scores, L = self.score(outcomes, modelparams, expparams, return_L=True)
                 
                 assert len(scores.shape) in (3, 4)
@@ -897,36 +899,71 @@ class DifferentiableModel(with_metaclass(abc.ABCMeta, Model)):
                     )[...,0]
                 
                 return fisher
+    
+    def _generalized_fisher_information(self,modelparams,expparams):
+        n_o_fi = self.n_fisher_information_outcomes(expparams)
+        n_o = n_o_fi
+        n_o = n_o if np.isscalar(n_o) else n_o.shape[0]
+        mps = modelparams[np.random.choice(modelparams.shape[0],n_o),:]
+        outcomes = self.simulate_experiment(mps,expparams,repeat=1)[0,:,:]
+        scores = np.empty((
+        self.n_modelparams, n_o,
+        modelparams.shape[0], expparams.shape[0]
+        ),dtype=np.float32)
+        L = np.empty((n_o,modelparams.shape[0],expparams.shape[0]),dtype=np.float32)
+
+        for idx_exp in range(expparams.shape[0]):
+            exp = expparams[idx_exp:idx_exp+1]
+            os = outcomes[:,idx_exp]
+            score,L_os = self.score(os,modelparams,exp,return_L=True)
+            L[:,:,idx_exp] = L_os[:,:,0]
+            scores[:,:,:,idx_exp] = score[:,:,:,0]
+            
+
+        L = np.nan_to_num(L/np.sum(L,axis=1)[:,np.newaxis,:])
+        #no_zero = np.sum((L != 0),axis=0)
+        scores = np.nan_to_num(scores)
+        #no_zero_scores = np.sum((scores !=0),axis=2).transpose([1,0,2])
+
+        fi= modelparams.shape[0]/n_o*np.einsum("ome,iome,jome->ijme",
+         L,scores, scores
+        )
+
+        return fi
+    def fisher_information(self, modelparams, expparams):
+        """
+        Returns the covariance of the score taken over possible outcomes,
+        known as the Fisher information.
+        
+        The result is represented as the four-index tensor
+        ``fisher[idx_modelparam_i, idx_modelparam_j, idx_model, idx_experiment]``,
+        which gives the Fisher information matrix for each model vector
+        and each experiment vector.
+        
+        .. note::
+            
+            The default implementation of this method calls
+            :meth:`~DifferentiableModel.score()` for each possible outcome,
+            which can be quite slow. If possible, overriding this method can
+            give significant speed advantages.
+        """
+        
+        
+        # FIXME: completely untested!
+
+        # Perform exact evaluation of fisher information for case where
+        # model is FiniteOutcomeModel
+
+        n_o = self.n_outcomes(expparams)
+        n_o_fi = self.n_fisher_information_outcomes(expparams)
+
+
+        # Check if is FiniteOutcomeMode and make sure the fisher outcomes agree
+        # with the model outcomes. If they dont, revert to sampling 
+        if isinstance(self,FiniteOutcomeModel) and np.all(n_o==n_o_fi): 
+           return self._finite_fisher_information(modelparams,expparams)
         
         #else perform maximum importance sampling of fisher information
         #for generalized outcomes models
         else:
-            n_o = self.n_outcomes(expparams)
-            n_o = n_o if np.isscalar(n_o) else n_o.shape[0]
-            mps = modelparams[np.random.choice(modelparams.shape[0],n_o),:]
-            outcomes = self.simulate_experiment(mps,expparams,repeat=1)[0,:,:]
-            scores = np.empty((
-            self.n_modelparams, n_o,
-            modelparams.shape[0], expparams.shape[0]
-            ),dtype=np.float32)
-            L = np.empty((n_o,modelparams.shape[0],expparams.shape[0]),dtype=np.float32)
-
-            for idx_exp in range(expparams.shape[0]):
-                exp = expparams[idx_exp:idx_exp+1]
-                os = outcomes[:,idx_exp]
-                score,L_os = self.score(os,modelparams,exp,return_L=True)
-                L[:,:,idx_exp] = L_os[:,:,0]
-                scores[:,:,:,idx_exp] = score[:,:,:,0]
-                
-
-            L = np.nan_to_num(L/np.sum(L,axis=1)[:,np.newaxis,:])
-            #no_zero = np.sum((L != 0),axis=0)
-            scores = np.nan_to_num(scores)
-            #no_zero_scores = np.sum((scores !=0),axis=2).transpose([1,0,2])
-
-            fi= modelparams.shape[0]/n_o*np.einsum("ome,iome,jome->ijme",
-             L,scores, scores
-            )
-        
-        
-            return fi
+            return self._generalized_fisher_information(modelparams,expparams)

@@ -278,7 +278,7 @@ class TestFisherInformation(DerandomizedTestCase):
 
         exact_fi = n/((1-p)*p) 
         # see if they roughly match
-       
+        
         assert_almost_equal(est_fi,exact_fi, decimal=1)
 
     def test_infinite_outcomes_fi(self):

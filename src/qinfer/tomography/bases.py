@@ -51,8 +51,11 @@ try:
     _qt_version = LooseVersion(qt.version.version)
     if _qt_version < LooseVersion('3.1'):
         qt = None
+
+
 except ImportError:
     qt = None
+
 
 ## EXPORTS ###################################################################
 

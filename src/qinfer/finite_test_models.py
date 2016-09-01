@@ -286,7 +286,7 @@ class CoinModel(FiniteOutcomeModel, DifferentiableModel):
         p = modelparams.flatten()[np.newaxis, :]
         side = outcomes.flatten()[:, np.newaxis]
 
-        q = (1 - side) / p - side / (1 - p)
+        q = (1 - side) / p- side / (1 - p)
 
         #  we need to add singleton dimension since there 
         # is only one model param
