@@ -810,6 +810,54 @@ class SMCUpdater(Distribution):
             return risk
       
 
+    def risk_improvement(self, expparams, use_cached_samples=False,cache_samples=True,
+                    return_sampled_parameters=False):
+        r"""
+        Calculates the expected improvement of the Bayes risk for each hypothetical experiment, assuming the
+        quadratic loss function defined by the current model's scale matrix
+        (see :attr:`qinfer.abstract_model.Model.Q`). This is essentially just the bayes risk minus the 
+        variance of the prior distribution. However, due to the numerical approximations made in the monte 
+        carlo integration, there are some tricks that need to be accounted for. 
+        
+        :param expparams: The experiments for which to compute the Bayes risk over.
+        :type expparams: :class:`~numpy.ndarray` of dtype given by the current
+            model's :attr:`~qinfer.abstract_model.Model.expparams_dtype` property,
+            and of shape ``(n_experiments,)``
+        :param use_cached_samples: If set to ``True`` will use previously cached
+            sampled model weights, and modelparams. If none are available both 
+            will be resampled 
+        :type use_cached_samples: bool
+        :param cache_samples: Whether or not to cache new samples, if samples are 
+                            drawn. If set to ``True`` newly cached samples will be 
+                            used in future method call if ``use_cached_samples`` 
+                            is ``True``
+        :type cache_samples: bool
+        :param return_sampled_parameters: If set to ``True`` will return in addition
+                to risks, sampled weights, modelparams, outcomes, and likelihoods in 
+                a tuple of theform (risk, all_sampled_weights, all_sampled_modelparams,
+                 all_sampled_outcomes, all_likelihoods).
+        :param return_sampled_parameters: bool
+
+            
+        :return float: The expected improvement of the Bayes risk for the current posterior distribution
+            of the hypothetical experiment ``expparams``.
+        """
+
+        risks, all_sampled_weights, all_sampled_modelparams, all_sampled_outcomes, all_likelihoods = \
+                                self.bayes_risk(expparams,use_cached_samples,cache_samples,
+                                                return_sampled_parameters=True)
+
+        risk_improvements = np.empty_like(risks)
+
+        for i,risk in enumerate(risks):
+            old_var = np.sum(all_sampled_weights[i].reshape(-1,1)*(all_sampled_modelparams[i]-self.est_mean())**2,axis=0)
+            risk_improvements[i] = risk-np.dot(self.model.Q,old_var)
+
+        if return_sampled_parameters:
+            return risk_improvements, all_sampled_weights, all_sampled_modelparams, all_sampled_outcomes, all_likelihoods
+        else:
+            return risk_improvements
+
 
         
     def expected_information_gain(self, expparams, use_cached_samples=False,cache_samples=True,
