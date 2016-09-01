@@ -498,7 +498,7 @@ class SMCUpdater(Distribution):
             self.particle_locations, expparams
         )[:, :, 0]
         #notify model update callback
-        self.model.needs_outcome_resample = True
+        self.model.update_callback(self.particle_weights,self.particle_locations)
 
         #reset risk/ig cache
         if self._reset_sample_cache_on_update:

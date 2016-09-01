@@ -378,6 +378,17 @@ class Simulatable(with_metaclass(abc.ABCMeta, object)):
         """
         return modelparams
 
+    def update_callback(self, weights, modelparams):
+        r"""
+        Callback function that is called by model ``SMCUpdater`` after every 
+        ``SMCUpdater.update`` call. By default this method is just passed. If 
+        more advanced behaviour is desired this method may be overridden.
+
+        :param np.ndarray weights: Set of weights with a weight
+            corresponding to every modelparam. 
+        :param np.ndarray modelparams: Set of model parameters (particles).
+        """
+        pass
 
 class LinearCostModelMixin(Simulatable):
     # FIXME: move this mixin to a new module.
