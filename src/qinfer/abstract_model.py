@@ -588,11 +588,7 @@ class Model(Simulatable):
         for idx_ep in range(n_expparams):
             # So that expparam is a numpy array when extracted
             expparam = expparams[idx_ep:idx_ep+1]
-            import pdb
-            pdb.set_trace()
             n_o = n_outcomes if np.isscalar(n_outcomes) else n_outcomes[idx_ep]
-            import pdb
-            pdb.set_trace()
             os = np.asarray(self.simulate_experiment(modelparams, expparam, repeat=1)).reshape(-1)
             assert os.dtype == self.domain(expparam)[0].dtype
             
@@ -920,7 +916,7 @@ class DifferentiableModel(with_metaclass(abc.ABCMeta, Model)):
         n_o = n_o_fi
         n_o = n_o if np.isscalar(n_o) else n_o.shape[0]
         mps = modelparams[np.random.choice(modelparams.shape[0],n_o),:]
-        outcomes = self.simulate_experiment(mps,expparams,repeat=1)[0,:,:]
+        outcomes = np.asarray(self.simulate_experiment(mps,expparams,repeat=1)).reshape((len(mps),len(expparams)))
         scores = np.empty((
         self.n_modelparams, n_o,
         modelparams.shape[0], expparams.shape[0]
