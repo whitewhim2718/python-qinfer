@@ -588,8 +588,12 @@ class Model(Simulatable):
         for idx_ep in range(n_expparams):
             # So that expparam is a numpy array when extracted
             expparam = expparams[idx_ep:idx_ep+1]
+            import pdb
+            pdb.set_trace()
             n_o = n_outcomes if np.isscalar(n_outcomes) else n_outcomes[idx_ep]
-            os = self.simulate_experiment(modelparams, expparam, repeat=1)[0,:,0]
+            import pdb
+            pdb.set_trace()
+            os = np.asarray(self.simulate_experiment(modelparams, expparam, repeat=1)).reshape(-1)
             assert os.dtype == self.domain(expparam)[0].dtype
             
             # The same outcome is likely to have resulted multiple times in the case that outcomes 
