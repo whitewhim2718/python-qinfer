@@ -716,7 +716,7 @@ class SMCUpdater(Distribution):
         :return float: The Bayes risk for the current posterior distribution
             of the hypothetical experiment ``expparams``.
         """
-
+        expparams = np.asarray(expparams).reshape(-1)
         n_expparams = expparams.shape[0]
         n_outcomes = self.model.n_outcomes(expparams)
         scalar_n_o = not np.isscalar(n_outcomes)
@@ -889,7 +889,7 @@ class SMCUpdater(Distribution):
         :return float: The Bayes risk for the current posterior distribution
             of the hypothetical experiment ``expparams``.
         """
-
+        expparams = np.asarray(expparams).reshape(-1)
         n_expparams = expparams.shape[0]
         n_outcomes = self.model.n_outcomes(expparams)
         scalar_n_o = not np.isscalar(n_outcomes)
