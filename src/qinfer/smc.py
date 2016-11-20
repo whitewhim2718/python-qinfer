@@ -733,14 +733,10 @@ class SMCUpdater(Distribution):
                 
         if not cache_available:
             if n_const:
-                #sampled_weights, sampled_modelparams = \
-                #        self.resampler(self.model, self.particle_weights, self.particle_locations,
-                #            n_particles=n_outcomes)
+                sampled_weights, sampled_modelparams = \
+                        self.resampler(self.model, self.particle_weights, self.particle_locations,
+                            n_particles=n_outcomes)
 
-                selection = np.random.choice(len(self.particle_weights),n_outcomes)
-                sampled_modelparams = self.particle_locations[selection]
-                sampled_weights = self.particle_weights[selection]
-                sampled_weights = sampled_weights/np.sum(sampled_weights)
 
                 if cache_samples:
                     self._sampled_weights = sampled_weights
@@ -759,10 +755,6 @@ class SMCUpdater(Distribution):
                         sampled_weights, sampled_modelparams = \
                             self.resampler(self.model, self.particle_weights, self.particle_locations,
                                 n_particles=n_o)
-                        selection = np.choice(len(self.particle_weights),n_o)
-                        sampled_modelparams = self.particle_locations[selection]
-                        sampled_weights = self.particle_weights[selection]
-                        sampled_weights = sampled_weights/np.sum(sampled_weights)
                     else:
                         sampled_weights = self.particle_weights
                         sampled_modelparams = self.particle_locations
@@ -788,8 +780,6 @@ class SMCUpdater(Distribution):
         for idx_exp in range(n_expparams):
             weights = all_sampled_weights[idx_exp]
             modelparams = all_sampled_modelparams[idx_exp]
-            if np.any(np.logical_not(self._old_modelparams==modelparams)):
-                print False
             self._old_modelparams = modelparams
             L = all_likelihoods[idx_exp]     # shape (n_outcomes, n_particles)
             outcomes = all_sampled_outcomes[idx_exp] # shape (n_outcomes)
