@@ -721,12 +721,12 @@ class SMCUpdater(Distribution):
         n_outcomes = self.model.n_outcomes(expparams)
         scalar_n_o = not np.isscalar(n_outcomes)
         n_const = self.model.is_n_outcomes_constant
-
+        
         cache_available = False
         if use_cached_samples:
             if not n_const:
                 warnings.warn("Cached values are not supported if n_outcomes is constant. Reverting to sampling")
-            if self._sampled_modelparams and self._sampled_weights:
+            if (not self._sampled_modelparams is None) and (not self._sampled_weights is None):
                 cache_available = True
                 sampled_modelparams = self._sampled_modelparams
                 sampled_weights = self._sampled_weights
@@ -779,12 +779,16 @@ class SMCUpdater(Distribution):
         for idx_exp in range(n_expparams):
             weights = all_sampled_weights[idx_exp]
             modelparams = all_sampled_modelparams[idx_exp]
+
             L = all_likelihoods[idx_exp]     # shape (n_outcomes, n_particles)
             outcomes = all_sampled_outcomes[idx_exp] # shape (n_outcomes)
+   
             # (unnormalized) hypothetical posterior weights for this experiment
-            hyp_weights = L*weights # shape (n_outcomes, n_particles)
+            hyp_weights = L*weights[:,np.newaxis] # shape (n_outcomes, n_particles)
             # Sum up the weights to find the renormalization scale.
             norm_scale = np.sum(hyp_weights, axis=1)                 # shape (n_outcomes)
+            p_o = norm_scale/np.sum(norm_scale)
+
             norm_weights = hyp_weights / norm_scale[..., np.newaxis] # shape(n_outcomes, n_particles)
           
          
@@ -796,11 +800,19 @@ class SMCUpdater(Distribution):
             else:
                 est_posterior_mom2 = np.tensordot(norm_scale, est_posterior_means**2, axes=(0, 0)) # shape (n_mps)
 
+            #import pdb
+            #pdb.set_trace()
             # compute the second moment of the particles
             est_mom2 = np.tensordot(weights, modelparams**2, axes=(0,0))
             #est_mom2 = np.tensordot(self.particle_weights, self.particle_locations**2, axes=(0,0))      # shape (n_mps)
             # finally, weight their difference by Q and return
-            risk[idx_exp] = np.sum(self.model.Q * (est_mom2 - est_posterior_mom2), axis=0)
+
+            tmp = ((modelparams[np.newaxis,...]-est_posterior_means[:,np.newaxis,:])**2) \
+                        /p_o[:,np.newaxis,np.newaxis]*hyp_weights[...,np.newaxis]
+
+            tmp2 = np.sum(tmp,axis=(0,1))/len(outcomes)
+            risk[idx_exp] = np.sum(self.model.Q * tmp2, axis=0)
+            #risk[idx_exp] = np.sum(self.model.Q * (est_mom2 - est_posterior_mom2), axis=0)
          
         risk = risk.clip(min=0)  
 
@@ -849,9 +861,12 @@ class SMCUpdater(Distribution):
 
         risk_improvements = np.empty_like(risks)
 
+
         for i,risk in enumerate(risks):
-            old_var = np.sum(all_sampled_weights[i].reshape(-1,1)*(all_sampled_modelparams[i]-self.est_mean())**2,axis=0)
-            risk_improvements[i] = risk-np.dot(self.model.Q,old_var)
+            #old_mean = np.sum(all_sampled_weights[i].reshape(-1,1)*(all_sampled_modelparams[i]),axis=0)
+            old_mean = self.est_mean()
+            old_var = np.sum(all_sampled_weights[i].reshape(-1,1)*(all_sampled_modelparams[i]-old_mean)**2,axis=0)
+            risk_improvements[i] = (risk-np.dot(self.model.Q,old_var))
 
         if return_sampled_parameters:
             return risk_improvements, all_sampled_weights, all_sampled_modelparams, all_sampled_outcomes, all_likelihoods
@@ -899,7 +914,7 @@ class SMCUpdater(Distribution):
         if use_cached_samples:
             if not n_const:
                 warnings.warn("Cached values are not supported if n_outcomes is constant. Reverting to sampling")
-            if self._sampled_modelparams and self._sampled_weights:
+            if (not self._sampled_modelparams is None) and (not self._sampled_weights is None):
                 cache_available = True
                 sampled_modelparams = self._sampled_modelparams
                 sampled_weights = self._sampled_weights
