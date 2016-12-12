@@ -736,6 +736,10 @@ class SMCUpdater(Distribution):
                 sampled_weights, sampled_modelparams = \
                         self.resampler(self.model, self.particle_weights, self.particle_locations,
                             n_particles=n_outcomes)
+                #sampled_indexes = np.random.choice(len(self.particle_weights),n_outcomes)
+                #sampled_modelparams = self.particle_locations[sampled_indexes]
+                #sampled_weights = self.particle_weights[sampled_indexes]
+                #sampled_weights = sampled_weights/np.sum(sampled_weights)
 
 
                 if cache_samples:
@@ -777,6 +781,7 @@ class SMCUpdater(Distribution):
         risk = np.empty((n_expparams, ))
         if not hasattr(self,'_old_modelparams'):
             self._old_modelparams = all_sampled_modelparams[0]
+        
         for idx_exp in range(n_expparams):
             weights = all_sampled_weights[idx_exp]
             modelparams = all_sampled_modelparams[idx_exp]
@@ -792,6 +797,8 @@ class SMCUpdater(Distribution):
             # compute the expected mean for each of the outcomes
             est_posterior_means = np.tensordot(norm_weights, modelparams, axes=(1, 0)) # shape(n_outcomes, n_mps)
             # compute the second moment of these means over the outcome distribution
+            
+
             if self.model.allow_identical_outcomes:
                 est_posterior_mom2 = (1./norm_scale.shape[0])*np.sum(est_posterior_means**2, axis=0) # shape (n_mps)
             else:

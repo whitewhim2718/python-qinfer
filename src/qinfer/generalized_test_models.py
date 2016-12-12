@@ -644,7 +644,7 @@ class GaussianModel(DifferentiableModel):
         x = np.tile(x, (repeat, 1, 1))
         var = np.tile(var, (repeat, 1,expparams.shape[0]))
 
-        outcomes = np.random.normal(x, var).astype(self.domain(None).dtype)
+        outcomes = np.random.normal(x, np.sqrt(var)).astype(self.domain(None).dtype)
 
         return outcomes[0, 0, 0] if repeat == 1 and expparams.shape[0] == 1 and modelparams.shape[0] == 1 else outcomes
                 
