@@ -806,6 +806,7 @@ class SMCUpdater(Distribution):
                 
 
             # compute the second moment of the particles
+            
             est_mom2 = np.tensordot(weights, modelparams**2, axes=(0,0))
             #est_mom2 = np.tensordot(self.particle_weights, self.particle_locations**2, axes=(0,0))      # shape (n_mps)
             # finally, weight their difference by Q and return
@@ -864,6 +865,7 @@ class SMCUpdater(Distribution):
             old_mean = np.sum(all_sampled_weights[i].reshape(-1,1) * all_sampled_modelparams[i],axis=0)
             old_var = np.sum(all_sampled_weights[i].reshape(-1,1)*(all_sampled_modelparams[i]-old_mean)**2,axis=0)
             risk_improvements[i] = (risk-np.dot(self.model.Q,old_var))
+
     
         if return_sampled_parameters:
             return risk_improvements, all_sampled_weights, all_sampled_modelparams, all_sampled_outcomes, all_likelihoods
