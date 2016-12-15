@@ -536,7 +536,7 @@ class Model(Simulatable):
         """
         return self.are_models_valid(modelparams[np.newaxis, :])[0]
 
-    def representative_outcomes(self, weights, modelparams, expparams):
+    def representative_outcomes(self, weights, modelparams, expparams,params_to_evaluate_likelihood=None):
         """
         Given the distribution of model parameters specified by 
         (``weights``, ``modelparams``), for each experimental parameter 
@@ -552,7 +552,7 @@ class Model(Simulatable):
 
         :param np.ndarray weights: Set of weights with a weight
             corresponding to every modelparam. 
-        :param np.ndarray modelparams: Set of model parameters (particles).
+        :param np.ndarray modelparams: Set of model parameters (particles) to sample outcomes from.
         :param np.ndarray expparams: Set of experimental parameters of 
             type ``exparams_dtype``.
 
@@ -573,6 +573,8 @@ class Model(Simulatable):
         a distribution of model parameters. See ``~qinfer.SMCUpdater.bayes_risk()` 
         as an example.
         """
+        if params_to_evaluate_likelihood is None:
+            params_to_evaluate_likelihood = modelparams
 
         n_outcomes = self.n_outcomes(expparams)
         n_expparams = expparams.shape[0]
@@ -599,7 +601,7 @@ class Model(Simulatable):
 
             # Find the likelihood for each outcome given each modelparam (irrespective 
             # of which modelparam the outcome resulted from)
-            L_ep = self.likelihood(os, modelparams, expparam)[:,:,0]
+            L_ep = self.likelihood(os, params_to_evaluate_likelihood, expparam)[:,:,0]
 
             if self.domain(expparam)[0].is_discrete:
                 # If we sum L_ep over the weighted modelparams, we get the total probability 

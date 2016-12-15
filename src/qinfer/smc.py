@@ -775,7 +775,7 @@ class SMCUpdater(Distribution):
             all_sampled_modelparams = np.tile(sampled_modelparams,(n_expparams,1,1))
 
             all_likelihoods,all_sampled_outcomes = self.model.representative_outcomes(
-                            sampled_weights, sampled_modelparams, expparams)
+                            sampled_weights, sampled_modelparams, expparams,self.particle_locations)
 
 
         risk = np.empty((n_expparams, ))
@@ -783,8 +783,8 @@ class SMCUpdater(Distribution):
             self._old_modelparams = all_sampled_modelparams[0]
         
         for idx_exp in range(n_expparams):
-            weights = all_sampled_weights[idx_exp]
-            modelparams = all_sampled_modelparams[idx_exp]
+            weights = self.particle_weights
+            modelparams = self.particle_locations
             L = all_likelihoods[idx_exp]     # shape (n_outcomes, n_particles)
             outcomes = all_sampled_outcomes[idx_exp] # shape (n_outcomes)
             # (unnormalized) hypothetical posterior weights for this experiment
@@ -806,16 +806,16 @@ class SMCUpdater(Distribution):
                 
 
             # compute the second moment of the particles
-            
             est_mom2 = np.tensordot(weights, modelparams**2, axes=(0,0))
             #est_mom2 = np.tensordot(self.particle_weights, self.particle_locations**2, axes=(0,0))      # shape (n_mps)
             # finally, weight their difference by Q and return
             risk[idx_exp] = np.sum(self.model.Q * (est_mom2 - est_posterior_mom2), axis=0)
+      
      
         risk = risk.clip(min=0)  
 
         if return_sampled_parameters:
-            return risk, all_sampled_weights, all_sampled_modelparams, all_sampled_outcomes, all_likelihoods
+            return risk, weights, modelparams, all_sampled_outcomes, all_likelihoods
         else:
             return risk
       
@@ -853,22 +853,25 @@ class SMCUpdater(Distribution):
             of the hypothetical experiment ``expparams``.
         """
 
-        risks, all_sampled_weights, all_sampled_modelparams, all_sampled_outcomes, all_likelihoods = \
+        risks, weights, modelparams, all_sampled_outcomes, all_likelihoods = \
                                 self.bayes_risk(expparams,use_cached_samples,cache_samples,
                                                 return_sampled_parameters=True)
 
         risk_improvements = np.empty_like(risks)
 
-
+        old_mean = np.sum(weights.reshape(-1,1) * modelparams,axis=0)
+        old_var = np.sum(weights.reshape(-1,1)*(modelparams-old_mean)**2,axis=0)
         for i,risk in enumerate(risks):
             #old_mean = np.sum(all_sampled_weights[i].reshape(-1,1)*(all_sampled_modelparams[i]),axis=0)
-            old_mean = np.sum(all_sampled_weights[i].reshape(-1,1) * all_sampled_modelparams[i],axis=0)
-            old_var = np.sum(all_sampled_weights[i].reshape(-1,1)*(all_sampled_modelparams[i]-old_mean)**2,axis=0)
+            
             risk_improvements[i] = (risk-np.dot(self.model.Q,old_var))
 
+            #if risk_improvements[i]>0:
+            #    import pdb
+            #    pdb.set_trace()
     
         if return_sampled_parameters:
-            return risk_improvements, all_sampled_weights, all_sampled_modelparams, all_sampled_outcomes, all_likelihoods
+            return risk_improvements, weights, modelparams, all_sampled_outcomes, all_likelihoods
         else:
             return risk_improvements
 
