@@ -374,7 +374,7 @@ class GaussianModel(DifferentiableModel):
     
     ## INITIALIZER ##
 
-    def __init__(self, var=None, num_outcome_samples=10000,constant_noise_outcomes=False):
+    def __init__(self, var=None, num_outcome_samples=500,constant_noise_outcomes=False):
 
         self.num_outcome_samples = num_outcome_samples
         self._var = var

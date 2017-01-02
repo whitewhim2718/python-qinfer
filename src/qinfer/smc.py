@@ -686,6 +686,65 @@ class SMCUpdater(Distribution):
             self.particle_weights,
             self.particle_locations)
 
+    def reapprox(self,particle_weights,particle_locations,approx_ratio):
+        """
+        Generates a reduced approximation of the particle filter as described in Algorithm 6 of
+        Robust Online Hamiltonian Learning. This implementation also normalizes the reduced weights
+        which was not described in the original paper.
+
+        :param np.ndarray particle_weights: Particle weights of particle filter to be reduced. 
+        :param np.ndarray particle_locations: Particle locations of particle filter to be reduced. 
+        :param int approx_ratio: Proportion to reduce particle filter particle number by. approx_ratio=1.0,
+        will return the initial sorted distribution. :math:`\tilde{n}=approx_ratio*n`.  approx_ratio must be 
+        an element from (0.,1.0). 
+
+        :return tuple: A tuple containing (reduced_particle_weights,reduced_particle_locations), of the form 
+        (:class:`numpy.ndarray`,:class:`numpy.ndarray`).
+        """
+
+        n_ini = len(particle_weights)
+        n_red = int(approx_ratio*n_ini)
+        
+        #draw random permutation
+        permuted_indices = np.random.permutation(n_ini)
+        
+        #permute weights/locations to avoid patterns while sorting
+        particle_weights = particle_weights[permuted_indices]
+        particle_location = particle_locations[permuted_indices]
+        
+        #sort to return highest weighted particles in approximation
+        reduced_indices = np.argsort(particle_weights)[-n_red:]
+        reduced_particle_weights = particle_weights[reduced_indices]
+        reduced_particle_locations = particle_locations[reduced_indices]
+        
+        #normalize weights 
+        reduced_particle_weights = reduced_particle_weights/np.sum(reduced_particle_weights)
+        return reduced_particle_weights, reduced_particle_locations
+
+    def sample_particle_filter(self,particle_weights,particle_locations,approx_ratio):
+        """
+        Generates an approximation of the particle filter by sampling particles with frequency
+        determined by the particle weighting. This method allows there to be a nonzero chance for non-zero
+        but low weighted particles to be selected as compared to `reapprox` which will greedily select the largest 
+        weights first. 
+
+        :param np.ndarray particle_weights: Particle weights of particle filter to be reduced. 
+        :param np.ndarray particle_locations: Particle locations of particle filter to be reduced. 
+        :param int approx_ratio: Proportion to reduce particle filter particle number by. approx_ratio=1.0,
+        will return the initial sorted distribution. :math:`\tilde{n}=approx_ratio*n`. 
+
+        :return tuple: A tuple containing (reduced_particle_weights,reduced_particle_locations), of the form 
+        (:class:`numpy.ndarray`,:class:`numpy.ndarray`).
+        """
+        n_ini = len(particle_weights)
+        n_red = int(approx_ratio*n_ini)
+      
+        selected_indexes = np.random.choice(n_ini,n_red,p=self.particle_weights)
+        particle_weights = self.particle_weights[selected_indexes]
+        particle_weights = particle_weights/np.sum(particle_weights)
+        particle_locations = self.particle_locations[selected_indexes]
+
+        return particle_weights, particle_locations
     def bayes_risk(self, expparams, use_cached_samples=False,cache_samples=True,
                     return_sampled_parameters=False):
         r"""
@@ -733,14 +792,9 @@ class SMCUpdater(Distribution):
                 
         if not cache_available:
             if n_const:
-                sampled_weights, sampled_modelparams = \
-                        self.resampler(self.model, self.particle_weights, self.particle_locations,
-                            n_particles=n_outcomes)
-                #sampled_indexes = np.random.choice(len(self.particle_weights),n_outcomes)
-                #sampled_modelparams = self.particle_locations[sampled_indexes]
-                #sampled_weights = self.particle_weights[sampled_indexes]
-                #sampled_weights = sampled_weights/np.sum(sampled_weights)
-
+                approx_ratio = n_outcomes/len(self.particle_weights)
+                sampled_weights, sampled_modelparams = self.sample_particle_filter(self.particle_weights,
+                        self.particle_locations,approx_ratio)
 
                 if cache_samples:
                     self._sampled_weights = sampled_weights
@@ -756,9 +810,9 @@ class SMCUpdater(Distribution):
                     exp = expparams[idx_exp:idx_exp+1]
               
                     if n_o > self.model.n_outcomes_cutoff and self.model.n_outcomes_cutoff is not None:                       
-                        sampled_weights, sampled_modelparams = \
-                            self.resampler(self.model, self.particle_weights, self.particle_locations,
-                                n_particles=n_o)
+                        approx_ratio = n_o/len(self.particle_weights)
+                        sampled_weights, sampled_modelparams = self.sample_particle_filter(self.particle_weights,
+                        self.particle_locations,approx_ratio)
                     else:
                         sampled_weights = self.particle_weights
                         sampled_modelparams = self.particle_locations
@@ -807,8 +861,7 @@ class SMCUpdater(Distribution):
 
             # compute the second moment of the particles
             est_mom2 = np.tensordot(weights, modelparams**2, axes=(0,0))
-            #est_mom2 = np.tensordot(self.particle_weights, self.particle_locations**2, axes=(0,0))      # shape (n_mps)
-            # finally, weight their difference by Q and return
+            
             risk[idx_exp] = np.sum(self.model.Q * (est_mom2 - est_posterior_mom2), axis=0)
       
      
@@ -925,9 +978,9 @@ class SMCUpdater(Distribution):
 
         if not cache_available:
             if n_const:
-                sampled_weights, sampled_modelparams = \
-                        self.resampler(self.model, self.particle_weights, self.particle_locations,
-                            n_particles=n_outcomes)
+                approx_ratio = n_outcomes/len(self.particle_weights)
+                sampled_weights, sampled_modelparams = self.sample_particle_filter(self.particle_weights,
+                        self.particle_locations,approx_ratio)
                 if cache_samples:
                     self._sampled_weights = sampled_weights
                     self._sampled_modelparams = sampled_modelparams
@@ -942,9 +995,9 @@ class SMCUpdater(Distribution):
                     exp = expparams[idx_exp:idx_exp+1]
               
                     if n_o > self.model.n_outcomes_cutoff and self.model.n_outcomes_cutoff is not None:                       
-                        sampled_weights, sampled_modelparams = \
-                            self.resampler(self.model, self.particle_weights, self.particle_locations,
-                                n_particles=n_o)
+                        approx_ratio = n_o/len(self.particle_weights)
+                        sampled_weights, sampled_modelparams = self.sample_particle_filter(self.particle_weights,
+                        self.particle_locations,approx_ratio)
                     else:
                         sampled_weights = self.particle_weights
                         sampled_modelparams = self.particle_locations
