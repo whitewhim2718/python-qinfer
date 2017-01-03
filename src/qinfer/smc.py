@@ -745,6 +745,7 @@ class SMCUpdater(Distribution):
         particle_locations = self.particle_locations[selected_indexes]
 
         return particle_weights, particle_locations
+    
     def bayes_risk(self, expparams, use_cached_samples=False,cache_samples=True,
                     return_sampled_parameters=False):
         r"""
@@ -829,7 +830,7 @@ class SMCUpdater(Distribution):
             all_sampled_modelparams = np.tile(sampled_modelparams,(n_expparams,1,1))
 
             all_likelihoods,all_sampled_outcomes = self.model.representative_outcomes(
-                            sampled_weights, sampled_modelparams, expparams,self.particle_locations)
+                            sampled_weights, sampled_modelparams, expparams)
 
 
         risk = np.empty((n_expparams, ))
@@ -837,8 +838,8 @@ class SMCUpdater(Distribution):
             self._old_modelparams = all_sampled_modelparams[0]
         
         for idx_exp in range(n_expparams):
-            weights = self.particle_weights
-            modelparams = self.particle_locations
+            weights = all_sampled_weights[idx_exp]
+            modelparams = all_sampled_modelparams[idx_exp]
             L = all_likelihoods[idx_exp]     # shape (n_outcomes, n_particles)
             outcomes = all_sampled_outcomes[idx_exp] # shape (n_outcomes)
             # (unnormalized) hypothetical posterior weights for this experiment
@@ -1715,6 +1716,7 @@ class SMCUpdaterBCRB(SMCUpdater):
         # and e being a model index.
         # We will thus want to return an array of shape BI[i, j, e], reducing
         # over the model index.
+
         fi = self.model.fisher_information(modelparams, expparams)
         
         # We now either reweight and sum, or sum and divide, based on whether we
