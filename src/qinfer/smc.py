@@ -794,7 +794,7 @@ class SMCUpdater(Distribution):
         if not cache_available:
             if n_const:
                 approx_ratio = n_outcomes/len(self.particle_weights)
-                sampled_weights, sampled_modelparams = self.sample_particle_filter(self.particle_weights,
+                sampled_weights, sampled_modelparams = self.reapprox(self.particle_weights,
                         self.particle_locations,approx_ratio)
 
                 if cache_samples:
@@ -812,7 +812,7 @@ class SMCUpdater(Distribution):
               
                     if n_o > self.model.n_outcomes_cutoff and self.model.n_outcomes_cutoff is not None:                       
                         approx_ratio = n_o/len(self.particle_weights)
-                        sampled_weights, sampled_modelparams = self.sample_particle_filter(self.particle_weights,
+                        sampled_weights, sampled_modelparams = self.reapprox(self.particle_weights,
                         self.particle_locations,approx_ratio)
                     else:
                         sampled_weights = self.particle_weights
@@ -862,9 +862,9 @@ class SMCUpdater(Distribution):
 
             # compute the second moment of the particles
             est_mom2 = np.tensordot(weights, modelparams**2, axes=(0,0))
-            
+
             risk[idx_exp] = np.sum(self.model.Q * (est_mom2 - est_posterior_mom2), axis=0)
-      
+        
      
         risk = risk.clip(min=0)  
 
@@ -980,7 +980,7 @@ class SMCUpdater(Distribution):
         if not cache_available:
             if n_const:
                 approx_ratio = n_outcomes/len(self.particle_weights)
-                sampled_weights, sampled_modelparams = self.sample_particle_filter(self.particle_weights,
+                sampled_weights, sampled_modelparams = self.reapprox(self.particle_weights,
                         self.particle_locations,approx_ratio)
                 if cache_samples:
                     self._sampled_weights = sampled_weights
@@ -997,7 +997,7 @@ class SMCUpdater(Distribution):
               
                     if n_o > self.model.n_outcomes_cutoff and self.model.n_outcomes_cutoff is not None:                       
                         approx_ratio = n_o/len(self.particle_weights)
-                        sampled_weights, sampled_modelparams = self.sample_particle_filter(self.particle_weights,
+                        sampled_weights, sampled_modelparams = self.reapprox(self.particle_weights,
                         self.particle_locations,approx_ratio)
                     else:
                         sampled_weights = self.particle_weights
@@ -1717,15 +1717,20 @@ class SMCUpdaterBCRB(SMCUpdater):
         # We will thus want to return an array of shape BI[i, j, e], reducing
         # over the model index.
 
-        fi = self.model.fisher_information(modelparams, expparams)
+        n_o_fi = self.model.n_fisher_information_outcomes(expparams)
+        # may get an array back, this way we make sure we get the correct number
+        approx_ratio = np.asarray(float(n_o_fi)/len(self.particle_weights))
+        sampled_weights, sampled_modelparams = self.reapprox(self.particle_weights,
+                        self.particle_locations,approx_ratio)
+        fi = self.model.fisher_information(sampled_modelparams, expparams)
         
         # We now either reweight and sum, or sum and divide, based on whether we
         # have model weights to consider or not.
         if modelweights is None:
             # Assume uniform weights.
-            bim = np.sum(fi, axis=2) / modelparams.shape[0]
+            bim = np.sum(fi, axis=2) / sampled_modelparams.shape[0]
         else:
-            bim = np.einsum("m,ijme->ije", modelweights, fi)
+            bim = np.einsum("m,ijme->ije", sampled_weights, fi)
             
         return bim
     
