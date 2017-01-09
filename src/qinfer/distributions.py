@@ -64,7 +64,11 @@ __all__ = [
     'HaarUniform',
     'HilbertSchmidtUniform',
     'PostselectedDistribution',
-    'ConstrainedSumDistribution'
+    'ConstrainedSumDistribution',
+    'DiscreteDistribution',
+    'IntegerValuedDistribution',
+    'UniformIntegerValuedDistribution'
+
 ]
 
 ## FUNCTIONS #################################################################
@@ -704,3 +708,84 @@ class ConstrainedSumDistribution(Distribution):
         s = self.underlying_distribution.sample(n)
         totals = np.sum(s, axis=1)[:,np.newaxis]
         return self.desired_total * np.sign(totals) * s / totals
+
+
+## STORED DISCRETE DISTRIBUTIONS #######################################################
+# This section is devoted to discrete distributions that store the underlying probabilities 
+# for a given given outcome. 
+class DiscreteDistribution(Distribution):
+    """
+    Abstract base class for probability distributions on one or more random
+    variables.
+
+    :param np.array probabilities: array of probabilities corresponding to given locations of form (n_probabilities,).
+    :param np.array locations: locations of distribution corresponding to probabilities with 
+                                form (n_probabilities,n_location_params). 
+    """
+    def __init__(probabilities, values):
+        self._probabilities = probabilities/np.sum(probabilities)
+        self._values = values
+
+    
+    
+    @abc.abstractproperty
+    def n_rvs(self):
+        """
+        The number of random variables that this distribution is over.
+
+        :type: `int`
+        """
+        return self.values.shape[1]
+
+    @abc.abstractmethod
+    def sample(self, n=1):
+        """
+        Returns one or more samples from this probability distribution.
+
+        :param int n: Number of samples to return.
+        :rtype: numpy.ndarray
+        :return: An array containing samples from the
+            distribution of shape ``(n, d)``, where ``d`` is the number of
+            random variables.
+        """
+        
+        return np.random.choice(self.probabilities.shape[0], size=n, p=self.probabilities)
+
+    ## Properties #########################################################
+    @property
+    def probabilities(self):
+        """
+        Returns the distributions underlying probabilities. 
+        """
+        return self._probabilities
+
+    @property
+    def values(self):
+        """
+        Returns the distributions underlying values. 
+        """
+        return self._values
+
+
+class IntegerValuedDistribution(DiscreteDistribution):
+    """
+    Distribution with outcome values ranging from 0 to N-1.
+
+    :param np.array probabilities: array of probabilities corresponding to given locations of form (n_probabilities,).
+    :param np.array N: Number of outcome values. Values will range on interval 0..N-1.
+    """
+
+    def __init__(probabilities, N):
+        self._probabilities = probabilities/np.sum(probabilities)
+        self._values = np.arange(N).reshape(-1,1)
+
+class UniformIntegerValuedDistribution(DiscreteDistribution):
+    """
+    Uniform Distribution with outcome values range from 0 to N-1.
+
+    :param np.array N: Number of outcome values. Values will range on interval 0..N-1.
+    """
+
+    def __init__(N):
+        self._probabilities = np.ones(N,dtype=np.float32)/N
+        self._values = np.arange(N).reshape(-1,1)

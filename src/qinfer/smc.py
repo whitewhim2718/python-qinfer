@@ -690,7 +690,7 @@ class SMCUpdater(Distribution):
         """
         Generates a reduced approximation of the particle filter as described in Algorithm 6 of
         Robust Online Hamiltonian Learning. This implementation also normalizes the reduced weights
-        which was not described in the original paper.
+        which was not described in [GFWC12]_.
 
         :param np.ndarray particle_weights: Particle weights of particle filter to be reduced. 
         :param np.ndarray particle_locations: Particle locations of particle filter to be reduced. 
