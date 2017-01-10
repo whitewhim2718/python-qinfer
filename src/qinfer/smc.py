@@ -160,6 +160,7 @@ class SMCUpdater(Distribution):
         self._just_resampled = False
         self._data_record = []
         self._normalization_record = []
+        self._outcome_likelihoods = []
         self._resampling_divergences = [] if track_resampling_divergence else None
         
         self._zero_weight_policy = zero_weight_policy
@@ -215,12 +216,23 @@ class SMCUpdater(Distribution):
         """
         Returns the normalization record.
         
-        :type: `float`
+        :type: `np.array`
         """
         # We wrap this in a property to prevent external resetting and to enable
         # a docstring.
-        return self._normalization_record
+        return np.array(self._normalization_record)
+    
+    @property
+    def likelihood_record(self):
+        """
+        Returns the likelihood record of the outcomes. :math:`pr(o)=\sum \limits_{i=1}^N w_i*\pi(x_i)`.
         
+        :type: `np.array`
+        """
+        # We wrap this in a property to prevent external resetting and to enable
+        # a docstring.
+        return np.array(self._likelihood_record)
+
     @property
     def log_total_likelihood(self):
         """
@@ -233,7 +245,9 @@ class SMCUpdater(Distribution):
         :type: `float`
         """
         return np.sum(np.log(self.normalization_record))
-        
+    
+    
+    
     @property
     def n_ess(self):
         """

@@ -737,6 +737,15 @@ class DiscreteDistribution(Distribution):
         """
         return self.values.shape[1]
 
+    @property
+    def n_values(self):
+        """
+        The number of discrete elements that this distribution is over.
+
+        :type: `int`
+        """
+        return len(self.probabilities)
+
     @abc.abstractmethod
     def sample(self, n=1):
         """
@@ -766,6 +775,9 @@ class DiscreteDistribution(Distribution):
         """
         return self._values
 
+    
+    
+
 
 class IntegerValuedDistribution(DiscreteDistribution):
     """
@@ -775,9 +787,11 @@ class IntegerValuedDistribution(DiscreteDistribution):
     :param np.array N: Number of outcome values. Values will range on interval 0..N-1.
     """
 
-    def __init__(probabilities, N):
-        self._probabilities = probabilities/np.sum(probabilities)
-        self._values = np.arange(N).reshape(-1,1)
+    def __init__(self,probabilities):
+        probabilities = probabilities/np.sum(probabilities)
+        values = np.arange(len(probabilities)).reshape(-1,1)
+        super(IntegerValuedDistribution,self).__init__(probabilities,values)
+
 
 class UniformIntegerValuedDistribution(DiscreteDistribution):
     """
@@ -786,6 +800,7 @@ class UniformIntegerValuedDistribution(DiscreteDistribution):
     :param np.array N: Number of outcome values. Values will range on interval 0..N-1.
     """
 
-    def __init__(N):
-        self._probabilities = np.ones(N,dtype=np.float32)/N
-        self._values = np.arange(N).reshape(-1,1)
+    def __init__(self,N):
+        probabilities = np.ones(N,dtype=np.float32)/N
+        values = np.arange(N).reshape(-1,1)
+        super(UniformIntegerValuedDistribution,self).__init__(probabilities,values)
