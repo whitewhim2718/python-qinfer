@@ -168,7 +168,7 @@ class RealDomain(Domain):
     def min(self):
         """
         Returns the minimum value of the domain. The outcome 
-        None is interpreted as negative infinity.
+        ``None`` is interpreted as negative infinity.
 
         :rtype: `float`
         """
@@ -177,7 +177,7 @@ class RealDomain(Domain):
     def max(self):
         """
         Returns the maximum value of the domain. The outcome 
-        None is interpreted as positive infinity.
+        ``None`` is interpreted as positive infinity.
 
         :rtype: `float`
         """
@@ -275,8 +275,8 @@ class IntegerDomain(Domain):
     """
 
     def __init__(self, min=0, max=np.inf):
-        self._min = min
-        self._max = max
+        self._min = int(min)
+        self._max = int(max)
 
     ## PROPERTIES ##
 
