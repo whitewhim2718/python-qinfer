@@ -50,8 +50,11 @@ import warnings
 __all__ = [
     'Distribution',
     'SingleSampleMixin',
+    'MixtureDistribution',
     'ProductDistribution',
     'UniformDistribution',
+    'DiscreteUniformDistribution',
+    'MVUniformDistribution',
     'ConstantDistribution',
     'NormalDistribution',
     'MultivariateNormalDistribution',
@@ -64,7 +67,8 @@ __all__ = [
     'HaarUniform',
     'HilbertSchmidtUniform',
     'PostselectedDistribution',
-    'ConstrainedSumDistribution'
+    'ConstrainedSumDistribution',
+    'InterpolatedUnivariateDistribution'
 ]
 
 ## FUNCTIONS #################################################################
@@ -120,6 +124,122 @@ class SingleSampleMixin(with_metaclass(abc.ABCMeta, object)):
         samples = np.zeros((n, self.n_rvs))
         for idx in range(n):
             samples[idx, :] = self._sample()
+        return samples
+
+
+## CLASSES ###################################################################
+
+class MixtureDistribution(Distribution):
+    r"""
+    Samples from a weighted list of distributions.
+
+    :param weights: Length ``n_dist`` list or ``np.ndarray``
+        of probabilites summing to 1.
+    :param dist: Either a length ``n_dist`` list of ``Distribution`` instances, 
+        or a ``Distribution`` class, for example, ``NormalDistribution``.
+        It is assumed that a list of ``Distribution``s all 
+        have the same ``n_rvs``.
+    :param dist_args: If ``dist`` is a class, an array 
+        of shape ``(n_dist, n_rvs)`` where ``dist_args[k,:]`` defines 
+        the arguments of the k'th distribution. Use ``None`` if the distribution 
+        has no arguments.
+    :param dist_kw_args: If ``dist`` is a class, a dictionary
+        where each key's value is an array 
+        of shape ``(n_dist, n_rvs)`` where ``dist_kw_args[key][k,:]`` defines 
+        the keyword argument corresponding to ``key`` of the k'th distribution.
+        Use ``None`` if the distribution needs no keyword arguments.
+    :param bool shuffle: Whether or not to shuffle result after sampling. Not shuffling 
+        will result in variates being in the same order as 
+        the distributions. Default is ``True``.
+    """
+
+    def __init__(self, weights, dist, dist_args=None, dist_kw_args=None, shuffle=True):
+        super(MixtureDistribution, self).__init__()
+        self._weights = weights
+        self._n_dist = len(weights)
+        self._shuffle = shuffle
+
+        try:
+            self._example_dist = dist[0]
+            self._is_dist_list = True
+            self._dist_list = dist
+            assert(self._n_dist == len(self._dist_list))
+        except:
+            self._is_dist_list = False
+            self._dist = dist
+            self._dist_args = dist_args
+            self._dist_kw_args = dist_kw_args
+            assert(self._n_dist == self._dist_args.shape[0])
+
+            self._example_dist = self._dist(
+                *self._dist_arg(0),
+                **self._dist_kw_arg(0)
+            )
+            
+    def _dist_arg(self, k):
+        """
+        Returns the arguments for the k'th distribution.
+
+        :param int k: Index of distribution in question.
+        :rtype: ``np.ndarary``
+        """
+        if self._dist_args is not None:
+            return self._dist_args[k,:]
+        else:
+            return []
+
+    def _dist_kw_arg(self, k):
+        """
+        Returns a dictionary of keyword arguments 
+        for the k'th distribution.
+
+        :param int k: Index of the distribution in question.
+        :rtype: ``dict``
+        """
+        if self._dist_kw_args is not None:
+            return {
+                key:self._dist_kw_args[key][k,:] 
+                for key in self._dist_kw_args.keys()
+            }
+        else:
+            return {}
+
+    @property
+    def n_rvs(self):
+        return self._example_dist.n_rvs
+
+    @property
+    def n_dist(self):
+        """
+        The number of distributions in the mixture distribution.
+        """
+        return self._n_dist
+
+    def sample(self, n=1):
+        # how many samples to take from each dist
+        ns = np.random.multinomial(n, self._weights)
+        idxs = np.arange(self.n_dist)[ns > 0]
+
+        if self._is_dist_list:
+            # sample from each distribution
+            samples = np.concatenate([
+                self._dist_list[k].sample(n=ns[k])
+                for k in idxs
+            ])
+        else:
+            # instantiate each distribution and then sample
+            samples = np.concatenate([
+                self._dist(
+                        *self._dist_arg(k),
+                        **self._dist_kw_arg(k)
+                    ).sample(n=ns[k])
+                for k in idxs
+            ])
+
+        # in-place shuffling
+        if self._shuffle:
+            np.random.shuffle(samples)
+
         return samples
 
 class ProductDistribution(Distribution):
@@ -217,7 +337,6 @@ class ConstantDistribution(Distribution):
     def sample(self, n=1):
         return np.repeat(self._values, n, axis=0)
 
-
 class NormalDistribution(Distribution):
     """
     Normal or truncated normal distribution over a single random
@@ -282,12 +401,19 @@ class MultivariateNormalDistribution(Distribution):
 
 
 class SlantedNormalDistribution(Distribution):
-    """
-    Uniform distribution on a given rectangular region.
+    r"""
+    Uniform distribution on a given rectangular region  with 
+    additive noise. Random variates from this distribution 
+    follow :math:`X+Y` where :math:`X` is drawn uniformly 
+    with respect to the rectangular region defined by ranges, and 
+    :math:`Y` is normally distributed about 0 with variance 
+    ``weight**2``.
 
     :param numpy.ndarray ranges: Array of shape ``(n_rvs, 2)``, where ``n_rvs``
         is the number of random variables, specifying the upper and lower limits
         for each variable.
+    :param float weight: Number specifying the inverse variance 
+        of the additive noise term.
     """
 
     def __init__(self, ranges=_DEFAULT_RANGES, weight=0.01):
@@ -299,7 +425,7 @@ class SlantedNormalDistribution(Distribution):
 
         self._ranges = ranges
         self._n_rvs = ranges.shape[0]
-        #self._delta = ranges[:, 1] - ranges[:, 0]
+        self._delta = ranges[:, 1] - ranges[:, 0]
         self._weight = weight
 
     @property
@@ -308,8 +434,10 @@ class SlantedNormalDistribution(Distribution):
 
     def sample(self, n=1):
         shape = (n, self._n_rvs)# if n == 1 else (self._n_rvs, n)
-        z = np.random.randn(n,self._n_rvs)
-        return self._ranges[:, 0] +self._weight*z+np.random.rand(n)*self._ranges[:, 1];
+        z = np.random.randn(n, self._n_rvs)
+        return self._ranges[:, 0] + \
+                self._weight*z + \
+                np.random.rand(n, self._n_rvs)*self._delta[np.newaxis,:]
 
 class LogNormalDistribution(Distribution):
     """
@@ -457,15 +585,42 @@ class GammaDistribution(Distribution):
     def sample(self, n=1):
         return self._dist.rvs(size=n)[:, np.newaxis] / self.beta
 
-class MVUniformDistribution(object):
+class MVUniformDistribution(Distribution):
+    r"""
+    Uniform distribution over the rectangle
+    :math:`[0,1]^{\text{dim}}` with the restriction
+    that vector must sum to 1. Equivalently, a 
+    uniform distribution over the ``dim-1`` simplex 
+    whose vertices are the canonical unit vectors of
+    :math:`\mathbb{R}^\text{dim}`.
+
+    :param int dim: Number of dimensions; ``n_rvs``.
+    """
 
     def __init__(self, dim = 6):
-        self.dim = dim
+        warnings.warn(
+            "This class has been deprecated, and may "
+            "be renamed in future versions.",
+            DeprecationWarning
+        )
+        self._dim = dim
+
+    @property
+    def n_rvs(self):
+        return self._dim
 
     def sample(self, n = 1):
-        return np.random.mtrand.dirichlet(np.ones(self.dim),n)
+        return np.random.mtrand.dirichlet(np.ones(self._dim),n)
 
 class DiscreteUniformDistribution(Distribution):
+    """
+    Discrete uniform distribution over the integers between 
+    ``0`` and ``2**num_bits-1`` inclusive.
+
+    :param int num_bits: non-negative integer specifying
+        how big to make the interval.
+    """
+
     def __init__(self, num_bits):
         self._num_bits = num_bits
 
@@ -474,7 +629,7 @@ class DiscreteUniformDistribution(Distribution):
         return 1
 
     def sample(self, n=1):
-        z = np.random.randint(2**self._num_bits,n)
+        z = np.random.randint(2**self._num_bits,size=n)
         return z
 
 class HilbertSchmidtUniform(SingleSampleMixin, Distribution):
@@ -485,6 +640,11 @@ class HilbertSchmidtUniform(SingleSampleMixin, Distribution):
     :param int dim: Dimension of the state space.
     """
     def __init__(self, dim=2):
+        warnings.warn(
+            "This class has been deprecated; please see "
+            "qinfer.tomography.GinibreDistribution(rank=None).",
+            DeprecationWarning
+        )
         self.dim = dim
         self.paulis1Q = np.array([[[1,0],[0,1]],[[1,0],[0,-1]],[[0,-1j],[1j,0]],[[0,1],[1,0]]])
 
@@ -529,18 +689,31 @@ class HilbertSchmidtUniform(SingleSampleMixin, Distribution):
 
 class HaarUniform(SingleSampleMixin, Distribution):
     """
-    Creates a new Haar uniform prior on state space of dimension ``dim``.
+    Haar uniform distribution of pure states of dimension ``dim``,
+    parameterized as coefficients of the Pauli basis.
 
     :param int dim: Dimension of the state space.
+
+    .. note::
+
+        This distribution presently only works for ``dim==2`` and
+        the Pauli basis.
     """
     def __init__(self, dim=2):
+        warnings.warn(
+            "This class has been deprecated; please see "
+            "qinfer.tomography.GinibreDistribution(rank=1).",
+            DeprecationWarning
+        )
+        # TODO: add basis as an option
         self.dim = dim
+
 
     @property
     def n_rvs(self):
         return 3
 
-    def sample(self):
+    def _sample(self):
         #Generate random unitary (see e.g. http://arxiv.org/abs/math-ph/0609050v2)
         z = (np.random.randn(self.dim,self.dim) + 1j*np.random.randn(self.dim,self.dim))/np.sqrt(2.0)
         q,r = la.qr(z)
@@ -569,6 +742,11 @@ class GinibreUniform(SingleSampleMixin, Distribution):
     :param int dim: Dimension of the state space.
     """
     def __init__(self,dim=2, k=2):
+        warnings.warn(
+            "This class has been deprecated; please see "
+            "qinfer.tomography.GinibreDistribution.",
+            DeprecationWarning
+        )
         self.dim = dim
         self.k = k
 
@@ -576,7 +754,7 @@ class GinibreUniform(SingleSampleMixin, Distribution):
     def n_rvs(self):
         return 3
 
-    def sample(self):
+    def _sample(self):
         #Generate random matrix
         z = np.random.randn(self.dim,self.k) + 1j*np.random.randn(self.dim,self.k)
 

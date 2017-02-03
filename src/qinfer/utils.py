@@ -42,9 +42,53 @@ from scipy.stats import logistic, binom
 from scipy.special import gammaln, gamma
 from scipy.linalg import sqrtm
 
+from numpy.testing import assert_almost_equal
+
 from qinfer._exceptions import ApproximationWarning
 
 ## FUNCTIONS ##################################################################
+
+def get_qutip_module(required_version='3.2'):
+    """
+    Attempts to return the qutip module, but 
+    silently returns ``None`` if it can't be 
+    imported, or doesn't have version at 
+    least ``required_version``.
+
+    :param str required_version: Valid input to 
+        ``distutils.version.LooseVersion``.
+    :return: The qutip module or ``None``.
+    :rtype: ``module`` or ``NoneType``
+    """
+    try:
+        import qutip as qt
+        from distutils.version import LooseVersion
+        _qt_version = LooseVersion(qt.version.version)
+        if _qt_version < LooseVersion(required_version):
+            return None
+    except ImportError:
+        return None
+
+    return qt
+
+def check_qutip_version(required_version='3.2'):
+    """
+    Returns ``true`` iff the imported qutip 
+    version exists and has ``LooseVersion`` 
+    of at least ``required_version``.
+
+    :param str required_version: Valid input to 
+        ``distutils.version.LooseVersion``.
+    :rtype: ``bool``
+    """
+    try:
+        qt = get_qutip_module(required_version)
+        return qt is not None
+    except:
+        # In any other case (including something other 
+        # than ImportError) we say it's not good enough
+        return False
+
 
 def binomial_pdf(N,n,p):
     r"""
@@ -250,6 +294,13 @@ def mvee(points, tol=0.001):
     Returns the minimum-volume enclosing ellipse (MVEE)
     of a set of points, using the Khachiyan algorithm.
     """
+
+    # This function is a port of the matlab function by 
+    # Nima Moshtagh found here:
+    # https://www.mathworks.com/matlabcentral/fileexchange/9542-minimum-volume-enclosing-ellipsoid
+    # with accompanying writup here:
+    # https://www.researchgate.net/profile/Nima_Moshtagh/publication/254980367_MINIMUM_VOLUME_ENCLOSING_ELLIPSOIDS/links/54aab5260cf25c4c472f487a.pdf
+
     N, d = points.shape
     
     Q = np.zeros([N,d+1])
@@ -262,7 +313,6 @@ def mvee(points, tol=0.001):
     err = 1
     u = (1/N) * np.ones(shape = (N,))
 
-    # Khachiyan Algorithm TODO:find ref
     while err > tol:
         
         X = np.dot(np.dot(Q, np.diag(u)), np.transpose(Q))
@@ -280,6 +330,27 @@ def mvee(points, tol=0.001):
     A = (1/d) * la.inv(np.dot(np.dot(points,U), np.transpose(points)) - np.outer(c,c) )    
     return A, np.transpose(c)
 
+def in_ellipsoid(x, A, c):
+    """
+    Determines which of the points ``x`` are in the 
+    closed ellipsoid with shape matrix ``A`` centered at ``c``.
+    For a single point ``x``, this is computed as 
+
+        .. math::
+            (c-x)^T\cdot A^{-1}\cdot (c-x) \leq 1 
+        
+    :param np.ndarray x: Shape ``(n_points, dim)`` or ``n_points``.
+    :param np.ndarray A: Shape ``(dim, dim)``, positive definite
+    :param np.ndarray c: Shape ``(dim)``
+    :return: `bool` or array of bools of length ``n_points``
+    """
+    if x.ndim == 1:
+        y = c - x
+        return np.einsum('j,jl,l', y, np.linalg.inv(A), y) <= 1
+    else:
+        y = c[np.newaxis,:] - x
+        return np.einsum('ij,jl,il->i', y, np.linalg.inv(A), y) <= 1
+
 def uniquify(seq):
     """
     Returns the unique elements of a sequence ``seq``.
@@ -288,6 +359,29 @@ def uniquify(seq):
     seen = set()
     seen_add = seen.add
     return [ x for x in seq if x not in seen and not seen_add(x)]
+
+def assert_sigfigs_equal(x, y, sigfigs=3):
+    """
+    Tests if all elements in x and y 
+    agree up to a certain number of 
+    significant figures.
+
+    :param np.ndarray x: Array of numbers.
+    :param np.ndarray y: Array of numbers you want to
+        be equal to ``x``.
+    :param int sigfigs: How many significant 
+        figures you demand that they share.
+        Default is 3.
+    """
+    # determine which power of 10 best describes x
+    xpow =  np.floor(np.log10(x))
+    # now rescale 1 \leq x < 9
+    x = x * 10**(- xpow)
+    # scale y by the same amount
+    y = y * 10**(- xpow)
+
+    # now test if abs(x-y) < 0.5 * 10**(-sigfigs)
+    assert_almost_equal(x, y, sigfigs)
 
 def format_uncertainty(value, uncertianty, scinotn_break=4):
     """
@@ -406,3 +500,25 @@ if __name__ == "__main__":
     ax.plot_surface(x, y, z, cstride = 1, rstride = 1, alpha = 0.1)
     plt.show()
  
+def binom_est_p(n, N, hedge=float(0)):
+    r"""
+    Given a number of successes :math:`n` and a number of trials :math:`N`,
+    estimates the binomial distribution parameter :math:`p` using the
+    hedged maximum likelihood estimator of [FB12]_.
+    
+    :param n: Number of successes.
+    :type n: `numpy.ndarray` or `int`
+    :param int N: Number of trials.
+    :param float hedge: Hedging parameter :math:`\beta`.
+    :rtype: `float` or `numpy.ndarray`.
+    :return: The estimated binomial distribution parameter :math:`p` for each
+        value of :math:`n`.
+    """
+    return (n + hedge) / (N + 2 * hedge)
+    
+def binom_est_error(p, N, hedge = float(0)):
+    r"""
+    """
+    
+    # asymptotic np.sqrt(p * (1 - p) / N)
+    return np.sqrt(p*(1-p)/(N+2*hedge+1))

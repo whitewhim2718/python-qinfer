@@ -102,7 +102,7 @@ class Domain(with_metaclass(abc.ABCMeta, object)):
         """
         Returns any single point guaranteed to be in the domain, but 
         no other guarantees; useful for testing purposes. 
-        This is given as a size 1 ``np.array`` of type ``dtype``.
+        This is given as a size 1 ``np.array`` of type `dtype`.
 
         :type: ``np.ndarray``
         """
@@ -111,9 +111,9 @@ class Domain(with_metaclass(abc.ABCMeta, object)):
     @abc.abstractproperty
     def values(self):
         """
-        Returns an `np.array` of type `self.dtype` containing 
+        Returns an `np.array` of type `dtype` containing 
         some values from the domain.
-        For domains where ``is_finite`` is ``True``, all elements 
+        For domains where `is_finite` is ``True``, all elements 
         of the domain will be yielded exactly once.
 
         :rtype: `np.ndarray`
@@ -158,7 +158,7 @@ class RealDomain(Domain):
         domain. If left as `None`, positive infinity is assumed.
     """
 
-    def __init__(self, min=None, max=None):
+    def __init__(self, min=-np.inf, max=np.inf):
         self._min = min
         self._max = max
 
@@ -259,9 +259,7 @@ class RealDomain(Domain):
 
         :rtype: `bool`
         """
-        are_bigger = True if self._min is None else np.all(points >= self._min)
-        are_smaller = True if self._max is None else np.all(points <= self._max)
-        return are_bigger and are_smaller
+        return np.all(points >= self._min) and np.all(points <= self._max)
 
 class IntegerDomain(Domain):
     """
@@ -276,7 +274,7 @@ class IntegerDomain(Domain):
     Note: Yes, it is slightly unpythonic to specify `max` instead of `max`+1.
     """
 
-    def __init__(self, min=0, max=None):
+    def __init__(self, min=0, max=np.inf):
         self._min = min
         self._max = max
 
@@ -286,7 +284,7 @@ class IntegerDomain(Domain):
     def min(self):
         """
         Returns the minimum value of the domain. The outcome 
-        None is interpreted as negative infinity.
+        ``None`` is interpreted as negative infinity.
 
         :rtype: `float`
         """
@@ -295,7 +293,7 @@ class IntegerDomain(Domain):
     def max(self):
         """
         Returns the maximum value of the domain. The outcome 
-        None is interpreted as positive infinity.
+        ``None`` is interpreted as positive infinity.
 
         :rtype: `float`
         """
@@ -338,7 +336,7 @@ class IntegerDomain(Domain):
         :type: ``int``
         """
         if self.is_finite:
-            return self.max - self.min + 1
+            return int(self.max - self.min + 1)
         else:
             return None
 
@@ -384,10 +382,11 @@ class IntegerDomain(Domain):
 
         :rtype: `bool`
         """
-        are_ints = np.all(np.mod(points,1) == 0)
-        are_bigger = True if self._min is None else np.all(points >= self._min)
+        are_integer = np.all(np.mod(points,1) == 0)
+        are_greater = True if self._min is None else np.all(points >= self._min) 
         are_smaller = True if self._max is None else np.all(points <= self._max)
-        return are_ints and are_bigger and are_smaller
+        return  are_integer and are_greater and are_smaller
+    
 
 class MultinomialDomain(Domain):
     """
@@ -468,7 +467,7 @@ class MultinomialDomain(Domain):
 
         :type: ``np.ndarray``
         """
-        return np.array([([self.n_meas] + list(0 for i in xrange(self.n_elements - 1)),)], dtype=self.dtype)
+        return np.array([([self.n_meas] + [0] * (self.n_elements-1))], dtype=self.dtype)
 
     @property
     def values(self):

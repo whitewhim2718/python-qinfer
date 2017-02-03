@@ -12,6 +12,10 @@
 Probability Distributions
 =========================
 
+.. seealso::
+
+    :ref:`Specific distributions (tomography) <tomography_distributions>`
+
 :class:`Distribution` - Abstract Base Class for Probability Distributions
 -------------------------------------------------------------------------
 
@@ -24,6 +28,12 @@ Specific Distributions
 ----------------------
 
 .. autoclass:: UniformDistribution
+    :members:
+
+.. autoclass:: DiscreteUniformDistribution
+    :members:
+
+.. autoclass:: MVUniformDistribution
     :members:
 
 .. autoclass:: NormalDistribution
@@ -50,6 +60,9 @@ Specific Distributions
 .. autoclass:: GammaDistribution 
     :members:
 
+.. autoclass:: InterpolatedUnivariateDistribution
+    :members:
+
 .. autoclass:: HilbertSchmidtUniform
     :members:
     
@@ -69,6 +82,12 @@ ones.
     :members:
 
 .. autoclass:: PostselectedDistribution
+    :members:
+
+.. autoclass:: MixtureDistribution
+    :members:
+
+.. autoclass:: ConstrainedSumDistribution
     :members:
 
 Mixins for Distribution Development

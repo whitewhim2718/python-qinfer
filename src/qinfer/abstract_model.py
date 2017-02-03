@@ -6,7 +6,7 @@
 ##
 # © 2012 Chris Ferrie (csferrie@gmail.com) and
 #        Christopher E. Granade (cgranade@gmail.com)
-#
+#     
 # This file is a part of the Qinfer project.
 # Licensed under the AGPL version 3.
 ##
@@ -49,11 +49,12 @@ import numpy as np
 import warnings
 
 from qinfer.utils import safe_shape
-
+from qinfer.domains import IntegerDomain
+    
 ## CLASSES ###################################################################
 
 class Simulatable(with_metaclass(abc.ABCMeta, object)):
-    """
+    r"""
     Represents a system which can be simulated according to
     various model parameters and experimental control parameters
     in order to produce representative data.
@@ -64,16 +65,17 @@ class Simulatable(with_metaclass(abc.ABCMeta, object)):
         be allowed to return multiple identical outcomes for a given ``expparam``.
         It will be more efficient to set this to ``True`` whenever it is likely 
         that multiple identical outcomes will occur.
+    
     """
 
     def __init__(self):
         """
         Initialize Model model
         :param bool always_resample_outcomes: Resample outcomes stochastically with 
-                    each outcome call.
+            each outcome call.
         :param :class:`~numpy.ndarray` initial_outcomes: Initial set of outcomes 
-                    that may be supplied. Otherwise initial outcomes default to 
-                    zeros. 
+            that may be supplied. Otherwise initial outcomes default to 
+            zeros. 
         """
         self._sim_count = 0
         
@@ -98,15 +100,16 @@ class Simulatable(with_metaclass(abc.ABCMeta, object)):
         Returns the dtype of an experiment parameter array. For a
         model with single-parameter control, this will likely be a scalar dtype,
         such as ``"float64"``. More generally, this can be an example of a
-        record type, such as ``[('time', 'float64'), ('axis', 'uint8')]``.
-
+        record type, such as ``[('time', py.'float64'), ('axis', 'uint8')]``.
+        
         This property is assumed by inference engines to be constant for
         the lifetime of a Model instance.
         """
         pass
 
+            
     ## CONCRETE PROPERTIES ##
-
+    
     @property
     def is_n_outcomes_constant(self):
         """
@@ -114,7 +117,7 @@ class Simulatable(with_metaclass(abc.ABCMeta, object)):
         are independent of the expparam.
         
         This property is assumed by inference engines to be constant for
-        the lifetime of a Simulatable instance.
+        the lifetime of a Model instance.
         """
         return True
 
@@ -144,7 +147,7 @@ class Simulatable(with_metaclass(abc.ABCMeta, object)):
         independent.
         """
         return self.model_chain[-1] if self.model_chain else None
-
+    
     @property
     def sim_count(self):
         """
@@ -160,20 +163,20 @@ class Simulatable(with_metaclass(abc.ABCMeta, object)):
         r"""
         Returns the diagonal of the scale matrix :math:`\matr{Q}` that
         relates the scales of each of the model parameters. In particular,
-        the quadratic loss for this Simulatable is defined as:
-
+        the quadratic loss for this Model is defined as:
+        
         .. math::
             L_{\matr{Q}}(\vec{x}, \hat{\vec{x}}) =
             (\vec{x} - \hat{\vec{x}})^\T \matr{Q} (\vec{x} - \hat{\vec{x}})
 
         If a subclass does not explicitly define the scale matrix, it is taken
         to be the identity matrix of appropriate dimension.
-
+        
         :return: The diagonal elements of :math:`\matr{Q}`.
         :rtype: :class:`~numpy.ndarray` of shape ``(n_modelparams, )``.
         """
         return self._Q
-
+        
     @property
     def modelparam_names(self):
         """
@@ -227,12 +230,15 @@ class Simulatable(with_metaclass(abc.ABCMeta, object)):
             return True
     
     ## ABSTRACT METHODS ##
-
+    
     @abc.abstractmethod
     def n_outcomes(self, expparams):
         """
         Returns an array of dtype ``uint`` describing the number of outcomes
         for each experiment specified by ``expparams``.
+        If the number of outcomes does not depend on expparams (i.e. 
+        ``is_n_outcomes_constant`` is ``True``), this method 
+        should return a single number.
         If there are an infinite (or intractibly large) number of outcomes, 
         this value specifies the number of outcomes to randomly sample.
         
@@ -245,14 +251,14 @@ class Simulatable(with_metaclass(abc.ABCMeta, object)):
     @abc.abstractmethod
     def domain(self, exparams):
         """
-        Returns a list of ``Domain``s, one for each input expparam.
+        Returns a list of :class:`Domain` objects, one for each input expparam.
 
         :param numpy.ndarray expparams:  Array of experimental parameters. This
             array must be of dtype agreeing with the ``expparams_dtype``
             property, or, in the case where ``n_outcomes_constant`` is ``True``,
             ``None`` should be a valid input.
 
-        :rtype: list of ``Domain``
+        :rtype: list of :class:`Domain`
         """
         pass
 
@@ -264,7 +270,7 @@ class Simulatable(with_metaclass(abc.ABCMeta, object)):
         each set of model parameters represents is valid under this model.
         """
         pass
-
+        
     @abc.abstractmethod
     def simulate_experiment(self, modelparams, expparams, repeat=1):
         """
@@ -276,7 +282,7 @@ class Simulatable(with_metaclass(abc.ABCMeta, object)):
             which data should be simulated.
         :param np.ndarray expparams: A shape ``(n_experiments, )`` array of
             experimental control settings, with ``dtype`` given by 
-            :attr:`~qinfer.Simulatable.expparams_dtype`, describing the
+            :attr:`~qinfer.Model.expparams_dtype`, describing the
             experiments whose outcomes should be simulated.
         :param int repeat: How many times the specified experiment should
             be repeated.
@@ -286,12 +292,13 @@ class Simulatable(with_metaclass(abc.ABCMeta, object)):
             ``k`` indexes which experimental parameters where used. If ``repeat == 1``,
             ``len(modelparams) == 1`` and ``len(expparams) == 1``, then a scalar
             datum is returned instead.
+        
         """
         self._sim_count += modelparams.shape[0] * expparams.shape[0] * repeat
         assert(self.are_expparam_dtypes_consistent(expparams))
 
     ## CONCRETE METHODS ##
-
+    
     def clear_cache(self):
         """
         Tells the model to clear any internal caches used in computing
@@ -300,30 +307,30 @@ class Simulatable(with_metaclass(abc.ABCMeta, object)):
         """
         # By default, no cache to clear.
         pass
-
+    
     def experiment_cost(self, expparams):
         """
         Given an array of experimental parameters, returns the cost associated
         with performing each experiment. By default, this cost is constant
         (one) for every experiment.
-
+        
         :param expparams: An array of experimental parameters for which the cost
             is to be evaluated.
         :type expparams: :class:`~numpy.ndarray` of ``dtype`` given by
-            :attr:`~Simulatable.expparams_dtype`
+            :attr:`~Model.expparams_dtype`
         :return: An array of costs corresponding to the specified experiments.
         :rtype: :class:`~numpy.ndarray` of ``dtype`` ``float`` and of the
             same shape as ``expparams``.
         """
         return np.ones(expparams.shape)
-
+        
     def distance(self, a, b):
         r"""
         Gives the distance between two model parameter vectors :math:`\vec{a}` and
         :math:`\vec{b}`. By default, this is the vector 1-norm of the difference
         :math:`\mathbf{Q} (\vec{a} - \vec{b})` rescaled by
-        :attr:`~Simulatable.Q`.
-
+        :attr:`~Model.Q`.
+        
         :param np.ndarray a: Array of model parameter vectors having shape
             ``(n_models, n_modelparams)``.
         :param np.ndarray b: Array of model parameters to compare to, having
@@ -463,6 +470,7 @@ class Model(Simulatable):
             experimental control settings, with ``dtype`` given by 
             :attr:`~qinfer.Simulatable.expparams_dtype`, describing the
             experiments from which the given outcomes were drawn.
+            
         :rtype: np.ndarray
         :return: A three-index tensor ``L[i, j, k]``, where ``i`` is the outcome
             being considered, ``j`` indexes which vector of model parameters was used,
@@ -669,6 +677,11 @@ class FiniteOutcomeModel(Model):
             outcome_warning_threshold=outcome_warning_threshold, 
             allow_identical_outcomes=allow_identical_outcomes)
         self._n_outcomes_cutoff = n_outcomes_cutoff
+
+
+        if self.is_n_outcomes_constant:
+            # predefine if we can
+            self._domain = IntegerDomain(min=0,max=self.n_outcomes(None)-1)
     
     ## CONCRETE PROPERTIES ##
 
@@ -701,6 +714,24 @@ class FiniteOutcomeModel(Model):
     ## CONCRETE METHODS ##
     # These methods depend on the abstract methods, and thus their behaviors
     # change in each inheriting class.
+
+    def domain(self, expparams):
+        """
+        Returns a list of :class:`Domain` objects, one for each input expparam.
+
+        :param numpy.ndarray expparams:  Array of experimental parameters. This
+            array must be of dtype agreeing with the ``expparams_dtype``
+            property, or, in the case where ``n_outcomes_constant`` is ``True``,
+            ``None`` should be a valid input.
+
+        :rtype: list of ``Domain``
+        """
+        # As a convenience to most users, we define domain for them. If a 
+        # fancier domain is desired, this method can easily be overridden.
+        if self.is_n_outcomes_constant:
+            return self._domain if expparams is None else [self._domain for ep in expparams]
+        else:
+            return [IntegerDomain(min=0,max=n_o-1) for n_o in self.n_outcomes(expparams)]
 
     def simulate_experiment(self, modelparams, expparams, repeat=1):
         # NOTE: implements abstract method of Simulatable.

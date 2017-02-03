@@ -47,7 +47,7 @@ import numpy as np
 
 # from itertools import zip
 
-from scipy.spatial import Delaunay
+from scipy.spatial import ConvexHull, Delaunay
 import scipy.linalg as la
 import scipy.stats
 import scipy.interpolate
@@ -61,7 +61,7 @@ import qinfer.resamplers
 import qinfer.clustering
 import qinfer.metrics
 from qinfer.utils import outer_product, mvee, uniquify, particle_meanfn, \
-        particle_covariance_mtx, format_uncertainty
+        particle_covariance_mtx, format_uncertainty, in_ellipsoid
 from qinfer._exceptions import ApproximationWarning, ResamplerWarning
 
 try:
@@ -85,6 +85,7 @@ logger.addHandler(logging.NullHandler())
 
 
 ## CLASSES #####################################################################
+
 class SMCUpdater(Distribution):
     r"""
     Creates a new Sequential Monte carlo updater, using the algorithm of
@@ -130,6 +131,7 @@ class SMCUpdater(Distribution):
         
         # Initialize metadata on resampling performance.
         self._resample_count = 0
+        self._min_n_ess = n_particles
         
         self.model = model
         self.prior = prior
@@ -246,6 +248,18 @@ class SMCUpdater(Distribution):
         return 1 / (np.sum(self.particle_weights**2))
 
     @property
+    def min_n_ess(self):
+        """
+        Returns the smallest effective sample size (ESS) observed in the
+        history of this updater.
+
+        :type: `float`
+        :return: The minimum of observed effective sample sizes as
+            reported by :attr:`~qinfer.SMCUpdater.n_ess`.
+        """
+        return self._min_n_ess
+
+    @property
     def data_record(self):
         """
         List of outcomes given to :meth:`~SMCUpdater.update`.
@@ -333,11 +347,14 @@ class SMCUpdater(Distribution):
         """
         Produces the particle weights for the posterior of a hypothetical
         experiment.
+
         :param outcomes: Integer index of the outcome of the hypothetical
             experiment.
             TODO: Fix this to take an array-like of ints as well.
         :type outcomes: int or an ndarray of dtype int.
-        :param expparams: TODO
+        :param numpy.ndarray expparams: Experiments to be used for the hypothetical
+            updates.
+
         :type weights: ndarray, shape (n_outcomes, n_expparams, n_particles)
         :param weights: Weights assigned to each particle in the posterior
             distribution :math:`\Pr(\omega | d)`.
@@ -503,12 +520,14 @@ class SMCUpdater(Distribution):
         #reset risk/ig cache
         if self._reset_sample_cache_on_update:
             self.reset_sample_cache()
-
+    
+       # Check if we need to update our min_n_ess attribute.
+        if self.n_ess <= self._min_n_ess:
+            self._min_n_ess = self.n_ess
+        
         # Resample if needed.
         if check_for_resample:
             self._maybe_resample()
-
-
 
     def batch_update(self, outcomes, expparams, resample_interval=5):
         r"""
@@ -673,25 +692,34 @@ class SMCUpdater(Distribution):
             self.particle_weights, fn(self.particle_locations)
         )
 
-    def est_covariance_mtx(self):
+    def est_covariance_mtx(self, corr=False):
         """
         Returns an estimate of the covariance of the current posterior model
         distribution, given by the covariance of the current SMC approximation.
+        :param bool corr: If `True`, the covariance matrix is normalized
+            by the outer product of the square root diagonal of the covariance matrix
+            such that the correlation matrix is returned instead.
         
         :rtype: :class:`numpy.ndarray`, shape
             ``(n_modelparams, n_modelparams)``.
         :returns: An array containing the estimated covariance matrix.
         """
-        return particle_covariance_mtx(
+
+        cov = particle_covariance_mtx(
             self.particle_weights,
             self.particle_locations)
 
+        if corr:
+            dstd = np.sqrt(np.diag(cov))
+            cov /= (np.outer(dstd, dstd))
+
+        return cov
+    
     def reapprox(self,particle_weights,particle_locations,approx_ratio):
         """
         Generates a reduced approximation of the particle filter as described in Algorithm 6 of
         Robust Online Hamiltonian Learning. This implementation also normalizes the reduced weights
         which was not described in the original paper.
-
         :param np.ndarray particle_weights: Particle weights of particle filter to be reduced. 
         :param np.ndarray particle_locations: Particle locations of particle filter to be reduced. 
         :param int approx_ratio: Proportion to reduce particle filter particle number by. approx_ratio=1.0,
@@ -1161,7 +1189,7 @@ class SMCUpdater(Distribution):
 
     ## REGION ESTIMATION METHODS ##############################################
 
-    def est_credible_region(self, level=0.95, return_outside=False):
+    def est_credible_region(self, level=0.95, return_outside=False, modelparam_slice=None):
         """
         Returns an array containing particles inside a credible region of a
         given level, such that the described region has probability mass
@@ -1174,12 +1202,23 @@ class SMCUpdater(Distribution):
         :param bool return_outside: If `True`, the return value is a tuple
             of the those particles within the credible region, and the rest
             of the posterior particle cloud.
+        :param slice modelparam_slice: Slice over which model parameters
+            to consider.
 
-        :rtype: :class:`numpy.ndarray`, shape ``(n_credible, n_modelparams)``,
+        :rtype: :class:`numpy.ndarray`, shape ``(n_credible, n_mps)``,
             where ``n_credible`` is the number of particles in the credible
-            region
-        :returns: An array of particles inside the estimated credible region.
+            region and ``n_mps`` corresponds to the size of ``modelparam_slice``.
+             If ``return_outside`` is ``True``, this method instead 
+             returns tuple ``(inside, outside)`` where ``inside`` is as 
+             described above, and ``outside`` has shape ``(n_particles-n_credible, n_mps)``.
+        :return: An array of particles inside the estimated credible region. Or,
+            if ``return_outside`` is ``True``, both the particles inside and the
+            particles outside, as a tuple.
         """
+
+        # which slice of modelparams to take
+        s_ = np.s_[modelparam_slice] if modelparam_slice is not None else np.s_[:]
+        mps = self.particle_locations[:, s_]
         
         # Start by sorting the particles by weight.
         # We do so by obtaining an array of indices `id_sort` such that
@@ -1202,35 +1241,41 @@ class SMCUpdater(Distribution):
         # credible particles.
         if return_outside:
             return (
-                self.particle_locations[id_sort][id_cred], 
-                self.particle_locations[id_sort][np.logical_not(id_cred)] 
+                mps[id_sort][id_cred], 
+                mps[id_sort][np.logical_not(id_cred)] 
             )
         else:
-            return self.particle_locations[id_sort][id_cred]
+            return mps[id_sort][id_cred]
     
-    def region_est_hull(self, level=0.95):
+    def region_est_hull(self, level=0.95, modelparam_slice=None):
         """
         Estimates a credible region over models by taking the convex hull of
         a credible subset of particles.
         
         :param float level: The desired crediblity level (see
             :meth:`SMCUpdater.est_credible_region`).
-        """
-        # TODO: document return values.
-        points = self.est_credible_region(level = level)
-        tri = Delaunay(points)
-        faces = []
-        hull = tri.convex_hull
-        
-        for ia, ib, ic in hull:
-            faces.append(points[[ia, ib, ic]])    
+        :param slice modelparam_slice: Slice over which model parameters
+            to consider.
 
-        vertices = points[uniquify(hull.flatten())]
-        
-        return faces, vertices
-
-    def region_est_ellipsoid(self, level=0.95, tol=0.0001):
+        :return: The tuple ``(faces, vertices)`` where ``faces`` describes all the 
+            vertices of all of the faces on the exterior of the convex hull, and 
+            ``vertices`` is a list of all vertices on the exterior of the 
+            convex hull.
+        :rtype: ``faces`` is a ``numpy.ndarray`` with shape 
+            ``(n_face, n_mps, n_mps)`` and indeces ``(idx_face, idx_vertex, idx_mps)`` 
+            where ``n_mps`` corresponds to the size of ``modelparam_slice``.
+            ``vertices`` is an  ``numpy.ndarray`` of shape ``(n_vertices, n_mps)``.
         """
+        points = self.est_credible_region(
+            level=level, 
+            modelparam_slice=modelparam_slice
+        )
+        hull = ConvexHull(points)
+        
+        return points[hull.simplices], points[uniquify(hull.vertices.flatten())]
+
+    def region_est_ellipsoid(self, level=0.95, tol=0.0001, modelparam_slice=None):
+        r"""
         Estimates a credible region over models by finding the minimum volume
         enclosing ellipse (MVEE) of a credible subset of particles.
         
@@ -1239,12 +1284,101 @@ class SMCUpdater(Distribution):
             :meth:`SMCUpdater.est_credible_region`).
         :param float tol: The allowed error tolerance in the MVEE optimization
             (see :meth:`~qinfer.utils.mvee`).
+        :param slice modelparam_slice: Slice over which model parameters
+            to consider.
+
+        :return: A tuple ``(A, c)`` where ``A`` is the covariance 
+            matrix of the ellipsoid and ``c`` is the center.
+            A point :math:`\vec{x}` is in the ellipsoid whenever 
+            :math:`(\vec{x}-\vec{c})^{T}A^{-1}(\vec{x}-\vec{c})\leq 1`.
+        :rtype: ``A`` is ``np.ndarray`` of shape ``(n_mps,n_mps)`` and 
+            ``centroid`` is ``np.ndarray`` of shape ``(n_mps)``. 
+            ``n_mps`` corresponds to the size of ``param_slice``.
         """
-        # TODO: document return values.
-        faces, vertices = self.region_est_hull(level=level)
+        _, vertices = self.region_est_hull(level=level, modelparam_slice=modelparam_slice)
                 
         A, centroid = mvee(vertices, tol)
         return A, centroid
+
+    def in_credible_region(self, points, level=0.95, modelparam_slice=None, method='hpd-hull', tol=0.0001):
+        """
+        Decides whether each of the points lie within a credible region 
+        of the current distribution.
+        If ``tol`` is ``None``, the particles are tested directly against 
+        the convex hull object. If ``tol`` is a positive ``float``, 
+        particles are tested to be in the interior of the smallest 
+        enclosing ellipsoid of this convex hull, see 
+        :meth:`SMCUpdater.region_est_ellipsoid`.
+        :param np.ndarray points: An ``np.ndarray`` of shape ``(n_mps)`` for 
+            a single point, or of shape ``(n_points, n_mps)`` for multiple points,
+            where ``n_mps`` corresponds to the same dimensionality as ``param_slice``.
+        :param float level: The desired crediblity level (see
+            :meth:`SMCUpdater.est_credible_region`).
+        :param str method: A string specifying which credible region estimator to 
+            use. One of ``'pce'``, ``'hpd-hull'`` or ``'hpd-mvee'`` (see below).
+        :param float tol: The allowed error tolerance for those methods 
+            which require a tolerance (see :meth:`~qinfer.utils.mvee`).
+        :param slice modelparam_slice: A slice describing which model parameters 
+            to consider in the credible region, effectively marginizing out the
+            remaining parameters. By default, all model parameters are included.
+        :return: A boolean array of shape ``(n_points, )`` specifying whether 
+            each of the points lies inside the confidence region.
+        Methods
+        ~~~~~~~
+        The following values are valid for the ``method`` argument.
+        - ``'pce'``: Posterior Covariance Ellipsoid.
+            Computes the covariance
+            matrix of the particle distribution marginalized over the excluded
+            slices and uses the :math:`\chi^2` distribution to determine
+            how to rescale it such the the corresponding ellipsoid has 
+            the correct size. The ellipsoid is translated by the 
+            mean of the particle distribution. It is determined which 
+            of the ``points`` are on the interior.
+        - ``'hpd-hull'``: High Posterior Density Convex Hull. 
+            See :meth:`SMCUpdater.region_est_hull`. Computes the 
+            HPD region resulting from the particle approximation, computes 
+            the convex hull of this, and it is determined which 
+            of the ``points`` are on the interior.  
+        - ``'hpd-mvee'``: High Posterior Density Minimum Volume Enclosing Ellipsoid. 
+            See :meth:`SMCUpdater.region_est_ellipsoid` 
+            and :meth:`~qinfer.utils.mvee`. Computes the 
+            HPD region resulting from the particle approximation, computes 
+            the convex hull of this, and determines the minimum enclosing 
+            ellipsoid. Deterimines which 
+            of the ``points`` are on the interior.  
+        """
+        
+        if method == 'pce':
+            s_ = np.s_[modelparam_slice] if modelparam_slice is not None else np.s_[:]
+            A = self.est_covariance_mtx()[s_, s_]
+            c = self.est_mean()[s_]
+            # chi-squared distribution gives correct level curve conversion
+            mult = scipy.stats.chi2.ppf(level, c.size)
+            results = in_ellipsoid(points, mult * A, c)
+
+        elif method == 'hpd-mvee':
+            tol = 0.0001 if tol is None else tol
+            A, c = self.region_est_ellipsoid(level=level, tol=tol, modelparam_slice=modelparam_slice)
+            results = in_ellipsoid(points, np.linalg.inv(A), c)
+
+        elif method == 'hpd-hull':
+            # it would be more natural to call region_est_hull,
+            # but that function uses ConvexHull which has no 
+            # easy way of determining if a point is interior.
+            # Here, Delaunay gives us access to all of the 
+            # necessary simplices.
+
+            # this fills the convex hull with (n_mps+1)-dimensional
+            # simplices; the convex hull is an almost-everywhere 
+            # disjoint union of these simplices
+            hull = Delaunay(self.est_credible_region(level=level, modelparam_slice=modelparam_slice))
+
+            # now we just check whether each of the given points are in 
+            # any of the simplices. (http://stackoverflow.com/a/16898636/1082565)
+            results = hull.find_simplex(points) >= 0
+
+        return results
+            
         
     ## MISC METHODS ###########################################################
     
@@ -1347,7 +1481,7 @@ class SMCUpdater(Distribution):
 
         :param bool corr: If `True`, the covariance matrix is first normalized
             by the outer product of the square root diagonal of the covariance matrix
-            such that the corrleation matrix is plotted instead.
+            such that the correlation matrix is plotted instead.
         :param slice param_slice: Slice of the modelparameters to
             be plotted.
         :param list tick_labels: List of tick labels for each component;
@@ -1366,11 +1500,7 @@ class SMCUpdater(Distribution):
             list(map(u"${}$".format, self.model.modelparam_names[param_slice]))
         )
 
-        cov = self.est_covariance_mtx()[param_slice, param_slice]
-
-        if corr:
-            dstd = np.sqrt(np.diag(cov))
-            cov /= (np.outer(dstd, dstd))
+        cov = self.est_covariance_mtx(corr=corr)[param_slice, param_slice]
 
         retval = mpls.hinton(cov)
         plt.xticks(*tick_labels, **(tick_params if tick_params is not None else {}))
@@ -1633,8 +1763,6 @@ class MixedApproximateSMCUpdater(SMCUpdater):
                 return norm_weights, L
             else:
                 return norm_weights, L, norm_scale
-
-
                 
 class SMCUpdaterBCRB(SMCUpdater):
     """

@@ -382,7 +382,7 @@ class GaussianModel(DifferentiableModel):
         super(GaussianModel, self).__init__(allow_identical_outcomes=True)
 
         # The domain is always the set of all real numbers
-        self._domain = RealDomain(min=None, max=None)
+        self._domain = RealDomain()
 
     ## ABSTRACT METHODS##
 

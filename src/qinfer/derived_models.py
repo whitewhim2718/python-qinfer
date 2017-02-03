@@ -55,7 +55,7 @@ from scipy.special import xlogy, gammaln
 from qinfer.utils import binomial_pdf, multinomial_pdf, sample_multinomial
 from qinfer.abstract_model import Model, FiniteOutcomeModel, DifferentiableModel
 from qinfer._lib import enum # <- TODO: replace with flufl.enum!
-from qinfer.ale import binom_est_error
+from qinfer.utils import binom_est_error
 from qinfer.domains import IntegerDomain, MultinomialDomain
 from qinfer.utils import safe_shape
 
@@ -433,7 +433,7 @@ class BinomialModel(DerivedModel,DifferentiableModel, FiniteOutcomeModel):
     Model representing finite numbers of iid samples from another model,
     using the binomial distribution to calculate the new likelihood function.
     
-    :param qinfer.abstract_model.FiniteOutcomeModel underlying_model: An instance of a two-
+    :param qinfer.abstract_model.Model underlying_model: An instance of a two-
         outcome model to be decorated by the binomial distribution.
         This underlying model must have ``n_outcomes_constant`` as ``True``.
         
@@ -497,12 +497,15 @@ class BinomialModel(DerivedModel,DifferentiableModel, FiniteOutcomeModel):
     def domain(self, expparams):
         """
         Returns a list of ``Domain``s, one for each input expparam.
+
         :param numpy.ndarray expparams:  Array of experimental parameters. This
             array must be of dtype agreeing with the ``expparams_dtype``
-            property.
+            property, or, in the case where ``n_outcomes_constant`` is ``True``,
+            ``None`` should be a valid input.
+
         :rtype: list of ``Domain``
         """
-        return [IntegerDomain(min=0, max=ep['n_meas']) for ep in expparams] 
+        return [IntegerDomain(min=0,max=n_o-1) for n_o in self.n_outcomes(expparams)]
     
     def are_expparam_dtypes_consistent(self, expparams):
         """
@@ -586,6 +589,14 @@ class BinomialModel(DerivedModel,DifferentiableModel, FiniteOutcomeModel):
         #to use score to calculate derivative
         scr = -(pr1*n-k)*scr_underlying/((pr1-1))
         
+    def fisher_information(self, modelparams, expparams):
+        # Since the FI simply adds, we can multiply the single-shot
+        # FI provided by the underlying model by the number of measurements
+        # that we perform.
+        two_outcome_fi = self.underlying_model.fisher_information(
+            modelparams, expparams
+        )
+        return two_outcome_fi * expparams['n_meas']
 
         if return_L:
             return scr, self.likelihood(outcomes,modelparams,expparams)
@@ -673,6 +684,8 @@ class MultinomialModel(DerivedModel, FiniteOutcomeModel):
         """
         return self._underlying_domain
     
+    ## METHODS ##
+
     def n_outcomes(self, expparams):
         """
         Returns an array of dtype ``uint`` describing the number of outcomes
