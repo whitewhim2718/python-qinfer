@@ -746,6 +746,106 @@ class SMCUpdater(Distribution):
 
         return particle_weights, particle_locations
     
+
+    def _sample_outcomes_modelparams(self,expparams,use_cached_samples=False,cache_samples=True):
+        """
+        Hidden method that implements sampling of outcomes for monte carlo integration. Is used by 
+        both the `bayes_risk`, and `expected_information_gain` methods to draw outcomes. Also implements
+        retreival and caching of sampled weights and modelparams.
+        
+        :param expparams: The experiments for which to compute the Bayes risk over.
+        :type expparams: :class:`~numpy.ndarray` of dtype given by the current
+            model's :attr:`~qinfer.abstract_model.Model.expparams_dtype` property,
+            and of shape ``(n_experiments,)``
+        :param use_cached_samples: If set to ``True`` will use previously cached
+            sampled model weights, and modelparams. If none are available both 
+            will be resampled 
+        :type use_cached_samples: bool
+        :param cache_samples: Whether or not to cache new samples, if samples are 
+                            drawn. If set to ``True`` newly cached samples will be 
+                            used in future method call if ``use_cached_samples`` 
+                            is ``True``
+        :type cache_samples: bool
+
+        :return list: Returns a tuple of form (all_sampled_weights,all_sampled_modelparams,all_sampled_outcomes,all_likelihoods)
+        all_sampled_weights is an array of form (n_sam,), all_sampled_modelparams has form (n_sam,n_mps), all_sampled_outcomes is a 
+        list containing arrays of form (n_sam), ie. [(n_sam_1,),...,(n_sam_n_exps,)], and all_likelihoods is a list containing likelihood
+        arrays of form  [(n_sam_1,n_sam_1),...,(n_sam_n_exps,n_sam_n_exps)]. The arrays in all_likelihoods are the likelihood every of every outcome
+        for each sampled modelparameter for a given experiment. These are used for maximum importance sampling monte carlo integration
+        when reweighting outcomes by their likelihood for a given modelparameter.  
+
+        """
+
+        expparams = np.asarray(expparams).reshape(-1)
+        n_expparams = expparams.shape[0]
+        n_outcomes = self.model.n_outcomes(expparams)
+        scalar_n_o = not np.isscalar(n_outcomes)
+        n_const = self.model.is_n_outcomes_constant
+        
+
+        # For practical minimization of bayes risk it is necessary 
+        # to sample outcomes using the same sampled model parameters and associated weights
+        # which outcomes will be drawn form for monte carlo integration of the risk. If 
+        # caching is not performed the output risk as a function of experimental parameters 
+        # will not be smooth, and numerical optimization procedure will fail to find a minimum. 
+
+        cache_available = False
+        if use_cached_samples:
+            if not n_const:
+                warnings.warn("Cached values are not supported if n_outcomes is constant. Reverting to sampling")
+            
+            # If available and required retrieve cached weights/modelparams
+            if (not self._sampled_modelparams is None) and (not self._sampled_weights is None):
+                cache_available = True
+                sampled_modelparams = self._sampled_modelparams
+                sampled_weights = self._sampled_weights
+        
+        #otherwise draw new weights/modelparams for outcome sampling      
+        if not cache_available:
+            if n_const:
+                approx_ratio = n_outcomes/len(self.particle_weights)
+                sampled_weights, sampled_modelparams = self.reapprox(self.particle_weights,
+                        self.particle_locations,approx_ratio)
+
+                if cache_samples:
+                    self._sampled_weights = sampled_weights
+                    self._sampled_modelparams = sampled_modelparams
+
+        # if number of outcomes is not constant we must cycle through them 
+        if not n_const:
+                all_sampled_weights = []
+                all_sampled_modelparams = []
+                all_sampled_outcomes = []
+                all_likelihoods = []
+                for idx_exp in range(expparams.shape[0]):
+                    n_o = n_outcomes[idx_exp]
+                    exp = expparams[idx_exp:idx_exp+1]
+              
+                    if n_o > self.model.n_outcomes_cutoff and self.model.n_outcomes_cutoff is not None:                       
+                        approx_ratio = n_o/len(self.particle_weights)
+                        sampled_weights, sampled_modelparams = self.reapprox(self.particle_weights,
+                        self.particle_locations,approx_ratio)
+                    else:
+                        sampled_weights = self.particle_weights
+                        sampled_modelparams = self.particle_locations
+
+                    likelihoods, sampled_outcomes = self.model.representative_outcomes(
+                            sampled_weights, sampled_modelparams, exp)
+
+                    all_sampled_weights.append(sampled_weights)
+                    all_sampled_modelparams.append(sampled_modelparams)
+                    all_sampled_outcomes.append(sampled_outcomes[0])
+                    all_likelihoods.append(likelihoods[0])
+        else:
+            all_sampled_weights = np.tile(sampled_weights,(n_expparams,1))
+            all_sampled_modelparams = np.tile(sampled_modelparams,(n_expparams,1,1))
+
+            all_likelihoods,all_sampled_outcomes = self.model.representative_outcomes(
+                            sampled_weights, sampled_modelparams, expparams)
+
+
+        return all_sampled_weights,all_sampled_modelparams,all_sampled_outcomes,all_likelihoods
+    
     def bayes_risk(self, expparams, use_cached_samples=False,cache_samples=True,
                     return_sampled_parameters=False):
         r"""
@@ -782,56 +882,9 @@ class SMCUpdater(Distribution):
         scalar_n_o = not np.isscalar(n_outcomes)
         n_const = self.model.is_n_outcomes_constant
         
-        cache_available = False
-        if use_cached_samples:
-            if not n_const:
-                warnings.warn("Cached values are not supported if n_outcomes is constant. Reverting to sampling")
-            if (not self._sampled_modelparams is None) and (not self._sampled_weights is None):
-                cache_available = True
-                sampled_modelparams = self._sampled_modelparams
-                sampled_weights = self._sampled_weights
-                
-        if not cache_available:
-            if n_const:
-                approx_ratio = n_outcomes/len(self.particle_weights)
-                sampled_weights, sampled_modelparams = self.reapprox(self.particle_weights,
-                        self.particle_locations,approx_ratio)
-
-                if cache_samples:
-                    self._sampled_weights = sampled_weights
-                    self._sampled_modelparams = sampled_modelparams
-
-        if not n_const:
-                all_sampled_weights = []
-                all_sampled_modelparams = []
-                all_sampled_outcomes = []
-                all_likelihoods = []
-                for idx_exp in range(expparams.shape[0]):
-                    n_o = n_outcomes[idx_exp]
-                    exp = expparams[idx_exp:idx_exp+1]
-              
-                    if n_o > self.model.n_outcomes_cutoff and self.model.n_outcomes_cutoff is not None:                       
-                        approx_ratio = n_o/len(self.particle_weights)
-                        sampled_weights, sampled_modelparams = self.reapprox(self.particle_weights,
-                        self.particle_locations,approx_ratio)
-                    else:
-                        sampled_weights = self.particle_weights
-                        sampled_modelparams = self.particle_locations
-
-                    likelihoods, sampled_outcomes = self.model.representative_outcomes(
-                            sampled_weights, sampled_modelparams, exp)
-
-                    all_sampled_weights.append(sampled_weights)
-                    all_sampled_modelparams.append(sampled_modelparams)
-                    all_sampled_outcomes.append(sampled_outcomes[0])
-                    all_likelihoods.append(likelihoods[0])
-        else:
-            all_sampled_weights = np.tile(sampled_weights,(n_expparams,1))
-            all_sampled_modelparams = np.tile(sampled_modelparams,(n_expparams,1,1))
-
-            all_likelihoods,all_sampled_outcomes = self.model.representative_outcomes(
-                            sampled_weights, sampled_modelparams, expparams)
-
+        # retrieve sampled weights, modelparams, outcomes, and associated likelihoods
+        all_sampled_weights,all_sampled_modelparams,all_sampled_outcomes,all_likelihoods =  \
+                    self._sample_outcomes_modelparams(expparams,use_cached_samples=use_cached_samples,cache_samples=cache_samples)
 
         risk = np.empty((n_expparams, ))
         if not hasattr(self,'_old_modelparams'):
@@ -961,56 +1014,8 @@ class SMCUpdater(Distribution):
         scalar_n_o = not np.isscalar(n_outcomes)
         n_const = self.model.is_n_outcomes_constant
 
-        cache_available = False
-        if use_cached_samples:
-            if not n_const:
-                warnings.warn("Cached values are not supported if n_outcomes is constant. Reverting to sampling")
-            if (not self._sampled_modelparams is None) and (not self._sampled_weights is None):
-                cache_available = True
-                sampled_modelparams = self._sampled_modelparams
-                sampled_weights = self._sampled_weights
-                
- 
-
-        if not cache_available:
-            if n_const:
-                approx_ratio = n_outcomes/len(self.particle_weights)
-                sampled_weights, sampled_modelparams = self.reapprox(self.particle_weights,
-                        self.particle_locations,approx_ratio)
-                if cache_samples:
-                    self._sampled_weights = sampled_weights
-                    self._sampled_modelparams = sampled_modelparams
-
-        if not n_const:
-                all_sampled_weights = []
-                all_sampled_modelparams = []
-                all_sampled_outcomes = []
-                all_likelihoods = []
-                for idx_exp in range(expparams.shape[0]):
-                    n_o = n_outcomes[idx_exp]
-                    exp = expparams[idx_exp:idx_exp+1]
-              
-                    if n_o > self.model.n_outcomes_cutoff and self.model.n_outcomes_cutoff is not None:                       
-                        approx_ratio = n_o/len(self.particle_weights)
-                        sampled_weights, sampled_modelparams = self.reapprox(self.particle_weights,
-                        self.particle_locations,approx_ratio)
-                    else:
-                        sampled_weights = self.particle_weights
-                        sampled_modelparams = self.particle_locations
-
-                    likelihoods, sampled_outcomes = self.model.representative_outcomes(
-                            sampled_weights, sampled_modelparams, exp)
-
-                    all_sampled_weights.append(sampled_weights)
-                    all_sampled_modelparams.append(sampled_modelparams)
-                    all_sampled_outcomes.append(sampled_outcomes[0])
-                    all_likelihoods.append(likelihoods[0])
-        else:
-            all_sampled_weights = np.tile(sampled_weights,(n_expparams,1))
-            all_sampled_modelparams = np.tile(sampled_modelparams,(n_expparams,1,1))
-
-            all_likelihoods,all_sampled_outcomes = self.model.representative_outcomes(
-                            sampled_weights, sampled_modelparams, expparams)
+        all_sampled_weights,all_sampled_modelparams,all_sampled_outcomes,all_likelihoods =  \
+                    self._sample_outcomes_modelparams(expparams,use_cached_samples=use_cached_samples,cache_samples=cache_samples)
 
         # preallocate information gain array
         ig = np.empty((n_expparams, ))
