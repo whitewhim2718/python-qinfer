@@ -864,7 +864,7 @@ class SMCUpdater(Distribution):
             est_mom2 = np.tensordot(weights, modelparams**2, axes=(0,0))
 
             risk[idx_exp] = np.sum(self.model.Q * (est_mom2 - est_posterior_mom2), axis=0)
-        
+            
      
         risk = risk.clip(min=0)  
 
@@ -916,14 +916,9 @@ class SMCUpdater(Distribution):
         old_mean = np.sum(weights.reshape(-1,1) * modelparams,axis=0)
         old_var = np.sum(weights.reshape(-1,1)*(modelparams-old_mean)**2,axis=0)
         for i,risk in enumerate(risks):
-            #old_mean = np.sum(all_sampled_weights[i].reshape(-1,1)*(all_sampled_modelparams[i]),axis=0)
-            
             risk_improvements[i] = (risk-np.dot(self.model.Q,old_var))
-
-            #if risk_improvements[i]>0:
-            #    import pdb
-            #    pdb.set_trace()
-    
+            
+        
         if return_sampled_parameters:
             return risk_improvements, weights, modelparams, all_sampled_outcomes, all_likelihoods
         else:

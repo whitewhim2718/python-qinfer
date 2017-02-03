@@ -578,8 +578,7 @@ class GaussianModel(DifferentiableModel):
         x = self.model_function(modelparams,expparams)[np.newaxis,:,:]
         likelihood =  1./(np.sqrt(2*np.pi*var))*np.exp(-(outcomes-x)**2/(2*var))
 
-        if np.any(np.isnan(likelihood)):
-            import pdb;pdb.set_trace()
+        
 
         return likelihood
 
