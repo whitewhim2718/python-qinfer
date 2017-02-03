@@ -617,7 +617,7 @@ class GaussianModel(DifferentiableModel):
         scr = np.pad(scr,((0,self.n_modelparams-scr.shape[0]),(0,0),(0,0),(0,0)),mode='constant',constant_values=0)
         
         if self._var is None:
-            scr[var_index] = (outcomes_rs-x)**2/(2*np.power(var,2)) - 1/(2*var)
+            scr[var_index] = (outcomes_rs-x)**2/(np.power(2*var,2)) - 1/(2*var)
 
         if return_L:
             return scr, self.likelihood(outcomes, modelparams, expparams)
