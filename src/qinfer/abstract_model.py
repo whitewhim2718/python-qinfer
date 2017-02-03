@@ -866,10 +866,10 @@ class DifferentiableModel(with_metaclass(abc.ABCMeta, Model)):
 
 
     def _finite_fisher_information(self,modelparams,expparams):
-         # TODO: break into two cases, one for constant outcomes, one for
-            #       variable. The latter will have to be a loop, which is much
-            #       slower.
-            #       Here, we sketch the first case.
+            """
+            Performs an exact evaluation of the fisher information when the 
+            outcomes may be enumerated.  
+            """
 
             n_o = self.n_outcomes(expparams)
             n_o_fi = self.n_fisher_information_outcomes(expparams)
@@ -914,17 +914,27 @@ class DifferentiableModel(with_metaclass(abc.ABCMeta, Model)):
                 return fisher
     
     def _generalized_fisher_information(self,modelparams,expparams):
+        """
+        Performs Monte Carlo integration of the FI. 
+        """
+
         n_o_fi = self.n_fisher_information_outcomes(expparams)
         n_o = n_o_fi
         n_o = n_o if np.isscalar(n_o) else n_o.shape[0]
+
+        # select modelparameters for monte carlo integration of fisher information
         mps = modelparams[np.random.choice(modelparams.shape[0],n_o),:]
+        # sampled outcomes for monte carlo integration
         outcomes = np.asarray(self.simulate_experiment(mps,expparams,repeat=1)).reshape((len(mps),len(expparams)))
         scores = np.empty((
         self.n_modelparams, n_o,
         modelparams.shape[0], expparams.shape[0]
         ),dtype=np.float32)
+
+        #generate likelihood for all outcomes,modelparameters, and experimental parameters
         L = np.empty((n_o,modelparams.shape[0],expparams.shape[0]),dtype=np.float32)
 
+        #Evaluate the score for each experiment, and all outcomes / modelparams for that experiment
         for idx_exp in range(expparams.shape[0]):
             exp = expparams[idx_exp:idx_exp+1]
             os = outcomes[:,idx_exp]
@@ -932,12 +942,13 @@ class DifferentiableModel(with_metaclass(abc.ABCMeta, Model)):
             L[:,:,idx_exp] = L_os[:,:,0]
             scores[:,:,:,idx_exp] = score[:,:,:,0]
             
-
+        #Normalize the likelhoods
         L = np.nan_to_num(L/np.sum(L,axis=1)[:,np.newaxis,:])
         #no_zero = np.sum((L != 0),axis=0)
         scores = np.nan_to_num(scores)
         #no_zero_scores = np.sum((scores !=0),axis=2).transpose([1,0,2])
 
+        # perfomr the final monte carlo integration of the fisher information
         fi= modelparams.shape[0]/n_o*np.einsum("ome,iome,jome->ijme",
          L,scores, scores
         )
