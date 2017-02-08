@@ -268,7 +268,7 @@ class ReferencedPoissonModel(DerivedModel):
             self._expparams_dtype = underlying_model.expparams_dtype + [('mode', 'int')]
 
         # The domain for any mode of an experiment is all of the non-negative integers
-        self._domain = IntegerDomain(min=0, max=None)
+        self._domain = IntegerDomain(min=0)
 
     ## PROPERTIES ##
 
