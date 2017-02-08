@@ -74,7 +74,7 @@ class PoissonModel(DifferentiableModel):
         self.num_outcome_samples = num_outcome_samples
 
         # domain is all non-negative integers
-        self._domain = IntegerDomain(min=0, max=None)
+        self._domain = IntegerDomain(min=0)
 
     ## ABSTRACT METHODS##
 
