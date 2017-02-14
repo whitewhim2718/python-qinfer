@@ -137,6 +137,9 @@ class DerivedModel(Model):
     def canonicalize(self, modelparams):
         return self.underlying_model.canonicalize(modelparams)
 
+    def update_callback(self,weights,modelparams):
+        return self.underlying_model.update_callback(weights,modelparams)
+        
     def simulate_experiment(self,modelparams,expparams,repeat=1):
         # It might be tempting to call this for sim_count incrementing, 
         # but it will almost certainly be a waste of time. It might even 

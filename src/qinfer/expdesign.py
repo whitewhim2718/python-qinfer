@@ -37,7 +37,10 @@ __all__ = [
     'EnsembleHeuristic',
     'ExpSparseHeuristic',
     'PGH',
-    'OptimizationAlgorithms'
+    'OptimizationAlgorithms',
+    'UtilityFunctions',
+    'Bounds',
+    'RandomDisplacementBounds'
 ]
 
 ## IMPORTS ####################################################################
@@ -61,7 +64,10 @@ def identity(arg): return arg
 
 ## CLASSES #####################################################################
 
-OptimizationAlgorithms = enum.enum("NULL", "CG", "NCG", "NELDER_MEAD")
+OptimizationAlgorithms = enum.enum("NULL", "CG", "NCG", "NELDER_MEAD","LINEAR_SWEEP","RANDOM_GUESSES",
+    "L_BFGS_B","BASIN_HOPPING")
+
+UtilityFunctions = enum.enum('RISK','RISK_IMPROVEMENT',"INFORMATION_GAIN")
 
 class Heuristic(with_metaclass(ABCMeta, object)):
     r"""
@@ -225,17 +231,38 @@ class ExperimentDesigner(object):
         local optimization.
     """
 
-    def __init__(self, updater, opt_algo=OptimizationAlgorithms.CG):
+    
+
+    def __init__(self, updater,utility_func=None, opt_algo=OptimizationAlgorithms.CG):
         if opt_algo not in OptimizationAlgorithms.reverse_mapping:
             raise ValueError("Unsupported or unknown optimization algorithm.")
-    
+
         self._updater = updater
+        if utility_func is None or (utility_func==UtilityFunctions.RISK_IMPROVEMENT):
+            self._utility_func = self.risk_improvement_utility
+        elif utility_func==UtilityFunctions.RISK :
+            self._utility_func = self.risk_utility
+        elif utility_func==UtilityFunctions.INFORMATION_GAIN:
+            self._utility_func = self.information_gain_utility
+        else:
+            self._utility_func = utility_func
+            
         self._opt_algo = opt_algo
         
         # Set everything up for the first experiment.
         self.new_exp()
+        self._num_calls = 0
         
     ## METHODS ################################################################
+    def risk_utility(self,*args,**kwargs):
+        return self._updater.bayes_risk(*args,use_cached_samples=True,cache_samples=True,**kwargs)
+    
+    def risk_improvement_utility(self,*args,**kwargs):
+        return self._updater.risk_improvement(*args,use_cached_samples=True,cache_samples=True,**kwargs)
+
+    def information_gain_utility(self,*args,**kwargs):
+        return -self._updater.expected_information_gain(*args,use_cached_samples=True,cache_samples=True,**kwargs)
+
     def new_exp(self):
         """
         Resets this `ExperimentDesigner` instance and prepares for designing
@@ -245,13 +272,14 @@ class ExperimentDesigner(object):
         self.__best_ep = None
         
     def design_expparams_field(self,
-            guess, field,
+            guess, fields,n_exps=1,
             cost_scale_k=1.0, disp=False,
             maxiter=None, maxfun=None,
-            store_guess=False, grad_h=None, cost_mult=False
-        ):
+            store_guess=False, grad_h=None, cost_mult=False,
+            n_samples=None,
+            bounds=None,niter=100,**opt_options):
         r"""
-        Designs a new experiment by varying a single field of a shape ``(1,)``
+        Designs a new experiment by varying a field (or multiple) of a shape ``(n,)``
         record array and minimizing the objective function
         
         .. math::
@@ -262,13 +290,14 @@ class ExperimentDesigner(object):
         :math:`k` is a parameter specified to relate the units of the risk and
         the cost. See :ref:`expdesign` for more details.
         
-        :param guess: Either a record array with a single guess, or
-            a callable function that generates guesses.
+        :param guess: Either a record array with a single guess,an array of guesses
+            for SWEEP_GUESS or a callable function that generates guesses.
         :type guess: Instance of :class:`~Heuristic`, `callable`
             or :class:`~numpy.ndarray` of ``dtype``
-            :attr:`~qinfer.abstract_model.Model.expparams_dtype`
-        :param str field: The name of the ``expparams`` field to be optimized.
-            All other fields of ``guess`` will be held constant.
+            :attr:`~qinfer.abstract_model.Simulatable.expparams_dtype`
+        :param str list fields: The names of the ``expparams`` fields to be optimized,
+            eg. of the form 'field' for one field, and ['field1','field2',...] for 
+            multiple fields. All other fields of ``guess`` will be held constant.
         :param float cost_scale_k: A scale parameter :math:`k` relating the
             Bayes risk to the experiment cost.
             See :ref:`expdesign`.
@@ -285,14 +314,34 @@ class ExperimentDesigner(object):
             this experiment, or the previous best-known experiment design.
         :param float grad_h: Step size to use in estimating gradients. Used
             only if ``opt_algo`` is NCG.
+        :param dict opt_options: Dictionary of additional keyword arguments to
+            be passed to the optimization function.
+        :param list bounds: Bounds for the optimized parameter of the form (min,max).
+             Used only if ``opt_algo`` is L_BFGS_B, BASIN_HOPPING, LINEAR_SWEEP or 
+             RANDOM_GUESSES.
+        :param int niter: Number of iterations for optimization algorithms that
+            take a fixed amount of iterations. Currently only used if ``opt_algo`` is 
+            BASIN_HOPPING. Bounds must be set for these optimization algorithms. 
+        :param n_samples:  Number of random guesses or linear parameter sweep to generate.
+            Used only if ``opt_algo`` is LINEAR_SWEEP and RANDOM_GUESSES
+            Elements must be of type ``dtype``
+            
         :return: An array representing the best experiment design found so
             far for the current experiment.
         """
-        
+        # Check if a single field is passed and convert to list of fields
+        if type(fields) is str:
+            fields = [fields]
+            # also need to form sweep_guesses to right shape 
+        n_fields = len(fields)
+        if bounds:
+            bounds = [ b for b in bounds for i in range(n_exps)]
         # Define some short names for commonly used properties.
         up = self._updater
         m  = up.model
         
+        if opt_options is None:
+            opt_options = {}
         # Generate a new guess or use a guess provided, depending on the
         # type of the guess argument.
         if isinstance(guess, Heuristic):
@@ -307,8 +356,15 @@ class ExperimentDesigner(object):
         else:
             # Make a copy of the guess that we can manipulate, but otherwise
             # use it as-is.
-            ep = np.copy(guess)
+
+            #handle case where multiple guesses are provided for sweep guesses
+            # I feel that this whole class could be reworked with a better design
+            # -Thomas 
+
+       
+            ep = np.copy(guess).reshape(-1)
         
+        self.loss = (0,0,10000000)
         # Define an objective function that wraps a vector of scalars into
         # an appropriate record array.
         if (cost_mult==False):
@@ -317,22 +373,28 @@ class ExperimentDesigner(object):
                 Used internally by design_expparams_field.
                 If you see this, something probably went wrong.
                 """
-                ep[field] = x
-                return up.bayes_risk(ep) + cost_scale_k * m.experiment_cost(ep)
+                for i in range(n_exps):       
+                    for j,f in enumerate(fields): 
+                        ep[i:i+1][f] = x[i*n_fields+j]
+                
+                cost = np.sum(self._utility_func(ep) + cost_scale_k * m.experiment_cost(ep))
+                return cost
         else:
             def objective_function(x):
                 """
                 Used internally by design_expparams_field.
                 If you see this, something probably went wrong.
                 """
-                ep[field] = x
-                return up.bayes_risk(ep)* m.experiment_cost(ep)**cost_scale_k
+
+                old_ep = np.copy(ep)
+                for i in range(n_exps):       
+                    for j,f in enumerate(fields): 
+                        ep[i:i+1][f] = x[i*n_fields+j]
+
+                cost = np.sum(self._utility_func(ep)* m.experiment_cost(ep)**cost_scale_k)
+                return cost
         
             
-        # Some optimizers require gradients of the objective function.
-        # Here, we create a FiniteDifference object to compute that for
-        # us.
-        d_dx_objective = FiniteDifference(objective_function, ep[field].size)
         
         # Allocate a variable to hold the local optimum value found.
         # This way, if an optimization algorithm doesn't support returning
@@ -344,23 +406,24 @@ class ExperimentDesigner(object):
         if self._opt_algo == OptimizationAlgorithms.NULL:
             # This optimization algorithm does nothing locally, but only
             # exists to leverage the store_guess functionality below.
-            x_opt = guess[0][field]
+            
+            x_opt = [ guess[i][f] for f in fields for i in range(n_exps)]
+            x_opt = np.array(x_opt)
             
         elif self._opt_algo == OptimizationAlgorithms.CG:
             # Prepare any additional options.
-            opt_options = {}
             if maxiter is not None:
                 opt_options['maxiter'] = maxiter
                 
             # Actually call fmin_cg, gathering all outputs we can.
             x_opt, f_opt, func_calls, grad_calls, warnflag = opt.fmin_cg(
-                objective_function, guess[0][field],
+                objective_function, [ guess[i][f] for f in fields for i in range(n_exps)],
                 disp=disp, full_output=True, **opt_options
             )
             
         elif self._opt_algo == OptimizationAlgorithms.NCG:
             # Prepare any additional options.
-            opt_options = {}
+        
             if maxfun is not None:
                 opt_options['maxfun'] = maxfun
             if grad_h is not None:
@@ -380,7 +443,7 @@ class ExperimentDesigner(object):
             # anyway.
             try:
                 x_opt, f_opt, func_calls, grad_calls, h_calls, warnflag = opt.fmin_tnc(
-                    objective_function, guess[0][field],
+                    objective_function, [ guess[i][f] for f in fields for i in range(n_exps)],
                     fprime=None, bounds=None, approx_grad=True,
                     disp=disp, full_output=True, **opt_options
                 )
@@ -388,33 +451,112 @@ class ExperimentDesigner(object):
                 warnings.warn(
                     "Gradient function too flat for NCG.",
                     RuntimeWarning)
-                x_opt = guess[0][field]
+                x_opt = np.array([ guess[i][f] for f in fields for i in range(n_exps)])
                 f_opt = None
                 
         elif self._opt_algo == OptimizationAlgorithms.NELDER_MEAD:
-            opt_options = {}
+    
             if maxfun is not None:
                 opt_options['maxfun'] = maxfun
             if maxiter is not None:
                 opt_options['maxiter'] = maxiter
                 
             x_opt, f_opt, iters, func_calls, warnflag = opt.fmin(
-                objective_function, guess[0][field],
+                objective_function, [ guess[i][f] for f in fields for i in range(n_exps)],
                 disp=disp, full_output=True, **opt_options
             )
+        
+        elif self._opt_algo == OptimizationAlgorithms.L_BFGS_B:
+            if maxfun is not None:
+                opt_options['maxfun'] = maxfun
+            if maxiter is not None:
+                opt_options['maxiter'] = maxiter
+            if grad_h is not None:
+                opt_options['epsilon'] = grad_h
+            if bounds is not None:
+                opt_options['bounds'] = bounds
+
+            x_opt,f_opt,d = opt.fmin_l_bfgs_b(objective_function,
+                [ guess[i][f] for f in fields for i in range(n_exps)],approx_grad=True,
+                    disp=disp,**opt_options)
+
+            if disp > 0 :
+                print ("grad:{0}   function calls:{1}    iterations:{2}".format(
+                    d['grad'],d['funcalls'],d['nit']))
+
+        elif self._opt_algo == OptimizationAlgorithms.RANDOM_GUESSES:
+            if n_samples is None:
+                raise ValueError('parameter n_samples must be set for '
+                    'optimization algorithm RANDOM_GUESSES')
             
-        # Optionally compare the result to previous guesses.            
+            b = np.array(bounds)
+            exps = np.random.uniform(np.tile(b[:,0],(n_samples,1)),np.tile(b[:,1],(n_samples,1)))
+            risks = [objective_function(e)for e in exps]
+            x_opt,f_opt = exps[np.argmin(risks)], np.amin(risks)   
+        
+        elif self._opt_algo == OptimizationAlgorithms.LINEAR_SWEEP:
+            if n_samples is None:
+                raise ValueError('parameter n_samples must be set for '
+                    'optimization algorithm LINEAR_SWEEP')
+            self._updater.stds = []
+            b = np.array(bounds)
+            lins = []
+            n_bounds = len(bounds)
+            if n_bounds>1:
+                n_lin = np.ceil(np.power(float(n_samples),1./n_bounds))
+            else:
+                n_lin = n_samples
+                
+            for i in range(n_bounds):
+                lins.append(np.linspace(bounds[i][0],bounds[i][1],n_lin))
+            
+            exps = np.array(np.meshgrid(*lins,indexing='ij')).T.reshape(-1,n_bounds)[:n_samples]
+            risks = [objective_function(e)for e in exps]
+            
+            x_opt,f_opt = exps[np.argmin(risks)], np.amin(risks)  
+            
+        elif self._opt_algo == OptimizationAlgorithms.BASIN_HOPPING:
+            if not isinstance(niter,int):
+                raise ValueError('For BASIN_HOPPING niter must be set')
+            elif niter<=0:
+                raise ValueError('niter must be an integer >0')
+            
+            minimizer_kwargs = {'method':"L-BFGS-B",'options':{}}
+            
+            if bounds: 
+                minimizer_kwargs['bounds'] = bounds
+                b = np.array(bounds)
+                take_step = RandomDisplacementBounds(b[:,0],b[:,1])
+                opt_options['take_step'] = take_step
+            if 'epsilon' in opt_options:
+                minimizer_kwargs['options']['eps'] = opt_options.pop('epsilon',1e-8)
+
+            res = opt.basinhopping(objective_function,[ guess[i][f] for f in fields for i in range(n_exps)],minimizer_kwargs=minimizer_kwargs,
+                                   niter=niter,disp=disp,**opt_options)
+          
+            x_opt = res.x 
+            f_opt = res.fun
+
+
+      
+        
+
+
+        # Optionally compare the result to previous guesses.           
         if store_guess:
             # Possibly compute the objective function value at the local optimum
             # if we don't already know it.
             if f_opt is None:
-                guess_qual = objective_function(x_opt)
+                guess_qual = objective_function(*x_opt)
             
             # Compare to the known best cost so far.
             if self.__best_cost is None or (self.__best_cost > f_opt):
                 # No known best yet, or we're better than the previous best,
                 # so record this guess.
-                ep[field] = x_opt
+                for i in range(n_exps):       
+                    for j,f in enumerate(fields): 
+                        ep[i:i+1][f] = x_opt[i*n_fields+j]
+                
                 self.__best_cost = f_opt
                 self.__best_ep = ep
             else:
@@ -422,9 +564,39 @@ class ExperimentDesigner(object):
         else:
             # We aren't using guess recording, so just pack the local optima
             # into ep for returning.
-            ep[field] = x_opt
+            for i in range(n_exps):       
+                    for j,f in enumerate(fields): 
+                        ep[i:i+1][f] = x_opt[i*n_fields+j]
+        # In any case, return the optimized gu
         
-        # In any case, return the optimized guess.
+        self._num_calls +=1
         return ep
+
+class Bounds(object):
+
+    def __init__(self,xmin,xmax,dtype=np.float32):
+        self.xmax = np.array(xmax,dtype=dtype)
+        self.xmin = np.array(xmin,dtype=dtype)
+
+    def __call__(self,**kwargs):
+        x = kwargs["x_new"]
+        tmax = bool(np.all(x <= self.xmax))
+        tmin = bool(np.all(x >= self.xmin))
+        bound = tmax and tmin
+        return bound
         
-    
+class RandomDisplacementBounds(object):
+    """random displacement with bounds"""
+    def __init__(self, xmin, xmax, stepsize=0.5):
+        self.xmin = xmin
+        self.xmax = xmax
+        self.stepsize = stepsize
+
+    def __call__(self, x):
+        """take a random step but ensure the new position is within the bounds"""
+        while True:
+            # this could be done in a much more clever way, but it will work for example purposes
+            xnew = x + np.random.uniform(-self.stepsize, self.stepsize, np.shape(x))
+            if np.all(xnew < self.xmax) and np.all(xnew > self.xmin):
+                break
+        return xnew
