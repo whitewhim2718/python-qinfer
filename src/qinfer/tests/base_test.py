@@ -335,7 +335,7 @@ class ConcreteSimulatableTest(with_metaclass(abc.ABCMeta, object)):
             repeat = repeat + 1
 
         outcomes = self.model.simulate_experiment(self.modelparams, self.expparams, repeat=repeat)
-                
+
         assert(outcomes.shape == (
             repeat,
             self.n_models, 

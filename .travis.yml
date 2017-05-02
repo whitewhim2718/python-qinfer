@@ -8,7 +8,13 @@ python:
 
 addons:
   apt:
+    sources:
+      - ubuntu-toolchain-r-test
     packages:
+      # QuTiP builds are currently broken under very old versions
+      # of GCC, such as are installed by default with Travis CI.
+      - gcc-4.8
+      - g++-4.8
       - texlive
       - texlive-latex-extra
       - texlive-fonts-extra
@@ -24,8 +30,10 @@ matrix:
 
 env:
   global:
+    - CC: gcc-4.8
     - MPLBACKEND: Agg
-    - secure: 
+    - PYPI_USERNAME: cgranade
+    - secure: XhLK4jvMAdrSVHa2u4AhZGA6aseKGaS7GJy+HHq/O6w4DnECKvkagjm07bA0aK/OW+MlTy7hh4COf/OaUSmsciwtZ4JpJ2K5UzwUjmZAxXorkmi5aF6FCPfT1id5Qz0vWF1QLO1Fl4fEH3cHuHNL2pJ3dURK4DitehKgjEHwhm8=
 
 notifications:
   email: false
@@ -63,11 +71,10 @@ install:
       pip install cython;
       pip install -r doc/rtd-requirements.txt;
     fi
-  - cd src/
 
 script:
-  - py.test --cov-config .coveragerc --cov=qinfer qinfer/
-  - pylint --py3k qinfer/
+  - py.test --cov-config .coveragerc --cov=qinfer src/qinfer/
+  - pylint --py3k src/qinfer/
   - if [[ "${DOCTEST}" == "1" ]]; then
       cd $TRAVIS_BUILD_DIR/doc;
       make doctest;
