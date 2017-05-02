@@ -374,9 +374,11 @@ class SMCUpdater(Distribution):
         # Rearrange so that likelihoods have shape (outcomes, experiments, models).
         # This makes the multiplication with weights (shape (models,)) make sense,
         # since NumPy broadcasting rules align on the right-most index.
+        #self.model.debug_flag = True
         L = self.model.likelihood(outcomes, locs, expparams).transpose([0, 2, 1])
+    
+
         hyp_weights = weights * L
-        
         # Sum up the weights to find the renormalization scale.
         norm_scale = np.sum(hyp_weights, axis=2)[..., np.newaxis]
         
@@ -395,6 +397,7 @@ class SMCUpdater(Distribution):
         
         # normalize
         norm_weights = hyp_weights / fixed_norm_scale
+
             # Note that newaxis is needed to align the two matrices.
             # This introduces a length-1 axis for the particle number,
             # so that the normalization is broadcast over all particles.
@@ -705,6 +708,7 @@ class SMCUpdater(Distribution):
         :returns: An array containing the estimated covariance matrix.
         """
 
+
         cov = particle_covariance_mtx(
             self.particle_weights,
             self.particle_locations)
@@ -870,7 +874,6 @@ class SMCUpdater(Distribution):
 
             all_likelihoods,all_sampled_outcomes = self.model.representative_outcomes(
                             sampled_weights, sampled_modelparams, expparams)
-
 
         return all_sampled_weights,all_sampled_modelparams,all_sampled_outcomes,all_likelihoods
     

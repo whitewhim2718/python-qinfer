@@ -247,6 +247,7 @@ class PoissonModel(DifferentiableModel):
         else:
             outcomes_rs = outcomes[np.newaxis,:,np.newaxis,:]
 
+
         lamb_da = self.model_function(modelparams,expparams)[np.newaxis,np.newaxis,:,:]
         fns_deriv = self.model_function_derivative(modelparams,expparams)[:,np.newaxis,:,:]
 

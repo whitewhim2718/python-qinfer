@@ -249,7 +249,7 @@ class Simulatable(with_metaclass(abc.ABCMeta, object)):
         pass
     
     @abc.abstractmethod
-    def domain(self, exparams):
+    def domain(self, expparams):
         """
         Returns a list of :class:`Domain` objects, one for each input expparam.
 
@@ -599,7 +599,8 @@ class Model(Simulatable):
             # So that expparam is a numpy array when extracted
             expparam = expparams[idx_ep:idx_ep+1]
             n_o = n_outcomes if np.isscalar(n_outcomes) else n_outcomes[idx_ep]
-            os = np.asarray(self.simulate_experiment(modelparams, expparam, repeat=1)).reshape(-1)
+            os = self.simulate_experiment(modelparams, expparam, repeat=1).reshape(-1)
+            
             assert os.dtype == self.domain(expparam)[0].dtype
             
             # The same outcome is likely to have resulted multiple times in the case that outcomes 
