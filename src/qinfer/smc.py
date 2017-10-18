@@ -174,7 +174,8 @@ class SMCUpdater(Distribution):
         #initialize risk/ig samples cache
         self._sampled_weights = None
         self._sampled_modelparams = None
-        
+        self._risk_weights = None
+        self._risk_modelparams = None
         ## PARTICLE INITIALIZATION ##
         self.reset(n_particles)
 
@@ -719,23 +720,20 @@ class SMCUpdater(Distribution):
 
         return cov
     
-    def reapprox(self,particle_weights,particle_locations,approx_ratio):
+    def reapprox(self,particle_weights,particle_locations,n_particles):
         """
         Generates a reduced approximation of the particle filter as described in Algorithm 6 of
         Robust Online Hamiltonian Learning. This implementation also normalizes the reduced weights
         which was not described in the original paper.
         :param np.ndarray particle_weights: Particle weights of particle filter to be reduced. 
         :param np.ndarray particle_locations: Particle locations of particle filter to be reduced. 
-        :param int approx_ratio: Proportion to reduce particle filter particle number by. approx_ratio=1.0,
-        will return the initial sorted distribution. :math:`\tilde{n}=approx_ratio*n`.  approx_ratio must be 
-        an element from (0.,1.0). 
+        :param int n_particles: Number of modelparameters to have in the reapproximated particle filter.
 
         :return tuple: A tuple containing (reduced_particle_weights,reduced_particle_locations), of the form 
         (:class:`numpy.ndarray`,:class:`numpy.ndarray`).
         """
 
         n_ini = len(particle_weights)
-        n_red = int(approx_ratio*n_ini)
         
         #draw random permutation
         permuted_indices = np.random.permutation(n_ini)
@@ -745,7 +743,7 @@ class SMCUpdater(Distribution):
         particle_location = particle_locations[permuted_indices]
         
         #sort to return highest weighted particles in approximation
-        reduced_indices = np.argsort(particle_weights)[-n_red:]
+        reduced_indices = np.argsort(particle_weights)[-n_particles:]
         reduced_particle_weights = particle_weights[reduced_indices]
         reduced_particle_locations = particle_locations[reduced_indices]
         
@@ -779,7 +777,8 @@ class SMCUpdater(Distribution):
         return particle_weights, particle_locations
     
 
-    def _sample_outcomes_modelparams(self,expparams,use_cached_samples=False,cache_samples=True):
+    def _sample_outcomes_modelparams(self,expparams,use_cached_samples=False,cache_samples=True,
+                                        n_particle_subset=None):
         """
         Hidden method that implements sampling of outcomes for monte carlo integration. Is used by 
         both the `bayes_risk`, and `expected_information_gain` methods to draw outcomes. Also implements
@@ -799,8 +798,8 @@ class SMCUpdater(Distribution):
                             is ``True``
         :type cache_samples: bool
 
-        :return list: Returns a tuple of form (all_sampled_weights,all_sampled_modelparams,all_sampled_outcomes,all_likelihoods)
-        all_sampled_weights is an array of form (n_sam,), all_sampled_modelparams has form (n_sam,n_mps), all_sampled_outcomes is a 
+        :return list: Returns a tuple of form (all_risk_weights,all_risk_modelparams,all_sampled_outcomes,all_likelihoods)
+        all_risk_weights is an array of form (n_particle_subset,), all_risk_modelparams has form (n_particle_subset,n_mps), all_sampled_outcomes is a 
         list containing arrays of form (n_sam), ie. [(n_sam_1,),...,(n_sam_n_exps,)], and all_likelihoods is a list containing likelihood
         arrays of form  [(n_sam_1,n_sam_1),...,(n_sam_n_exps,n_sam_n_exps)]. The arrays in all_likelihoods are the likelihood every of every outcome
         for each sampled modelparameter for a given experiment. These are used for maximum importance sampling monte carlo integration
@@ -814,6 +813,9 @@ class SMCUpdater(Distribution):
         scalar_n_o = not np.isscalar(n_outcomes)
         n_const = self.model.is_n_outcomes_constant
         
+        #default to use all particle parameters for risk sampling
+        if n_particle_subset is None:
+            n_particle_subset = self.particle_weights.shape[0]
 
         # For practical minimization of bayes risk it is necessary 
         # to sample outcomes using the same sampled model parameters and associated weights
@@ -827,26 +829,31 @@ class SMCUpdater(Distribution):
                 warnings.warn("Cached values are not supported if n_outcomes is constant. Reverting to sampling")
             
             # If available and required retrieve cached weights/modelparams
-            if (not self._sampled_modelparams is None) and (not self._sampled_weights is None):
+            if (not self._sampled_modelparams is None) and (not self._risk_modelparams is None) and \
+                (not self._sampled_weights is None) and (not self._risk_weights is None):
                 cache_available = True
                 sampled_modelparams = self._sampled_modelparams
+                risk_modelparams = self._risk_modelparams
                 sampled_weights = self._sampled_weights
-        
+                risk_weights = self._risk_weights
         #otherwise draw new weights/modelparams for outcome sampling      
         if not cache_available:
             if n_const:
-                approx_ratio = n_outcomes/len(self.particle_weights)
                 sampled_weights, sampled_modelparams = self.reapprox(self.particle_weights,
-                        self.particle_locations,approx_ratio)
+                        self.particle_locations,n_outcomes)
+                risk_weights, risk_modelparams = self.reapprox(self.particle_weights,
+                        self.particle_locations,n_particle_subset)
 
                 if cache_samples:
                     self._sampled_weights = sampled_weights
                     self._sampled_modelparams = sampled_modelparams
+                    self._risk_weights = risk_weights
+                    self._risk_modelparams = risk_modelparams
 
         # if number of outcomes is not constant we must cycle through them 
         if not n_const:
-                all_sampled_weights = []
-                all_sampled_modelparams = []
+                all_risk_weights = []
+                all_risk_modelparams = []
                 all_sampled_outcomes = []
                 all_likelihoods = []
                 for idx_exp in range(expparams.shape[0]):
@@ -854,31 +861,35 @@ class SMCUpdater(Distribution):
                     exp = expparams[idx_exp:idx_exp+1]
               
                     if n_o > self.model.n_outcomes_cutoff and self.model.n_outcomes_cutoff is not None:                       
-                        approx_ratio = n_o/len(self.particle_weights)
                         sampled_weights, sampled_modelparams = self.reapprox(self.particle_weights,
-                        self.particle_locations,approx_ratio)
+                        self.particle_locations,n_o)
+                        risk_weights, risk_modelparams = self.reapprox(self.particle_weights,
+                        self.particle_locations,n_particle_subset)
                     else:
                         sampled_weights = self.particle_weights
                         sampled_modelparams = self.particle_locations
+                        risk_weights = self.particle_weights
+                        risk_modelparams = self.particle_locations
 
                     likelihoods, sampled_outcomes = self.model.representative_outcomes(
-                            sampled_weights, sampled_modelparams, exp)
+                            sampled_weights, sampled_modelparams, exp, risk_modelparams)
 
-                    all_sampled_weights.append(sampled_weights)
-                    all_sampled_modelparams.append(sampled_modelparams)
+                    all_risk_weights.append(risk_weights)
+                    all_risk_modelparams.append(risk_modelparams)
                     all_sampled_outcomes.append(sampled_outcomes[0])
                     all_likelihoods.append(likelihoods[0])
+                    
         else:
-            all_sampled_weights = np.tile(sampled_weights,(n_expparams,1))
-            all_sampled_modelparams = np.tile(sampled_modelparams,(n_expparams,1,1))
+            all_risk_weights = np.tile(risk_weights,(n_expparams,1))
+            all_risk_modelparams = np.tile(risk_modelparams,(n_expparams,1,1))
 
             all_likelihoods,all_sampled_outcomes = self.model.representative_outcomes(
-                            sampled_weights, sampled_modelparams, expparams)
+                            sampled_weights, sampled_modelparams, expparams, risk_modelparams)
 
-        return all_sampled_weights,all_sampled_modelparams,all_sampled_outcomes,all_likelihoods
+        return all_risk_weights,all_risk_modelparams,all_sampled_outcomes,all_likelihoods
     
     def bayes_risk(self, expparams, use_cached_samples=False,cache_samples=True,
-                    return_sampled_parameters=False):
+                    return_sampled_parameters=False,n_particle_subset=None):
         r"""
         Calculates the Bayes risk for each hypothetical experiment, assuming the
         quadratic loss function defined by the current model's scale matrix
@@ -901,6 +912,12 @@ class SMCUpdater(Distribution):
                 to risks, sampled weights, modelparams, outcomes, and likelihoods in 
                 a tuple of theform (risk, all_sampled_weights, all_sampled_modelparams,
                  all_sampled_outcomes, all_likelihoods).
+        :param n_particle_subset: Number of particles to compute the risk with. At times it can 
+                be computationally intensive to calculate the risk over all distribution 
+                particles if the number of outcomes is large. Set `n_particle_subset` to control
+                the number of particles used to calculate the Bayes Risk. Default behavior is 
+                to use all particles. 
+        :type n_particle_subset: int  
         :param return_sampled_parameters: bool
 
             
@@ -915,7 +932,8 @@ class SMCUpdater(Distribution):
         
         # retrieve sampled weights, modelparams, outcomes, and associated likelihoods
         all_sampled_weights,all_sampled_modelparams,all_sampled_outcomes,all_likelihoods =  \
-                    self._sample_outcomes_modelparams(expparams,use_cached_samples=use_cached_samples,cache_samples=cache_samples)
+                    self._sample_outcomes_modelparams(expparams,use_cached_samples=use_cached_samples,
+                        cache_samples=cache_samples,n_particle_subset=n_particle_subset)
 
         risk = np.empty((n_expparams, ))
         if not hasattr(self,'_old_modelparams'):
@@ -936,7 +954,6 @@ class SMCUpdater(Distribution):
             # compute the expected mean for each of the outcomes
             est_posterior_means = np.tensordot(norm_weights, modelparams, axes=(1, 0)) # shape(n_outcomes, n_mps)
             # compute the second moment of these means over the outcome distribution
-            
 
             if self.model.allow_identical_outcomes:
                 est_posterior_mom2 = (1./norm_scale.shape[0])*np.sum(est_posterior_means**2, axis=0) # shape (n_mps)
@@ -945,10 +962,9 @@ class SMCUpdater(Distribution):
                 
 
             # compute the second moment of the particles
-            est_mom2 = np.tensordot(weights, modelparams**2, axes=(0,0))
-
+            #est_mom2 = np.tensordot(weights, modelparams**2, axes=(0,0))
+            est_mom2 = (1/norm_weights.shape[0])*np.sum(np.tensordot(norm_weights, modelparams**2, axes=(1,0)),axis=0)
             risk[idx_exp] = np.sum(self.model.Q * (est_mom2 - est_posterior_mom2), axis=0)
-            
      
         risk = risk.clip(min=0)  
 
@@ -959,7 +975,7 @@ class SMCUpdater(Distribution):
       
 
     def risk_improvement(self, expparams, use_cached_samples=False,cache_samples=True,
-                    return_sampled_parameters=False):
+                    return_sampled_parameters=False,n_particle_subset=None):
         r"""
         Calculates the expected improvement of the Bayes risk for each hypothetical experiment, assuming the
         quadratic loss function defined by the current model's scale matrix
@@ -985,6 +1001,11 @@ class SMCUpdater(Distribution):
                 a tuple of theform (risk, all_sampled_weights, all_sampled_modelparams,
                  all_sampled_outcomes, all_likelihoods).
         :param return_sampled_parameters: bool
+        :param n_particle_subset: Number of particles to compute the risk with. At times it can 
+                be computationally intensive to calculate the risk over all distribution 
+                particles if the number of outcomes is large. Set `n_particle_subset` to control
+                the number of particles used to calculate the Bayes Risk. Default behavior 
+        :type n_particle_subset: int  
 
             
         :return float: The expected improvement of the Bayes risk for the current posterior distribution
@@ -1011,7 +1032,7 @@ class SMCUpdater(Distribution):
 
         
     def expected_information_gain(self, expparams, use_cached_samples=False,cache_samples=True,
-                    return_sampled_parameters=False):
+                    return_sampled_parameters=False,n_particle_subset=None):
         r"""
         Calculates the expected information gain for each hypothetical experiment.
         
@@ -1034,6 +1055,11 @@ class SMCUpdater(Distribution):
                 a tuple of theform (igs, all_sampled_weights, all_sampled_modelparams,
                  all_sampled_outcomes, all_likelihoods).
         :param return_sampled_parameters: bool
+        :param n_particle_subset: Number of particles to compute the risk with. At times it can 
+                be computationally intensive to calculate the risk over all distribution 
+                particles if the number of outcomes is large. Set `n_particle_subset` to control
+                the number of particles used to calculate the Bayes Risk. Default behavior 
+        :type n_particle_subset: int  
 
             
         :return float: The Bayes risk for the current posterior distribution
@@ -1046,7 +1072,8 @@ class SMCUpdater(Distribution):
         n_const = self.model.is_n_outcomes_constant
 
         all_sampled_weights,all_sampled_modelparams,all_sampled_outcomes,all_likelihoods =  \
-                    self._sample_outcomes_modelparams(expparams,use_cached_samples=use_cached_samples,cache_samples=cache_samples)
+                    self._sample_outcomes_modelparams(expparams,use_cached_samples=use_cached_samples,
+                        cache_samples=cache_samples,n_particle_subset=None)
 
         # preallocate information gain array
         ig = np.empty((n_expparams, ))
@@ -1087,7 +1114,8 @@ class SMCUpdater(Distribution):
         """
         self._sampled_weights = None
         self._sampled_modelparams = None
-      
+        self._risk_weights = None
+        self._risk_modelparams = None
 
         
     def est_entropy(self):
@@ -1850,9 +1878,8 @@ class SMCUpdaterBCRB(SMCUpdater):
 
         n_o_fi = self.model.n_fisher_information_outcomes(expparams)
         # may get an array back, this way we make sure we get the correct number
-        approx_ratio = np.asarray(float(n_o_fi)/len(self.particle_weights))
         sampled_weights, sampled_modelparams = self.reapprox(self.particle_weights,
-                        self.particle_locations,approx_ratio)
+                        self.particle_locations,n_o_fi)
         fi = self.model.fisher_information(sampled_modelparams, expparams)
         
         # We now either reweight and sum, or sum and divide, based on whether we

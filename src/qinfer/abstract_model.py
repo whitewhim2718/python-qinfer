@@ -544,7 +544,7 @@ class Model(Simulatable):
         """
         return self.are_models_valid(modelparams[np.newaxis, :])[0]
 
-    def representative_outcomes(self, weights, modelparams, expparams,params_to_evaluate_likelihood=None):
+    def representative_outcomes(self, weights, modelparams, expparams,likelihood_modelparams=None):
         """
         Given the distribution of model parameters specified by 
         (``weights``, ``modelparams``), for each experimental parameter 
@@ -563,7 +563,9 @@ class Model(Simulatable):
         :param np.ndarray modelparams: Set of model parameters (particles) to sample outcomes from.
         :param np.ndarray expparams: Set of experimental parameters of 
             type ``exparams_dtype``.
-
+        :param np.ndarray likelihood_modelparams: Set of modelparameters to evaluate likelihood for
+            . Sometimes we wish to evaluate the likelihood for other particles other than just those
+            outcomes were drawn from. Default behavior is use only supplied `modelparams`.  
         :return tuple: Returns a tuple ``(likelihoods, outcomes,weights,particles)``.
             Here, ``outcomes`` is a list of length ``n_experiments`` 
             with each member is an ``np.ndarray`` of shape ``(n_outcomes)`` 
@@ -581,8 +583,8 @@ class Model(Simulatable):
         a distribution of model parameters. See ``~qinfer.SMCUpdater.bayes_risk()` 
         as an example.
         """
-        if params_to_evaluate_likelihood is None:
-            params_to_evaluate_likelihood = modelparams
+        if likelihood_modelparams is None:
+            likelihood_modelparams = modelparams
 
         n_outcomes = self.n_outcomes(expparams)
         n_expparams = expparams.shape[0]
@@ -610,7 +612,7 @@ class Model(Simulatable):
 
             # Find the likelihood for each outcome given each modelparam (irrespective 
             # of which modelparam the outcome resulted from)
-            L_ep = self.likelihood(os, params_to_evaluate_likelihood, expparam)[:,:,0]
+            L_ep = self.likelihood(os, likelihood_modelparams, expparam)[:,:,0]
 
             if self.domain(expparam)[0].is_discrete:
                 # If we sum L_ep over the weighted modelparams, we get the total probability 
@@ -765,7 +767,7 @@ class FiniteOutcomeModel(Model):
                 
         return outcomes[0, 0, 0] if repeat == 1 and expparams.shape[0] == 1 and modelparams.shape[0] == 1 else outcomes
 
-    def representative_outcomes(self, weights, modelparams, expparams):
+    def representative_outcomes(self, weights, modelparams, expparams,likelihood_modelparams=None):
         """
         Given the distribution of model parameters specified by 
         (``weights``, ``modelparams``), for each experimental parameter 
@@ -784,7 +786,10 @@ class FiniteOutcomeModel(Model):
         :param np.ndarray modelparams: Set of model parameters (particles).
         :param np.ndarray expparams: Set of experimental parameters of 
             type ``exparams_dtype``.
-
+        :param np.ndarray likelihood_modelparams: Set of modelparameters to evaluate likelihood for
+            . Sometimes we wish to evaluate the likelihood for other particles other than just those
+            outcomes were drawn from. Default behavior is use only supplied `modelparams`.  
+            
         :return tuple: Returns a tuple ``(likelihoods, outcomes,weights,particles)``.
             Here, ``outcomes`` is a list of length ``n_experiments`` 
             with each member is an ``np.ndarray`` of shape ``(n_outcomes)`` 
@@ -808,6 +813,10 @@ class FiniteOutcomeModel(Model):
         n_modelparams = modelparams.shape[0]
         outcomes = []
         L = []
+
+        if likelihood_modelparams is None:
+            likelihood_modelparams = modelparams
+
         # We have to loop over expparams only because each one, unfortunately, might have 
         # a different dtype and/or number of outcomes .
         for idx_ep in range(expparams.shape[0]):
@@ -819,11 +828,11 @@ class FiniteOutcomeModel(Model):
             if self.n_outcomes_cutoff is None or n_o <= self.n_outcomes_cutoff:
                 # If we don't have to many outcomes, just report them all.
                 os = self.domain(expparam)[0].values
-                L.append(self.likelihood(os, modelparams, expparam)[:,:,0])
+                L.append(self.likelihood(os, likelihood_modelparams, expparam)[:,:,0])
             else:
                 # Otherwise, use the generic method to pick some randomly.
                 L_s,os = super(FiniteOutcomeModel, self).representative_outcomes(
-                    weights, modelparams, expparam)[0]
+                    weights, modelparams, expparam, likelihood_modelparams)[0]
                 L.append(L_s)
 
             outcomes.append(os)
