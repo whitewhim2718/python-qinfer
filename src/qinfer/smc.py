@@ -1014,7 +1014,7 @@ class SMCUpdater(Distribution):
 
         risks, weights, modelparams, all_sampled_outcomes, all_likelihoods = \
                                 self.bayes_risk(expparams,use_cached_samples,cache_samples,
-                                                return_sampled_parameters=True)
+                                                return_sampled_parameters=True,n_particle_subset=n_particle_subset)
 
         risk_improvements = np.empty_like(risks)
 
@@ -1073,7 +1073,7 @@ class SMCUpdater(Distribution):
 
         all_sampled_weights,all_sampled_modelparams,all_sampled_outcomes,all_likelihoods =  \
                     self._sample_outcomes_modelparams(expparams,use_cached_samples=use_cached_samples,
-                        cache_samples=cache_samples,n_particle_subset=None)
+                        cache_samples=cache_samples,n_particle_subset=n_particle_subset)
 
         # preallocate information gain array
         ig = np.empty((n_expparams, ))
@@ -1092,13 +1092,20 @@ class SMCUpdater(Distribution):
             # Sum over particles and outcomes. It may take some fiddling to convince yourself
             # that this is the correct formula. See the second last formula of the second 
             # page of derivations here: https://github.com/QInfer/python-qinfer/pull/70
+
+            import pdb
+            pdb.set_trace()
             if self.model.allow_identical_outcomes:
                 hyp_weights = hyp_weights/np.sum(hyp_weights,axis=1)[...,np.newaxis]
                 #ig[idx_exp] = np.sum(hyp_weights * np.log(L / norm_scale), axis=(0,1))
                 ig[idx_exp] = np.sum(xlogy(hyp_weights,hyp_weights/weights),axis=(0,1))/hyp_weights.shape[0]
+                import pdb
+                pdb.set_trace()
             else:
                 norm_scale = np.sum(hyp_weights, axis=1)
                 ig[idx_exp] = np.sum(xlogy(hyp_weights ,L / norm_scale[..., np.newaxis]), axis=(0,1))
+                import pdb
+                pdb.set_trace()
 
         ig = ig.clip(min=0)
 
