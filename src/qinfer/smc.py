@@ -882,7 +882,6 @@ class SMCUpdater(Distribution):
         else:
             all_risk_weights = np.tile(risk_weights,(n_expparams,1))
             all_risk_modelparams = np.tile(risk_modelparams,(n_expparams,1,1))
-
             all_likelihoods,all_sampled_outcomes = self.model.representative_outcomes(
                             sampled_weights, sampled_modelparams, expparams, risk_modelparams)
 
@@ -948,7 +947,9 @@ class SMCUpdater(Distribution):
             hyp_weights = L*weights # shape (n_outcomes, n_particles)
             # Sum up the weights to find the renormalization scale.
             norm_scale = np.sum(hyp_weights, axis=1)                 # shape (n_outcomes)
-            norm_weights = hyp_weights / norm_scale[..., np.newaxis] # shape(n_outcomes, n_particles)
+            #If norm_scale has 0 weighted,weights dividing by zero will be undefined
+            #set norm_weights nan to zero weighted particle
+            norm_weights = np.nan_to_num(hyp_weights / norm_scale[..., np.newaxis]) # shape(n_outcomes, n_particles)
             p_o = norm_scale/np.sum(norm_scale)
          
             # compute the expected mean for each of the outcomes
@@ -967,7 +968,9 @@ class SMCUpdater(Distribution):
             risk[idx_exp] = np.sum(self.model.Q * (est_mom2 - est_posterior_mom2), axis=0)
      
         risk = risk.clip(min=0)  
-
+        if np.any(np.isnan(risk)):
+            import pdb
+            pdb.set_trace()
         if return_sampled_parameters:
             return risk, weights, modelparams, all_sampled_outcomes, all_likelihoods
         else:
@@ -1093,20 +1096,16 @@ class SMCUpdater(Distribution):
             # that this is the correct formula. See the second last formula of the second 
             # page of derivations here: https://github.com/QInfer/python-qinfer/pull/70
 
-            import pdb
-            pdb.set_trace()
+           
             if self.model.allow_identical_outcomes:
                 hyp_weights = hyp_weights/np.sum(hyp_weights,axis=1)[...,np.newaxis]
                 #ig[idx_exp] = np.sum(hyp_weights * np.log(L / norm_scale), axis=(0,1))
                 ig[idx_exp] = np.sum(xlogy(hyp_weights,hyp_weights/weights),axis=(0,1))/hyp_weights.shape[0]
-                import pdb
-                pdb.set_trace()
+     
             else:
                 norm_scale = np.sum(hyp_weights, axis=1)
                 ig[idx_exp] = np.sum(xlogy(hyp_weights ,L / norm_scale[..., np.newaxis]), axis=(0,1))
-                import pdb
-                pdb.set_trace()
-
+ 
         ig = ig.clip(min=0)
 
         if return_sampled_parameters:
