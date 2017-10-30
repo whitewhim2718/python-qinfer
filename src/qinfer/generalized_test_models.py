@@ -45,6 +45,7 @@ __all__ = [
 from builtins import range
 
 import numpy as np
+import scipy.stats
 from abc import ABCMeta,abstractmethod,abstractproperty
 from scipy.special import gammaln
 from .utils import binomial_pdf
@@ -577,9 +578,14 @@ class GaussianModel(DifferentiableModel):
             var = np.full((1,modelparams.shape[0],1),self._var)
 
         x = self.model_function(modelparams,expparams)[np.newaxis,:,:]
-        likelihood =  1./(np.sqrt(2*np.pi*var))*np.exp(-(outcomes-x)**2/(2*var))
-
         
+        likelihood =  1./(np.sqrt(2*np.pi*var))*np.exp(-(outcomes-x)**2/(2*var))
+       
+        #likelihood2 = scipy.stats.multivariate_normal.pdf(outcomes,mean=x,cov=np.sqrt(var))
+        
+        if np.any(np.isnan(likelihood)):
+            import pdb
+            pdb.set_trace()
 
         return likelihood
 

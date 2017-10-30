@@ -603,6 +603,9 @@ class Model(Simulatable):
             n_o = n_outcomes if np.isscalar(n_outcomes) else n_outcomes[idx_ep]
             os = self.simulate_experiment(modelparams, expparam, repeat=1).reshape(-1)
             
+            if np.any(np.isinf(os)):
+                import pdb
+                pdb.set_trace()
             assert os.dtype == self.domain(expparam)[0].dtype
             
             # The same outcome is likely to have resulted multiple times in the case that outcomes 

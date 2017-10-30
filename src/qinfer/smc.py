@@ -966,11 +966,9 @@ class SMCUpdater(Distribution):
             #est_mom2 = np.tensordot(weights, modelparams**2, axes=(0,0))
             est_mom2 = (1/norm_weights.shape[0])*np.sum(np.tensordot(norm_weights, modelparams**2, axes=(1,0)),axis=0)
             risk[idx_exp] = np.sum(self.model.Q * (est_mom2 - est_posterior_mom2), axis=0)
-     
+
         risk = risk.clip(min=0)  
-        if np.any(np.isnan(risk)):
-            import pdb
-            pdb.set_trace()
+        
         if return_sampled_parameters:
             return risk, weights, modelparams, all_sampled_outcomes, all_likelihoods
         else:
@@ -1084,7 +1082,7 @@ class SMCUpdater(Distribution):
         for idx_exp in range(n_expparams):
             weights = all_sampled_weights[idx_exp]
             modelparams = all_sampled_modelparams[idx_exp]
-            L = all_likelihoods[idx_exp]     # shape (n_outcomes, n_particles)
+            L = np.nan_to_num(all_likelihoods[idx_exp])     # shape (n_outcomes, n_particles)
             outcomes = all_sampled_outcomes[idx_exp] # shape (n_outcomes)
 
 
@@ -1098,14 +1096,14 @@ class SMCUpdater(Distribution):
 
            
             if self.model.allow_identical_outcomes:
-                hyp_weights = hyp_weights/np.sum(hyp_weights,axis=1)[...,np.newaxis]
+                hyp_weights = np.nan_to_num(hyp_weights/np.sum(hyp_weights,axis=1)[...,np.newaxis])
                 #ig[idx_exp] = np.sum(hyp_weights * np.log(L / norm_scale), axis=(0,1))
                 ig[idx_exp] = np.sum(xlogy(hyp_weights,hyp_weights/weights),axis=(0,1))/hyp_weights.shape[0]
      
             else:
                 norm_scale = np.sum(hyp_weights, axis=1)
-                ig[idx_exp] = np.sum(xlogy(hyp_weights ,L / norm_scale[..., np.newaxis]), axis=(0,1))
- 
+                ig[idx_exp] = np.sum(np.nan_to_num(xlogy(hyp_weights ,L / norm_scale[..., np.newaxis])), axis=(0,1))
+
         ig = ig.clip(min=0)
 
         if return_sampled_parameters:
