@@ -841,8 +841,12 @@ class SMCUpdater(Distribution):
             if n_const:
                 sampled_weights, sampled_modelparams = self.reapprox(self.particle_weights,
                         self.particle_locations,n_outcomes)
-                risk_weights, risk_modelparams = self.reapprox(self.particle_weights,
-                        self.particle_locations,n_particle_subset)
+                if n_particle_subset is None:
+                    risk_weights = self.particle_weights
+                    risk_modelparams = self.particle_locations
+                else:
+                    risk_weights, risk_modelparams = self.reapprox(self.particle_weights,
+                            self.particle_locations,n_particle_subset)
 
                 if cache_samples:
                     self._sampled_weights = sampled_weights
@@ -951,7 +955,7 @@ class SMCUpdater(Distribution):
             #set norm_weights nan to zero weighted particle
             norm_weights = np.nan_to_num(hyp_weights / norm_scale[..., np.newaxis]) # shape(n_outcomes, n_particles)
             p_o = norm_scale/np.sum(norm_scale)
-         
+            
             # compute the expected mean for each of the outcomes
             est_posterior_means = np.tensordot(norm_weights, modelparams, axes=(1, 0)) # shape(n_outcomes, n_mps)
             # compute the second moment of these means over the outcome distribution
@@ -1019,6 +1023,8 @@ class SMCUpdater(Distribution):
 
         risk_improvements = np.empty_like(risks)
 
+        #use reapprox distribution to calculate prior covariance
+        #as opposed to using `est_covariance_mtx()`.
         old_mean = np.sum(weights.reshape(-1,1) * modelparams,axis=0)
         old_var = np.sum(weights.reshape(-1,1)*(modelparams-old_mean)**2,axis=0)
         for i,risk in enumerate(risks):
