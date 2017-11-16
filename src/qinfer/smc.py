@@ -1012,24 +1012,53 @@ class SMCUpdater(Distribution):
                 to use all particles. 
         :type n_particle_subset: int  
         :param return_sampled_parameters: bool
-
             
         :return float: The Bayes risk for the current posterior distribution
             of the hypothetical experiment ``expparams``.
         """
-    
-        
+        expparams = np.asarray(expparams).reshape(-1)
+        n_expparams = expparams.shape[0]
+        n_outcomes = self.model.n_outcomes(expparams)
+        scalar_n_o = not np.isscalar(n_outcomes)
+        n_const = self.model.is_n_outcomes_constant
         
         # retrieve sampled weights, modelparams, outcomes, and associated likelihoods
-        posterior_covariances,weights,modelparams,all_sampled_outcomes,all_likelihoods =  \
-                    self.est_posterior_covariance(expparams, use_cached_samples=use_cached_samples,
-                        cache_samples=cache_samples,return_sampled_parameters=True,
-                        n_particle_subset=n_particle_subset)
+        all_sampled_weights,all_sampled_modelparams,all_sampled_outcomes,all_likelihoods =  \
+                    self._sample_outcomes_modelparams(expparams,use_cached_samples=use_cached_samples,
+                        cache_samples=cache_samples,n_particle_subset=n_particle_subset)
 
-        n_expparams = len(posterior_covariances)
         risk = np.empty((n_expparams, ))
+        if not hasattr(self,'_old_modelparams'):
+            self._old_modelparams = all_sampled_modelparams[0]
+        
         for idx_exp in range(n_expparams):
-            risk[idx_exp] = np.sum(self.model.Q * np.diag(posterior_covariances[idx_exp]), axis=0)
+            weights = all_sampled_weights[idx_exp]
+            modelparams = all_sampled_modelparams[idx_exp]
+            L = all_likelihoods[idx_exp]     # shape (n_outcomes, n_particles)
+            outcomes = all_sampled_outcomes[idx_exp] # shape (n_outcomes)
+            # (unnormalized) hypothetical posterior weights for this experiment
+            hyp_weights = L*weights # shape (n_outcomes, n_particles)
+            # Sum up the weights to find the renormalization scale.
+            norm_scale = np.sum(hyp_weights, axis=1)                 # shape (n_outcomes)
+            #If norm_scale has 0 weighted,weights dividing by zero will be undefined
+            #set norm_weights nan to zero weighted particle
+            norm_weights = np.nan_to_num(hyp_weights / norm_scale[..., np.newaxis]) # shape(n_outcomes, n_particles)
+            p_o = norm_scale/np.sum(norm_scale)
+            
+            # compute the expected mean for each of the outcomes
+            est_posterior_means = np.tensordot(norm_weights, modelparams, axes=(1, 0)) # shape(n_outcomes, n_mps)
+            # compute the second moment of these means over the outcome distribution
+
+            if self.model.allow_identical_outcomes:
+                est_posterior_mom2 = (1./norm_scale.shape[0])*np.sum(est_posterior_means**2, axis=0) # shape (n_mps)
+            else:
+                est_posterior_mom2 = np.tensordot(p_o, est_posterior_means**2, axes=(0, 0)) # shape (n_mps)
+                
+
+            # compute the second moment of the particles
+            #est_mom2 = np.tensordot(weights, modelparams**2, axes=(0,0))
+            est_mom2 = (1/norm_weights.shape[0])*np.sum(np.tensordot(norm_weights, modelparams**2, axes=(1,0)),axis=0)
+            risk[idx_exp] = np.sum(self.model.Q * (est_mom2 - est_posterior_mom2), axis=0)
 
         risk = risk.clip(min=0)  
         
