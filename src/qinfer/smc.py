@@ -891,6 +891,96 @@ class SMCUpdater(Distribution):
 
         return all_risk_weights,all_risk_modelparams,all_sampled_outcomes,all_likelihoods
     
+    def est_posterior_covariance(self, expparams, use_cached_samples=False,cache_samples=True,
+                    return_sampled_parameters=False,n_particle_subset=None):
+        r"""
+        Calculates the Posterior variance for each hypothetical experiment, assuming the
+        quadratic loss function defined by the current model's scale matrix
+        (see :attr:`qinfer.abstract_model.Model.Q`).
+        
+        :param expparams: The experiments for which to compute the Bayes risk over.
+        :type expparams: :class:`~numpy.ndarray` of dtype given by the current
+            model's :attr:`~qinfer.abstract_model.Model.expparams_dtype` property,
+            and of shape ``(n_experiments,)``
+        :param use_cached_samples: If set to ``True`` will use previously cached
+            sampled model weights, and modelparams. If none are available both 
+            will be resampled 
+        :type use_cached_samples: bool
+        :param cache_samples: Whether or not to cache new samples, if samples are 
+                            drawn. If set to ``True`` newly cached samples will be 
+                            used in future method call if ``use_cached_samples`` 
+                            is ``True``
+        :type cache_samples: bool
+        :param return_sampled_parameters: If set to ``True`` will return in addition
+                to risks, sampled weights, modelparams, outcomes, and likelihoods in 
+                a tuple of theform (risk, all_sampled_weights, all_sampled_modelparams,
+                 all_sampled_outcomes, all_likelihoods).
+        :param n_particle_subset: Number of particles to compute the risk with. At times it can 
+                be computationally intensive to calculate the risk over all distribution 
+                particles if the number of outcomes is large. Set `n_particle_subset` to control
+                the number of particles used to calculate the Bayes Risk. Default behavior is 
+                to use all particles. 
+        :type n_particle_subset: int  
+        :param return_sampled_parameters: bool
+
+            
+        :return list: The posterior variances for the current posterior distribution
+            of the hypothetical experiment ``expparams``.
+        """
+        expparams = np.asarray(expparams).reshape(-1)
+        n_expparams = expparams.shape[0]
+        n_outcomes = self.model.n_outcomes(expparams)
+        scalar_n_o = not np.isscalar(n_outcomes)
+        n_const = self.model.is_n_outcomes_constant
+        
+        # retrieve sampled weights, modelparams, outcomes, and associated likelihoods
+        all_sampled_weights,all_sampled_modelparams,all_sampled_outcomes,all_likelihoods =  \
+                    self._sample_outcomes_modelparams(expparams,use_cached_samples=use_cached_samples,
+                        cache_samples=cache_samples,n_particle_subset=n_particle_subset)
+
+        posterior_covariances = []
+        if not hasattr(self,'_old_modelparams'):
+            self._old_modelparams = all_sampled_modelparams[0]
+        
+        for idx_exp in range(n_expparams):
+            weights = all_sampled_weights[idx_exp]
+            modelparams = all_sampled_modelparams[idx_exp]
+            L = all_likelihoods[idx_exp]     # shape (n_outcomes, n_particles)
+            outcomes = all_sampled_outcomes[idx_exp] # shape (n_outcomes)
+            # (unnormalized) hypothetical posterior weights for this experiment
+            hyp_weights = L*weights # shape (n_outcomes, n_particles)
+            # Sum up the weights to find the renormalization scale.
+            norm_scale = np.sum(hyp_weights, axis=1)                 # shape (n_outcomes)
+            #If norm_scale has 0 weighted,weights dividing by zero will be undefined
+            #set norm_weights nan to zero weighted particle
+            norm_weights = np.nan_to_num(hyp_weights / norm_scale[..., np.newaxis]) # shape(n_outcomes, n_particles)
+            p_o = norm_scale/np.sum(norm_scale)
+            
+            # compute the expected mean for each of the outcomes
+            est_posterior_means = np.tensordot(norm_weights, modelparams, axes=(1, 0)) # shape(n_outcomes, n_mps)
+            # compute the second moment of these means over the outcome distribution
+
+            if self.model.allow_identical_outcomes:
+                est_posterior_mom2 = (1./norm_scale.shape[0])*np.sum(
+                                        est_posterior_means[:,:,np.newaxis]*est_posterior_means[:,np.newaxis,:], axis=0) # shape (n_mps)
+            else:
+                est_posterior_mom2 = np.tensordot(p_o,  
+                                    est_posterior_means[:,:,np.newaxis]*est_posterior_means[:,np.newaxis,:], axes=(0, 0)) # shape (n_mps)
+                
+
+            # compute the second moment of the particles
+            #est_mom2 = np.tensordot(weights, modelparams**2, axes=(0,0))
+            est_mom2 = (1/norm_weights.shape[0])*np.sum(np.tensordot(norm_weights, 
+                modelparams[:,:,np.newaxis]*modelparams[:,np.newaxis,:], axes=(1,0)),axis=0)
+
+            posterior_covariances.append(est_mom2 - est_posterior_mom2)
+  
+        
+        if return_sampled_parameters:
+            return posterior_covariances, weights, modelparams, all_sampled_outcomes, all_likelihoods
+        else:
+            return posterior_covariances
+
     def bayes_risk(self, expparams, use_cached_samples=False,cache_samples=True,
                     return_sampled_parameters=False,n_particle_subset=None):
         r"""
@@ -927,49 +1017,19 @@ class SMCUpdater(Distribution):
         :return float: The Bayes risk for the current posterior distribution
             of the hypothetical experiment ``expparams``.
         """
-        expparams = np.asarray(expparams).reshape(-1)
-        n_expparams = expparams.shape[0]
-        n_outcomes = self.model.n_outcomes(expparams)
-        scalar_n_o = not np.isscalar(n_outcomes)
-        n_const = self.model.is_n_outcomes_constant
+    
+        
         
         # retrieve sampled weights, modelparams, outcomes, and associated likelihoods
-        all_sampled_weights,all_sampled_modelparams,all_sampled_outcomes,all_likelihoods =  \
-                    self._sample_outcomes_modelparams(expparams,use_cached_samples=use_cached_samples,
-                        cache_samples=cache_samples,n_particle_subset=n_particle_subset)
+        posterior_covariances,weights,modelparams,all_sampled_outcomes,all_likelihoods =  \
+                    self.est_posterior_covariance(expparams, use_cached_samples=use_cached_samples,
+                        cache_samples=cache_samples,return_sampled_parameters=True,
+                        n_particle_subset=n_particle_subset)
 
+        n_expparams = len(posterior_covariances)
         risk = np.empty((n_expparams, ))
-        if not hasattr(self,'_old_modelparams'):
-            self._old_modelparams = all_sampled_modelparams[0]
-        
         for idx_exp in range(n_expparams):
-            weights = all_sampled_weights[idx_exp]
-            modelparams = all_sampled_modelparams[idx_exp]
-            L = all_likelihoods[idx_exp]     # shape (n_outcomes, n_particles)
-            outcomes = all_sampled_outcomes[idx_exp] # shape (n_outcomes)
-            # (unnormalized) hypothetical posterior weights for this experiment
-            hyp_weights = L*weights # shape (n_outcomes, n_particles)
-            # Sum up the weights to find the renormalization scale.
-            norm_scale = np.sum(hyp_weights, axis=1)                 # shape (n_outcomes)
-            #If norm_scale has 0 weighted,weights dividing by zero will be undefined
-            #set norm_weights nan to zero weighted particle
-            norm_weights = np.nan_to_num(hyp_weights / norm_scale[..., np.newaxis]) # shape(n_outcomes, n_particles)
-            p_o = norm_scale/np.sum(norm_scale)
-            
-            # compute the expected mean for each of the outcomes
-            est_posterior_means = np.tensordot(norm_weights, modelparams, axes=(1, 0)) # shape(n_outcomes, n_mps)
-            # compute the second moment of these means over the outcome distribution
-
-            if self.model.allow_identical_outcomes:
-                est_posterior_mom2 = (1./norm_scale.shape[0])*np.sum(est_posterior_means**2, axis=0) # shape (n_mps)
-            else:
-                est_posterior_mom2 = np.tensordot(p_o, est_posterior_means**2, axes=(0, 0)) # shape (n_mps)
-                
-
-            # compute the second moment of the particles
-            #est_mom2 = np.tensordot(weights, modelparams**2, axes=(0,0))
-            est_mom2 = (1/norm_weights.shape[0])*np.sum(np.tensordot(norm_weights, modelparams**2, axes=(1,0)),axis=0)
-            risk[idx_exp] = np.sum(self.model.Q * (est_mom2 - est_posterior_mom2), axis=0)
+            risk[idx_exp] = np.sum(self.model.Q * np.diag(posterior_covariances[idx_exp]), axis=0)
 
         risk = risk.clip(min=0)  
         
@@ -1035,6 +1095,71 @@ class SMCUpdater(Distribution):
             return risk_improvements, weights, modelparams, all_sampled_outcomes, all_likelihoods
         else:
             return risk_improvements
+
+    def risk_information_gain(self, expparams, use_cached_samples=False,cache_samples=True,
+                    return_sampled_parameters=False,n_particle_subset=None):
+        r"""
+        Calculates the information gain (todo: elaborate on what I mean) of the Bayes risk for each hypothetical experiment, assuming the
+        quadratic loss function defined by the current model's scale matrix
+        (see :attr:`qinfer.abstract_model.Model.Q`). This is essentially just the bayes risk minus the 
+        variance of the prior distribution. However, due to the numerical approximations made in the monte 
+        carlo integration, there are some tricks that need to be accounted for. 
+        
+        :param expparams: The experiments for which to compute the Bayes risk over.
+        :type expparams: :class:`~numpy.ndarray` of dtype given by the current
+            model's :attr:`~qinfer.abstract_model.Model.expparams_dtype` property,
+            and of shape ``(n_experiments,)``
+        :param use_cached_samples: If set to ``True`` will use previously cached
+            sampled model weights, and modelparams. If none are available both 
+            will be resampled 
+        :type use_cached_samples: bool
+        :param cache_samples: Whether or not to cache new samples, if samples are 
+                            drawn. If set to ``True`` newly cached samples will be 
+                            used in future method call if ``use_cached_samples`` 
+                            is ``True``
+        :type cache_samples: bool
+        :param return_sampled_parameters: If set to ``True`` will return in addition
+                to risks, sampled weights, modelparams, outcomes, and likelihoods in 
+                a tuple of theform (risk, all_sampled_weights, all_sampled_modelparams,
+                 all_sampled_outcomes, all_likelihoods).
+        :param return_sampled_parameters: bool
+        :param n_particle_subset: Number of particles to compute the risk with. At times it can 
+                be computationally intensive to calculate the risk over all distribution 
+                particles if the number of outcomes is large. Set `n_particle_subset` to control
+                the number of particles used to calculate the Bayes Risk. Default behavior 
+        :type n_particle_subset: int  
+
+            
+        :return float: The expected improvement of the Bayes risk for the current posterior distribution
+            of the hypothetical experiment ``expparams``.
+        """
+
+
+        posterior_covariances,weights,modelparams,all_sampled_outcomes,all_likelihoods =  \
+                    self.est_posterior_covariance(expparams, use_cached_samples=use_cached_samples,
+                        cache_samples=cache_samples,return_sampled_parameters=True,
+                        n_particle_subset=n_particle_subset)
+
+        n_expparams = len(posterior_covariances)
+
+        information_gains = np.empty(len(posterior_covariances))
+
+        #use reapprox distribution to calculate prior covariance
+        #as opposed to using `est_covariance_mtx()`.
+        old_mean = np.sum(weights.reshape(-1,1) * modelparams,axis=0)
+
+        old_covar = np.sum(weights[:,np.newaxis,np.newaxis]*(modelparams[:,:,np.newaxis]-old_mean)*(modelparams[:,np.newaxis,:]-old_mean),axis=0)
+        old_precision_matrix = np.linalg.inv(old_covar)
+
+        for i,pc in enumerate(posterior_covariances):
+            precision_matrix = np.linalg.inv(pc)
+            information_gains[i] = np.sum(self.model.Q*np.diag((precision_matrix-old_precision_matrix)),axis=0)
+            
+        
+        if return_sampled_parameters:
+            return information_gains, weights, modelparams, all_sampled_outcomes, all_likelihoods
+        else:
+            return information_gains
 
 
         
