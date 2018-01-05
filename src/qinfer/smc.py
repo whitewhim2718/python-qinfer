@@ -988,7 +988,7 @@ class SMCUpdater(Distribution):
             return posterior_covariances
 
     def bayes_risk(self, expparams, use_cached_samples=False,cache_samples=True,
-                    return_sampled_parameters=False,n_particle_subset=None):
+                    return_sampled_parameters=False,n_particle_subset=None,mean_fun='simplified'):
         r"""
         Calculates the Bayes risk for each hypothetical experiment, assuming the
         quadratic loss function defined by the current model's scale matrix
@@ -1057,21 +1057,34 @@ class SMCUpdater(Distribution):
 
             
             if self.model.allow_identical_outcomes:
-
-            #    est_posterior_mom2 = (1./norm_scale.shape[0])*np.sum(est_posterior_means**2, axis=0) # shape (n_mps)
-            #    est_mom2 = (1./norm_weights.shape[0])*np.sum(np.tensordot(norm_weights, modelparams**2, axes=(1,0)),axis=0)
-                tmp_1 =np.tensordot(self.model.Q,(modelparams[np.newaxis,:,:]-est_posterior_means[:,np.newaxis,:])**2,axes=(0,2))
-                risk[idx_exp] = (1./norm_weights.shape[0])*np.sum(norm_weights*tmp_1)
+                print mean_fun
+                if mean_fun == 'simplified':
+                    est_posterior_mom2 = (1./norm_scale.shape[0])*np.sum(est_posterior_means**2, axis=0) # shape (n_mps)
+                    est_mom2 = (1./norm_weights.shape[0])*np.sum(np.tensordot(norm_weights, modelparams**2, axes=(1,0)),axis=0)
+                    curr_risk = np.sum(self.model.Q * (est_mom2 - est_posterior_mom2), axis=0)
+                elif mean_fun == 'full':
+                    frequentist_risk =np.tensordot(self.model.Q,(modelparams[np.newaxis,:,:]-\
+                                        est_posterior_means[:,np.newaxis,:])**2,axes=(0,2))
+                    curr_risk = (1./norm_weights.shape[0])*np.sum(norm_weights*frequentist_risk)
+                else:
+                    raise ValueError("'mean_fun' must be either 'simplified' or 'full'.")
             else:
-                est_posterior_mom2 = np.tensordot(p_o, est_posterior_means**2, axes=(0, 0)) # shape (n_mps)
-                est_mom2 = np.tensordot(p_o,np.tensordot(norm_weights, modelparams**2, axes=(1,0)),axes=(0,0))
-                risk[idx_exp] = np.sum(self.model.Q * (est_mom2 - est_posterior_mom2), axis=0)
-                
+
+                if mean_fun == 'simplified':
+                    posterior_mom2 = est_posterior_means**2
+                    mom2 = np.tensordot(norm_weights, modelparams**2, axes=(1,0))
+                    curr_risk = np.sum(self.model.Q * np.tensordot(p_o,mom2 - posterior_mom2,axes=(0,0)), axis=0)
+                elif mean_fun == 'full':
+                    frequentist_risk = np.tensordot(self.model.Q,(modelparams[np.newaxis,:,:]-\
+                                        est_posterior_means[:,np.newaxis,:])**2,axes=(0,2))
+                    curr_risk = np.tensordot(p_o,np.sum(norm_weights*frequentist_risk,axis=1),axes=(0,0))
+
+                else:
+                    raise ValueError("'mean_fun' must be either 'simplified' or 'full'.")
 
                 
 
-            #risk[idx_exp] = np.sum(self.model.Q * (est_mom2 - est_posterior_mom2), axis=0)
-
+            risk[idx_exp] = curr_risk
 
             
        
@@ -1088,7 +1101,7 @@ class SMCUpdater(Distribution):
       
 
     def risk_improvement(self, expparams, use_cached_samples=False,cache_samples=True,
-                    return_sampled_parameters=False,n_particle_subset=None):
+                    return_sampled_parameters=False,n_particle_subset=None,mean_fun='simplified'):
         r"""
         Calculates the expected improvement of the Bayes risk for each hypothetical experiment, assuming the
         quadratic loss function defined by the current model's scale matrix
@@ -1127,7 +1140,8 @@ class SMCUpdater(Distribution):
 
         risks, weights, modelparams, all_sampled_outcomes, all_likelihoods = \
                                 self.bayes_risk(expparams,use_cached_samples,cache_samples,
-                                                return_sampled_parameters=True,n_particle_subset=n_particle_subset)
+                                                return_sampled_parameters=True,n_particle_subset=n_particle_subset,
+                                                mean_fun=mean_fun)
 
         risk_improvements = np.empty_like(risks)
 
