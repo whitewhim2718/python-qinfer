@@ -544,7 +544,8 @@ class Model(Simulatable):
         """
         return self.are_models_valid(modelparams[np.newaxis, :])[0]
 
-    def representative_outcomes(self, weights, modelparams, expparams,likelihood_modelparams=None):
+    def representative_outcomes(self, weights, modelparams, expparams,likelihood_modelparams=None,
+                                likelihood_weights=None):
         """
         Given the distribution of model parameters specified by 
         (``weights``, ``modelparams``), for each experimental parameter 
@@ -566,6 +567,11 @@ class Model(Simulatable):
         :param np.ndarray likelihood_modelparams: Set of modelparameters to evaluate likelihood for
             . Sometimes we wish to evaluate the likelihood for other particles other than just those
             outcomes were drawn from. Default behavior is use only supplied `modelparams`.  
+        :param np.ndarray likelihood_weights: Set of weights to evaluate likelihood for
+            . Sometimes we wish to evaluate the likelihood for other particles other than just those
+            outcomes were drawn from. Default behavior is use only supplied `weights` if no 
+            `likelihood_modelparams` are given. If `likelihood_modelparams` and `likelihood_weights`
+            is none we defeault to a uniform weighting. 
         :return tuple: Returns a tuple ``(likelihoods, outcomes,weights,particles)``.
             Here, ``outcomes`` is a list of length ``n_experiments`` 
             with each member is an ``np.ndarray`` of shape ``(n_outcomes)`` 
@@ -583,12 +589,21 @@ class Model(Simulatable):
         a distribution of model parameters. See ``~qinfer.SMCUpdater.bayes_risk()` 
         as an example.
         """
-        if likelihood_modelparams is None:
-            likelihood_modelparams = modelparams
+        
 
         n_outcomes = self.n_outcomes(expparams)
         n_expparams = expparams.shape[0]
         n_modelparams = modelparams.shape[0]
+
+        if likelihood_weights is None: 
+            if likelihood_modelparams is None:
+                likelihood_weights = weights
+            else:
+                n_l_modelparams = likelihood_modelparams.shape[0]
+                likelihood_weights = np.full(n_l_modelparams,1./n_l_modelparams)
+
+        if likelihood_modelparams is None:
+            likelihood_modelparams = modelparams
 
         outcomes = []
         L = []
@@ -603,9 +618,8 @@ class Model(Simulatable):
             n_o = n_outcomes if np.isscalar(n_outcomes) else n_outcomes[idx_ep]
             os = self.simulate_experiment(modelparams, expparam, repeat=1).reshape(-1)
             
-            if np.any(np.isinf(os)):
-                import pdb
-                pdb.set_trace()
+        
+          
             assert os.dtype == self.domain(expparam)[0].dtype
             
             # The same outcome is likely to have resulted multiple times in the case that outcomes 
@@ -621,7 +635,8 @@ class Model(Simulatable):
                 # If we sum L_ep over the weighted modelparams, we get the total probability 
                 # of the respective outcome. We want the total probability of 
                 # getting _any_ outcome to be near 1.
-                coverage = np.sum(np.tensordot(weights, L_ep, (0, 1)))
+             
+                coverage = np.sum(np.tensordot(likelihood_weights, L_ep, (0, 1)))
                 if coverage < self.outcome_warning_threshold:
                     warnings.warn('The representative outcomes for experiment '
                         '{} only cover {}% of their distribution. Consider increasing '
@@ -770,7 +785,8 @@ class FiniteOutcomeModel(Model):
                 
         return outcomes[0, 0, 0] if repeat == 1 and expparams.shape[0] == 1 and modelparams.shape[0] == 1 else outcomes
 
-    def representative_outcomes(self, weights, modelparams, expparams,likelihood_modelparams=None):
+    def representative_outcomes(self, weights, modelparams, expparams,likelihood_modelparams=None,
+                                likelihood_weights=None):
         """
         Given the distribution of model parameters specified by 
         (``weights``, ``modelparams``), for each experimental parameter 
@@ -835,11 +851,12 @@ class FiniteOutcomeModel(Model):
             else:
                 # Otherwise, use the generic method to pick some randomly.
                 L_s,os = super(FiniteOutcomeModel, self).representative_outcomes(
-                    weights, modelparams, expparam, likelihood_modelparams)[0]
+                    weights, modelparams, expparam, likelihood_modelparams,
+                    likelihood_weights)[0]
                 L.append(L_s)
 
             outcomes.append(os)
-        
+   
         return L, outcomes
     ## STATIC METHODS ##
     # These methods are provided as a convienence to make it easier to write

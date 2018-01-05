@@ -139,6 +139,11 @@ class DerivedModel(Model):
 
     def update_callback(self,weights,modelparams):
         return self.underlying_model.update_callback(weights,modelparams)
+    
+    def representative_outcomes(self, weights, modelparams, expparams,likelihood_modelparams=None,
+                                likelihood_weights=None):
+        return self.underlying_model.representative_outcomes(weights, modelparams, expparams,likelihood_modelparams,
+                                likelihood_weights)
         
     def simulate_experiment(self,modelparams,expparams,repeat=1):
         # It might be tempting to call this for sim_count incrementing, 

@@ -876,8 +876,10 @@ class SMCUpdater(Distribution):
                         risk_modelparams = self.particle_locations
 
                     likelihoods, sampled_outcomes = self.model.representative_outcomes(
-                            sampled_weights, sampled_modelparams, exp, risk_modelparams)
+                            sampled_weights, sampled_modelparams, exp, 
+                            risk_modelparams, risk_weights)
 
+               
                     all_risk_weights.append(risk_weights)
                     all_risk_modelparams.append(risk_modelparams)
                     all_sampled_outcomes.append(sampled_outcomes[0])
@@ -887,7 +889,11 @@ class SMCUpdater(Distribution):
             all_risk_weights = np.tile(risk_weights,(n_expparams,1))
             all_risk_modelparams = np.tile(risk_modelparams,(n_expparams,1,1))
             all_likelihoods,all_sampled_outcomes = self.model.representative_outcomes(
-                            sampled_weights, sampled_modelparams, expparams, risk_modelparams)
+                            sampled_weights, sampled_modelparams, expparams, 
+                            risk_modelparams, risk_weights)
+
+      
+         
 
         return all_risk_weights,all_risk_modelparams,all_sampled_outcomes,all_likelihoods
     
@@ -1049,19 +1055,32 @@ class SMCUpdater(Distribution):
             est_posterior_means = np.tensordot(norm_weights, modelparams, axes=(1, 0)) # shape(n_outcomes, n_mps)
             # compute the second moment of these means over the outcome distribution
 
+            
             if self.model.allow_identical_outcomes:
-                est_posterior_mom2 = (1./norm_scale.shape[0])*np.sum(est_posterior_means**2, axis=0) # shape (n_mps)
+
+            #    est_posterior_mom2 = (1./norm_scale.shape[0])*np.sum(est_posterior_means**2, axis=0) # shape (n_mps)
+            #    est_mom2 = (1./norm_weights.shape[0])*np.sum(np.tensordot(norm_weights, modelparams**2, axes=(1,0)),axis=0)
+                tmp_1 =np.tensordot(self.model.Q,(modelparams[np.newaxis,:,:]-est_posterior_means[:,np.newaxis,:])**2,axes=(0,2))
+                risk[idx_exp] = (1./norm_weights.shape[0])*np.sum(norm_weights*tmp_1)
             else:
                 est_posterior_mom2 = np.tensordot(p_o, est_posterior_means**2, axes=(0, 0)) # shape (n_mps)
+                est_mom2 = np.tensordot(p_o,np.tensordot(norm_weights, modelparams**2, axes=(1,0)),axes=(0,0))
+                risk[idx_exp] = np.sum(self.model.Q * (est_mom2 - est_posterior_mom2), axis=0)
                 
 
-            # compute the second moment of the particles
-            #est_mom2 = np.tensordot(weights, modelparams**2, axes=(0,0))
-            est_mom2 = (1/norm_weights.shape[0])*np.sum(np.tensordot(norm_weights, modelparams**2, axes=(1,0)),axis=0)
-            risk[idx_exp] = np.sum(self.model.Q * (est_mom2 - est_posterior_mom2), axis=0)
+                
 
-        risk = risk.clip(min=0)  
-        
+            #risk[idx_exp] = np.sum(self.model.Q * (est_mom2 - est_posterior_mom2), axis=0)
+
+
+            
+       
+ 
+
+            
+
+         
+        risk = risk.clip(min=0)
         if return_sampled_parameters:
             return risk, weights, modelparams, all_sampled_outcomes, all_likelihoods
         else:
@@ -1116,10 +1135,9 @@ class SMCUpdater(Distribution):
         #as opposed to using `est_covariance_mtx()`.
         old_mean = np.sum(weights.reshape(-1,1) * modelparams,axis=0)
         old_var = np.sum(weights.reshape(-1,1)*(modelparams-old_mean)**2,axis=0)
-        for i,risk in enumerate(risks):
-            risk_improvements[i] = (risk-np.dot(self.model.Q,old_var))
+        risk_improvements = risks-np.dot(self.model.Q,old_var)
+     
             
-        
         if return_sampled_parameters:
             return risk_improvements, weights, modelparams, all_sampled_outcomes, all_likelihoods
         else:
@@ -1184,7 +1202,6 @@ class SMCUpdater(Distribution):
             precision_matrix = np.linalg.inv(pc)
             information_gains[i] = np.sum(self.model.Q*np.diag((precision_matrix-old_precision_matrix)),axis=0)
             
-        
         if return_sampled_parameters:
             return information_gains, weights, modelparams, all_sampled_outcomes, all_likelihoods
         else:
@@ -2045,7 +2062,7 @@ class SMCUpdaterBCRB(SMCUpdater):
         sampled_weights, sampled_modelparams = self.reapprox(self.particle_weights,
                         self.particle_locations,n_o_fi)
         fi = self.model.fisher_information(sampled_modelparams, expparams)
-        
+
         # We now either reweight and sum, or sum and divide, based on whether we
         # have model weights to consider or not.
         if modelweights is None:
