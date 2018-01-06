@@ -988,7 +988,7 @@ class SMCUpdater(Distribution):
             return posterior_covariances
 
     def bayes_risk(self, expparams, use_cached_samples=False,cache_samples=True,
-                    return_sampled_parameters=False,n_particle_subset=None,mean_fun='simplified'):
+                    return_sampled_parameters=False,n_particle_subset=None,var_fun='simplified'):
         r"""
         Calculates the Bayes risk for each hypothetical experiment, assuming the
         quadratic loss function defined by the current model's scale matrix
@@ -1017,6 +1017,11 @@ class SMCUpdater(Distribution):
                 the number of particles used to calculate the Bayes Risk. Default behavior is 
                 to use all particles. 
         :type n_particle_subset: int  
+        :param var_fun: Numerican variance evaluation metric. Options are `simplified`
+                        which evaluates `E[x]^2-E[x^2]` and `full` which
+                        `(x-E[x])^2`. `simplified` is known to be numerically unstabled when
+                        the mean squared is much different than the second moment, but is 
+                        faster to evaluate. `full` is numerically more stable but slower. 
         :param return_sampled_parameters: bool
             
         :return float: The Bayes risk for the current posterior distribution
@@ -1057,30 +1062,29 @@ class SMCUpdater(Distribution):
 
             
             if self.model.allow_identical_outcomes:
-                print mean_fun
-                if mean_fun == 'simplified':
+                if var_fun == 'simplified':
                     est_posterior_mom2 = (1./norm_scale.shape[0])*np.sum(est_posterior_means**2, axis=0) # shape (n_mps)
                     est_mom2 = (1./norm_weights.shape[0])*np.sum(np.tensordot(norm_weights, modelparams**2, axes=(1,0)),axis=0)
                     curr_risk = np.sum(self.model.Q * (est_mom2 - est_posterior_mom2), axis=0)
-                elif mean_fun == 'full':
+                elif var_fun == 'full':
                     frequentist_risk =np.tensordot(self.model.Q,(modelparams[np.newaxis,:,:]-\
                                         est_posterior_means[:,np.newaxis,:])**2,axes=(0,2))
                     curr_risk = (1./norm_weights.shape[0])*np.sum(norm_weights*frequentist_risk)
                 else:
-                    raise ValueError("'mean_fun' must be either 'simplified' or 'full'.")
+                    raise ValueError("'var_fun' must be either 'simplified' or 'full'.")
             else:
 
-                if mean_fun == 'simplified':
+                if var_fun == 'simplified':
                     posterior_mom2 = est_posterior_means**2
                     mom2 = np.tensordot(norm_weights, modelparams**2, axes=(1,0))
                     curr_risk = np.sum(self.model.Q * np.tensordot(p_o,mom2 - posterior_mom2,axes=(0,0)), axis=0)
-                elif mean_fun == 'full':
+                elif var_fun == 'full':
                     frequentist_risk = np.tensordot(self.model.Q,(modelparams[np.newaxis,:,:]-\
                                         est_posterior_means[:,np.newaxis,:])**2,axes=(0,2))
                     curr_risk = np.tensordot(p_o,np.sum(norm_weights*frequentist_risk,axis=1),axes=(0,0))
 
                 else:
-                    raise ValueError("'mean_fun' must be either 'simplified' or 'full'.")
+                    raise ValueError("'var_fun' must be either 'simplified' or 'full'.")
 
                 
 
@@ -1101,7 +1105,7 @@ class SMCUpdater(Distribution):
       
 
     def risk_improvement(self, expparams, use_cached_samples=False,cache_samples=True,
-                    return_sampled_parameters=False,n_particle_subset=None,mean_fun='simplified'):
+                    return_sampled_parameters=False,n_particle_subset=None,var_fun='simplified'):
         r"""
         Calculates the expected improvement of the Bayes risk for each hypothetical experiment, assuming the
         quadratic loss function defined by the current model's scale matrix
@@ -1141,7 +1145,7 @@ class SMCUpdater(Distribution):
         risks, weights, modelparams, all_sampled_outcomes, all_likelihoods = \
                                 self.bayes_risk(expparams,use_cached_samples,cache_samples,
                                                 return_sampled_parameters=True,n_particle_subset=n_particle_subset,
-                                                mean_fun=mean_fun)
+                                                var_fun=var_fun)
 
         risk_improvements = np.empty_like(risks)
 
