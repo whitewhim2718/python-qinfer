@@ -612,28 +612,16 @@ class Model(Simulatable):
         # We have to loop over expparams only because each one, unfortunately, might have 
         # a different dtype and/or number of outcomes .
 
-        for idx_ep in range(n_expparams):
-            # So that expparam is a numpy array when extracted
 
+        outcomes = self.simulate_experiment(modelparams, expparams, repeat=1)[0,:,:]
+        
 
-            expparam = expparams[idx_ep:idx_ep+1]
-            n_o = n_outcomes if np.isscalar(n_outcomes) else n_outcomes[idx_ep]
-            os = self.simulate_experiment(modelparams, expparam, repeat=1).reshape(-1)
-            
-            
-          
-            assert os.dtype == self.domain(expparam)[0].dtype
-            
-            # The same outcome is likely to have resulted multiple times in the case that outcomes 
-            # are discrete values and the modelparam distribution is not too wide.
-            if not self.allow_identical_outcomes:
-                os = np.unique(os)
+        if not self.allow_identical_outcomes:
+                outcomes = np.unique(outcomes,axis=0)
 
-            # Find the likelihood for each outcome given each modelparam (irrespective 
-            # of which modelparam the outcome resulted from)
-            L_ep = self.likelihood(os, likelihood_modelparams, expparam)[:,:,0]
+        L = self.likelihood(outcomes, likelihood_modelparams, expparams)
 
-            if self.domain(expparam)[0].is_discrete:
+        if self.domain(expparams[0])[0].is_discrete:
                 # If we sum L_ep over the weighted modelparams, we get the total probability 
                 # of the respective outcome. We want the total probability of 
                 # getting _any_ outcome to be near 1.
@@ -643,13 +631,10 @@ class Model(Simulatable):
                     warnings.warn('The representative outcomes for experiment '
                         '{} only cover {}% of their distribution. Consider increasing '
                         'n_outcomes.'.format(expparam, coverage))
-            else:
-                # TODO: figure out a test in this case.
-                pass
+        else:
+            # TODO: figure out a test in this case.
+            pass
 
-            outcomes.append(os)
-            L.append(L_ep)
-          
 
         return L, outcomes
     
