@@ -590,8 +590,14 @@ class Model(Simulatable):
         as an example.
         """
         
+        n_outcomes = np.atleast_1d(self.n_outcomes(expparams))
+        
+        constant_n_outcomes = False
 
-        n_outcomes = self.n_outcomes(expparams)
+        if np.all(n_outcomes[:]==n_outcomes[0]):
+            n_outcomes = n_outcomes[0]
+            constant_n_outcomes = True
+
         n_expparams = expparams.shape[0]
         n_modelparams = modelparams.shape[0]
 
@@ -605,35 +611,74 @@ class Model(Simulatable):
         if likelihood_modelparams is None:
             likelihood_modelparams = modelparams
 
-        outcomes = []
-        L = []
-        test_threshold = np.empty((n_expparams, ))
+   
+
 
         # We have to loop over expparams only because each one, unfortunately, might have 
         # a different dtype and/or number of outcomes .
 
-
-        outcomes = self.simulate_experiment(modelparams, expparams, repeat=1)[0,:,:]
+        if constant_n_outcomes:
+            outcomes = self.simulate_experiment(modelparams, expparams, repeat=1)[0,:,:]
         
 
-        if not self.allow_identical_outcomes:
+            if not self.allow_identical_outcomes:
                 outcomes = np.unique(outcomes,axis=0)
 
-        L = self.likelihood(outcomes, likelihood_modelparams, expparams)
+           
+            L = self.likelihood(outcomes, likelihood_modelparams, expparams)[:,0,...].transpose(2,0,1)
 
-        if self.domain(expparams[0])[0].is_discrete:
-                # If we sum L_ep over the weighted modelparams, we get the total probability 
-                # of the respective outcome. We want the total probability of 
-                # getting _any_ outcome to be near 1.
-             
-                coverage = np.sum(np.tensordot(likelihood_weights, L_ep, (0, 1)))
-                if coverage < self.outcome_warning_threshold:
-                    warnings.warn('The representative outcomes for experiment '
-                        '{} only cover {}% of their distribution. Consider increasing '
-                        'n_outcomes.'.format(expparam, coverage))
+            if self.domain(expparams[0])[0].is_discrete:
+                    # If we sum L_ep over the weighted modelparams, we get the total probability 
+                    # of the respective outcome. We want the total probability of 
+                    # getting _any_ outcome to be near 1.
+                 
+                    coverage = np.sum(np.tensordot(likelihood_weights, L, (0, 2)),axis=1)
+                    if np.any(coverage < self.outcome_warning_threshold):
+                        warnings.warn('The representative outcomes for experiment '
+                            '{} only cover {}% of their distribution. Consider increasing '
+                            'n_outcomes.'.format(expparam, coverage))
+            else:
+                # TODO: figure out a test in this case.
+                pass
+
         else:
-            # TODO: figure out a test in this case.
-            pass
+            outcomes = []
+            L = []
+            for idx_ep in range(n_expparams):
+                # So that expparam is a numpy array when extracted
+                expparam = expparams[idx_ep:idx_ep+1]
+                n_o = n_outcomes if np.isscalar(n_outcomes) else n_outcomes[idx_ep]
+                os = self.simulate_experiment(modelparams, expparam, repeat=1).reshape(-1)
+                
+            
+              
+                assert os.dtype == self.domain(expparam)[0].dtype
+                
+                # The same outcome is likely to have resulted multiple times in the case that outcomes 
+                # are discrete values and the modelparam distribution is not too wide.
+                if not self.allow_identical_outcomes:
+                    os = np.unique(os)
+
+                # Find the likelihood for each outcome given each modelparam (irrespective 
+                # of which modelparam the outcome resulted from)
+                L_ep = self.likelihood(os, likelihood_modelparams, expparam)[:,:,0]
+
+                if self.domain(expparam)[0].is_discrete:
+                    # If we sum L_ep over the weighted modelparams, we get the total probability 
+                    # of the respective outcome. We want the total probability of 
+                    # getting _any_ outcome to be near 1.
+                 
+                    coverage = np.sum(np.tensordot(likelihood_weights, L_ep, (0, 1)))
+                    if coverage < self.outcome_warning_threshold:
+                        warnings.warn('The representative outcomes for experiment '
+                            '{} only cover {}% of their distribution. Consider increasing '
+                            'n_outcomes.'.format(expparam, coverage))
+                else:
+                    # TODO: figure out a test in this case.
+                    pass
+            
+                outcomes.append(os)
+                L.append(L_ep)
 
 
         return L, outcomes
@@ -814,36 +859,69 @@ class FiniteOutcomeModel(Model):
         as an example.
         """
 
-        n_outcomes = self.n_outcomes(expparams)
+        n_outcomes = np.atleast_1d(self.n_outcomes(expparams))
+        domains = self.domain(expparams)
+        outcomes = [d.values for d in domains]
+        constant_outcomes = False
+        
+        # check if outcomes are all the same
+        # so that we may vectorize the likelihood call
+        if np.all(n_outcomes[:]==n_outcomes[0]):
+            n_outcomes = n_outcomes[0]
+            outcomes = np.asarray(outcomes)
+            constant_outcomes = np.all(outcomes[:]==outcomes[0])
+                
+
+            
+
         n_expparams = expparams.shape[0]
         n_modelparams = modelparams.shape[0]
-        outcomes = []
-        L = []
+        
+        
+        if likelihood_weights is None: 
+            if likelihood_modelparams is None:
+                likelihood_weights = weights
+            else:
+                n_l_modelparams = likelihood_modelparams.shape[0]
+                likelihood_weights = np.full(n_l_modelparams,1./n_l_modelparams)
 
         if likelihood_modelparams is None:
             likelihood_modelparams = modelparams
 
+        #check if we can vectorize likelihood call
+        if constant_outcomes:
+            if self.n_outcomes_cutoff is None or n_outcomes <= self.n_outcomes_cutoff:
+                L = self.likelihood(outcomes[0], likelihood_modelparams, expparams).transpose(2,0,1)
+
+            else:
+                L,outcomes = super(FiniteOutcomeModel, self).representative_outcomes(
+                        weights, modelparams, expparams, likelihood_modelparams,
+                        likelihood_weights)
+                
         # We have to loop over expparams only because each one, unfortunately, might have 
         # a different dtype and/or number of outcomes .
-        for idx_ep in range(expparams.shape[0]):
-            # So that expparam is a numpy array when extracted
-            expparam = expparams[idx_ep:idx_ep+1]
+        else:
+            outcomes = []
+            L = []
+            for idx_ep in range(expparams.shape[0]):
+                # So that expparam is a numpy array when extracted
+                expparam = expparams[idx_ep:idx_ep+1]
 
-            n_o = n_outcomes if np.isscalar(n_outcomes) else n_outcomes[idx_ep]
-            
-            if self.n_outcomes_cutoff is None or n_o <= self.n_outcomes_cutoff:
-                # If we don't have to many outcomes, just report them all.
-                os = self.domain(expparam)[0].values
-                L.append(self.likelihood(os, likelihood_modelparams, expparam)[:,:,0])
-            else:
-                # Otherwise, use the generic method to pick some randomly.
-                L_s,os = super(FiniteOutcomeModel, self).representative_outcomes(
-                    weights, modelparams, expparam, likelihood_modelparams,
-                    likelihood_weights)[0]
-                L.append(L_s)
+                n_o = n_outcomes[idx_ep]
+                
+                if self.n_outcomes_cutoff is None or n_o <= self.n_outcomes_cutoff:
+                    # If we don't have to many outcomes, just report them all.
+                    os = self.domain(expparam)[0].values
+                    L.append(self.likelihood(os, likelihood_modelparams, expparam)[:,:,0])
+                else:
+                    # Otherwise, use the generic method to pick some randomly.
+                    L_s,os = super(FiniteOutcomeModel, self).representative_outcomes(
+                        weights, modelparams, expparam, likelihood_modelparams,
+                        likelihood_weights)[0]
+                    L.append(L_s)
 
-            outcomes.append(os)
-   
+                outcomes.append(os)
+
         return L, outcomes
     ## STATIC METHODS ##
     # These methods are provided as a convienence to make it easier to write
