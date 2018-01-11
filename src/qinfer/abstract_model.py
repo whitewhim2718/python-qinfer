@@ -611,13 +611,15 @@ class Model(Simulatable):
         if likelihood_modelparams is None:
             likelihood_modelparams = modelparams
 
-   
+        
+     
 
 
         # We have to loop over expparams only because each one, unfortunately, might have 
         # a different dtype and/or number of outcomes .
 
         if constant_n_outcomes:
+
             outcomes = self.simulate_experiment(modelparams, expparams, repeat=1)[0,:,:]
         
 
@@ -633,10 +635,12 @@ class Model(Simulatable):
                     # getting _any_ outcome to be near 1.
                  
                     coverage = np.sum(np.tensordot(likelihood_weights, L, (0, 2)),axis=1)
-                    if np.any(coverage < self.outcome_warning_threshold):
+                    not_covered = coverage < self.outcome_warning_threshold
+                    if np.any(not_covered):
+
                         warnings.warn('The representative outcomes for experiment '
                             '{} only cover {}% of their distribution. Consider increasing '
-                            'n_outcomes.'.format(expparam, coverage))
+                            'n_outcomes.'.format(expparams[np.where(not_covered)], coverage))
             else:
                 # TODO: figure out a test in this case.
                 pass
@@ -674,7 +678,7 @@ class Model(Simulatable):
                             '{} only cover {}% of their distribution. Consider increasing '
                             'n_outcomes.'.format(expparam, coverage))
                 else:
-                    # TODO: figure out a test in this case.
+                    # TODO: figure out a test in this case.L.
                     pass
             
                 outcomes.append(os)

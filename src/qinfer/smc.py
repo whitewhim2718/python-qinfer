@@ -743,13 +743,14 @@ class SMCUpdater(Distribution):
         particle_location = particle_locations[permuted_indices]
         
         #sort to return highest weighted particles in approximation
-   
-        reduced_indices = np.argsort(particle_weights)[-n_particles:]
+        particles = np.arange(n_particles)%len(particle_weights)
+        reduced_indices = np.argsort(particle_weights)[particles]
         reduced_particle_weights = particle_weights[reduced_indices]
         reduced_particle_locations = particle_locations[reduced_indices]
         
         #normalize weights 
         reduced_particle_weights = reduced_particle_weights/np.sum(reduced_particle_weights)
+
         return reduced_particle_weights, reduced_particle_locations
 
     def sample_particle_filter(self,particle_weights,particle_locations,approx_ratio):
@@ -816,6 +817,7 @@ class SMCUpdater(Distribution):
         
         if n_const:
             n_outcomes = np.atleast_1d(n_outcomes)[0]
+
         #default to use all particle parameters for risk sampling
         if n_particle_subset is None:
             n_particle_subset = self.particle_weights.shape[0]
@@ -833,7 +835,9 @@ class SMCUpdater(Distribution):
             
             # If available and required retrieve cached weights/modelparams
             if (not self._sampled_modelparams is None) and (not self._risk_modelparams is None) and \
-                (not self._sampled_weights is None) and (not self._risk_weights is None):
+                (not self._sampled_weights is None) and (not self._risk_weights is None) and \
+                len(self._sampled_weights)==n_outcomes and len(self._risk_weights)==n_particle_subset:
+          
                 cache_available = True
                 sampled_modelparams = self._sampled_modelparams
                 risk_modelparams = self._risk_modelparams
@@ -866,7 +870,7 @@ class SMCUpdater(Distribution):
                 for idx_exp in range(expparams.shape[0]):
                     n_o = n_outcomes[idx_exp]
                     exp = expparams[idx_exp:idx_exp+1]
-              
+                    
                     if n_o > self.model.n_outcomes_cutoff and self.model.n_outcomes_cutoff is not None:                       
                         sampled_weights, sampled_modelparams = self.reapprox(self.particle_weights,
                         self.particle_locations,n_o)
@@ -891,6 +895,8 @@ class SMCUpdater(Distribution):
         else:
             all_risk_weights = risk_weights
             all_risk_modelparams = risk_modelparams
+       
+        
             all_likelihoods,all_sampled_outcomes = self.model.representative_outcomes(
                             sampled_weights, sampled_modelparams, expparams, 
                             risk_modelparams, risk_weights)
@@ -991,7 +997,7 @@ class SMCUpdater(Distribution):
             return posterior_covariances
 
     def bayes_risk(self, expparams, use_cached_samples=False,cache_samples=True,
-                    return_sampled_parameters=False,n_particle_subset=None,var_fun='simplified'):
+                    return_sampled_parameters=False,n_particle_subset=None,var_fun='simplified',batch=None):
         r"""
         Calculates the Bayes risk for each hypothetical experiment, assuming the
         quadratic loss function defined by the current model's scale matrix
@@ -1036,6 +1042,51 @@ class SMCUpdater(Distribution):
         scalar_n_o = not np.isscalar(n_outcomes)
         n_const = self.model.is_n_outcomes_constant
         
+  
+
+        if batch is not None:
+            split_expparams = np.array_split(expparams,n_expparams/batch+1)
+            results = []
+
+            if return_sampled_parameters:
+                risks = []
+                weights = []
+                modelparams = []
+                all_sampled_outcomes = []
+                all_likelihoods = []
+                for exps in split_expparams:
+                
+                    risks_i, weights_i, modelparams_i, all_sampled_outcomes_i, all_likelihoods_i = self.bayes_risk(exps, 
+                    use_cached_samples=True,cache_samples=True,
+                    return_sampled_parameters=return_sampled_parameters,n_particle_subset=n_particle_subset,
+                    var_fun=var_fun,batch=None)
+                    risks.append(risks_i)
+                    weights.append(weights_i)
+                    modelparams.append(modelparams_i)
+                    all_sampled_outcomes.append(all_sampled_outcomes_i)
+                    all_likelihoods.append(all_likelihoods_i)
+                
+                risks = np.concatenate(risks)
+                weights = weights[0]
+                modelparams = modelparams[0]
+                all_sampled_outcomes = np.concatenate(all_sampled_outcomes,axis=1)
+                all_likelihoods = np.concatenate(all_likelihoods)
+
+                return risks,weights,modelparams,all_sampled_outcomes,all_likelihoods
+            else:
+                risks = []
+                for exps in split_expparams:
+                
+                    risks_i= self.bayes_risk(exps, 
+                    use_cached_samples=True,cache_samples=True,
+                    return_sampled_parameters=return_sampled_parameters,n_particle_subset=n_particle_subset,
+                    var_fun=var_fun,batch=None)
+                    risks.append(risks_i)
+
+                risks = np.concatenate(risks)
+                return risks
+
+
         # retrieve sampled weights, modelparams, outcomes, and associated likelihoods
         all_sampled_weights,all_sampled_modelparams,all_sampled_outcomes,all_likelihoods =  \
                     self._sample_outcomes_modelparams(expparams,use_cached_samples=use_cached_samples,
@@ -1061,22 +1112,24 @@ class SMCUpdater(Distribution):
                 outcomes = all_sampled_outcomes
 
             hyp_weights = L*weights[np.newaxis,...]  #(n_expparams,n_outcomes, n_particles)
-   
+            
+
             norm_scale = np.sum(hyp_weights,axis=2) # shape (n_expparams, n_outcomes)
             norm_weights = np.nan_to_num(hyp_weights/norm_scale[...,np.newaxis]) # shape(n_expparams,n_outcomes, n_particles)
             p_o = norm_scale/np.sum(norm_scale,axis=1)[:,np.newaxis] # shape (n_expparams, n_outcomes)
             est_posterior_means = np.tensordot(norm_weights,modelparams,axes=(2,0))# shape(n_expparams,n_outcomes, n_particles)
 
+       
             if self.model.allow_identical_outcomes:
                     if var_fun == 'simplified':
-                        est_posterior_mom2 = (1./norm_weights.shape[-1])*np.sum(est_posterior_means**2, axis=1) # shape (n_expparams,n_mps)
-                        est_mom2 = (1./norm_weights.shape[-1])*np.sum(np.tensordot(norm_weights, modelparams**2, axes=(2,0)),axis=1)# shape (n_expparams,n_mps)
+                        est_posterior_mom2 = (1./norm_weights.shape[1])*np.sum(est_posterior_means**2, axis=1) # shape (n_expparams,n_mps)
+                        est_mom2 = (1./norm_weights.shape[1])*np.sum(np.tensordot(norm_weights, modelparams**2, axes=(2,0)),axis=1)# shape (n_expparams,n_mps)
                         risk = np.sum(self.model.Q[np.newaxis,:] * (est_mom2 - est_posterior_mom2), axis=1)
                
                     elif var_fun == 'full':
                         frequentist_risk =np.tensordot(self.model.Q,(modelparams[np.newaxis,np.newaxis,:,:]-\
                                             est_posterior_means[:,:,np.newaxis,:])**2,axes=(0,3))
-                        risk = (1./norm_weights.shape[-1])*np.sum(norm_weights*frequentist_risk,axis=(1,2))
+                        risk = (1./norm_weights.shape[1])*np.sum(norm_weights*frequentist_risk,axis=(1,2))
                     else:
                         raise ValueError("'var_fun' must be either 'simplified' or 'full'.")
             else:
@@ -1084,7 +1137,8 @@ class SMCUpdater(Distribution):
                 if var_fun == 'simplified':
                     posterior_mom2 = est_posterior_means**2
                     mom2 = np.tensordot(norm_weights, modelparams**2, axes=(2,0))# shape(n_expparams,n_outcomes, n_particles)
-                    risk = np.sum(self.model.Q[np.newaxis,:] * np.tensordot(p_o,mom2 - posterior_mom2,axes=(1,1)), axis=1)
+          
+                    risk = np.sum(self.model.Q[np.newaxis,:] * np.sum(p_o[:,:,np.newaxis]*(mom2 - posterior_mom2),axis=1), axis=1)
                 elif var_fun == 'full':
                     frequentist_risk = np.tensordot(self.model.Q,(modelparams[:,np.newaxis,:,:]-\
                                         est_posterior_means[:,:,np.newaxis,:])**2,axes=(0,3))
@@ -1116,6 +1170,7 @@ class SMCUpdater(Distribution):
                 
                 if self.model.allow_identical_outcomes:
                     if var_fun == 'simplified':
+
                         est_posterior_mom2 = (1./norm_weights.shape[-1])*np.sum(est_posterior_means**2, axis=0) # shape (n_mps)
                         est_mom2 = (1./norm_weights.shape[0])*np.sum(np.tensordot(norm_weights, modelparams**2, axes=(1,0)),axis=0)
                         curr_risk = np.sum(self.model.Q * (est_mom2 - est_posterior_mom2), axis=0)
@@ -1155,7 +1210,7 @@ class SMCUpdater(Distribution):
       
 
     def risk_improvement(self, expparams, use_cached_samples=False,cache_samples=True,
-                    return_sampled_parameters=False,n_particle_subset=None,var_fun='simplified'):
+                    return_sampled_parameters=False,n_particle_subset=None,var_fun='simplified',batch=None):
         r"""
         Calculates the expected improvement of the Bayes risk for each hypothetical experiment, assuming the
         quadratic loss function defined by the current model's scale matrix
@@ -1195,17 +1250,18 @@ class SMCUpdater(Distribution):
         risks, weights, modelparams, all_sampled_outcomes, all_likelihoods = \
                                 self.bayes_risk(expparams,use_cached_samples,cache_samples,
                                                 return_sampled_parameters=True,n_particle_subset=n_particle_subset,
-                                                var_fun=var_fun)
+                                                var_fun=var_fun,batch=batch)
 
         risk_improvements = np.empty_like(risks)
 
         #use reapprox distribution to calculate prior covariance
         #as opposed to using `est_covariance_mtx()`.
+
         old_mean = np.sum(weights.reshape(-1,1) * modelparams,axis=0)
         old_var = np.sum(weights.reshape(-1,1)*(modelparams-old_mean)**2,axis=0)
+
         risk_improvements = risks-np.dot(self.model.Q,old_var)
-     
-            
+
         if return_sampled_parameters:
             return risk_improvements, weights, modelparams, all_sampled_outcomes, all_likelihoods
         else:
