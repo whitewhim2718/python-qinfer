@@ -743,8 +743,20 @@ class SMCUpdater(Distribution):
         particle_location = particle_locations[permuted_indices]
         
         #sort to return highest weighted particles in approximation
-        particles = np.arange(n_particles)%len(particle_weights)
-        reduced_indices = np.argsort(particle_weights)[particles]
+        #particles = np.arange(n_particles)%len(particle_weights)
+        #reduced_indices = np.argsort(particle_weights)[particles]
+
+        #if less particles than initial filter. Choose without replacement
+        if n_particles<n_ini:
+            reduced_indices = np.random.choice(np.arange(n_ini),n_particles,replace=False)
+        #if more particles than initial fiter take intial filter and then choose additional
+        #upsampled particles with replacement. 
+        else:
+            reduced_indices = np.concatenate([np.arange(n_ini),
+                              np.random.choice(np.arange(n_ini),n_particles-n_ini,replace=True)])
+
+
+            
         reduced_particle_weights = particle_weights[reduced_indices]
         reduced_particle_locations = particle_locations[reduced_indices]
         
