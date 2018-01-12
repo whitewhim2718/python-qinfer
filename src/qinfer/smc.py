@@ -648,6 +648,8 @@ class SMCUpdater(Distribution):
         :rtype: `~numpy.ndarray` of shape ``(n, updater.n_rvs)``.
         """
         cumsum_weights = np.cumsum(self.particle_weights)
+        import pdb
+        pdb.set_trace()
         return self.particle_locations[np.minimum(cumsum_weights.searchsorted(
             np.random.random((n,)),
             side='right'
@@ -736,11 +738,11 @@ class SMCUpdater(Distribution):
         n_ini = len(particle_weights)
         
         #draw random permutation
-        permuted_indices = np.random.permutation(n_ini)
+        #permuted_indices = np.random.permutation(n_ini)
         
         #permute weights/locations to avoid patterns while sorting
-        particle_weights = particle_weights[permuted_indices]
-        particle_location = particle_locations[permuted_indices]
+        #particle_weights = particle_weights[permuted_indices]
+        #particle_location = particle_locations[permuted_indices]
         
         #sort to return highest weighted particles in approximation
         #particles = np.arange(n_particles)%len(particle_weights)
@@ -765,7 +767,7 @@ class SMCUpdater(Distribution):
 
         return reduced_particle_weights, reduced_particle_locations
 
-    def sample_particle_filter(self,particle_weights,particle_locations,approx_ratio):
+    def sample_particle_filter(self,particle_weights,particle_locations,n_particles):
         """
         Generates an approximation of the particle filter by sampling particles with frequency
         determined by the particle weighting. This method allows there to be a nonzero chance for non-zero
@@ -781,9 +783,9 @@ class SMCUpdater(Distribution):
         (:class:`numpy.ndarray`,:class:`numpy.ndarray`).
         """
         n_ini = len(particle_weights)
-        n_red = int(approx_ratio*n_ini)
+        
       
-        selected_indexes = np.random.choice(n_ini,n_red,p=self.particle_weights)
+        selected_indexes = np.random.choice(n_ini,n_particles,p=self.particle_weights)
         particle_weights = self.particle_weights[selected_indexes]
         particle_weights = particle_weights/np.sum(particle_weights)
         particle_locations = self.particle_locations[selected_indexes]
@@ -858,13 +860,13 @@ class SMCUpdater(Distribution):
         #otherwise draw new weights/modelparams for outcome sampling      
         if not cache_available:
             if n_const:
-                sampled_weights, sampled_modelparams = self.reapprox(self.particle_weights,
+                sampled_weights, sampled_modelparams = self.sample_particle_filter(self.particle_weights,
                         self.particle_locations,n_outcomes)
                 if n_particle_subset is None:
                     risk_weights = self.particle_weights
                     risk_modelparams = self.particle_locations
                 else:
-                    risk_weights, risk_modelparams = self.reapprox(self.particle_weights,
+                    risk_weights, risk_modelparams = self.sample_particle_filter(self.particle_weights,
                             self.particle_locations,n_particle_subset)
 
                 if cache_samples:
