@@ -749,7 +749,7 @@ class SMCUpdater(Distribution):
 
         #if less particles than initial filter. Choose without replacement
         
-        samples = self.sample(n_ini)
+        samples = self.sample(n_particles)
         weights = np.ones(n_particles)/n_ini
         return weights,samples
         #if more particles than initial fiter take intial filter and then choose additional
