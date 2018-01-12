@@ -648,8 +648,7 @@ class SMCUpdater(Distribution):
         :rtype: `~numpy.ndarray` of shape ``(n, updater.n_rvs)``.
         """
         cumsum_weights = np.cumsum(self.particle_weights)
-        import pdb
-        pdb.set_trace()
+
         return self.particle_locations[np.minimum(cumsum_weights.searchsorted(
             np.random.random((n,)),
             side='right'
@@ -1136,8 +1135,6 @@ class SMCUpdater(Distribution):
        
             if self.model.allow_identical_outcomes:
                     if var_fun == 'simplified':
-                        import pdb
-                        pdb.set_trace()
                         est_posterior_mom2 = (1./norm_weights.shape[1])*np.sum(est_posterior_means**2, axis=1) # shape (n_expparams,n_mps)
                         est_mom2 = (1./norm_weights.shape[1])*np.sum(np.tensordot(norm_weights, modelparams**2, axes=(2,0)),axis=1)# shape (n_expparams,n_mps)
                         risk = np.sum(self.model.Q[np.newaxis,:] * (est_mom2 - est_posterior_mom2), axis=1)
