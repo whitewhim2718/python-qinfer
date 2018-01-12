@@ -748,23 +748,14 @@ class SMCUpdater(Distribution):
         #reduced_indices = np.argsort(particle_weights)[particles]
 
         #if less particles than initial filter. Choose without replacement
-        if n_particles<n_ini:
-            reduced_indices = np.random.choice(np.arange(n_ini),n_particles,replace=False)
+        if n_particles<n_ini or n_particles>n_ini:
+            samples = self.sample(n_ini)
+            samples,weights = np.unique(samples,return_counts=True,axis=0)
+            weights = weights.astype(np.float64)/n_ini
+            return weights,samples
         #if more particles than initial fiter take intial filter and then choose additional
         #upsampled particles with replacement. 
-        else:
-            reduced_indices = np.concatenate([np.arange(n_ini),
-                              np.random.choice(np.arange(n_ini),n_particles-n_ini,replace=True)])
-
-
-            
-        reduced_particle_weights = particle_weights[reduced_indices]
-        reduced_particle_locations = particle_locations[reduced_indices]
-        
-        #normalize weights 
-        reduced_particle_weights = reduced_particle_weights/np.sum(reduced_particle_weights)
-
-        return reduced_particle_weights, reduced_particle_locations
+        return particle_weights,particle_locations
 
     def sample_particle_filter(self,particle_weights,particle_locations,n_particles):
         """
@@ -859,13 +850,13 @@ class SMCUpdater(Distribution):
         #otherwise draw new weights/modelparams for outcome sampling      
         if not cache_available:
             if n_const:
-                sampled_weights, sampled_modelparams = self.sample_particle_filter(self.particle_weights,
+                sampled_weights, sampled_modelparams = self.reapprox(self.particle_weights,
                         self.particle_locations,n_outcomes)
                 if n_particle_subset is None:
                     risk_weights = self.particle_weights
                     risk_modelparams = self.particle_locations
                 else:
-                    risk_weights, risk_modelparams = self.sample_particle_filter(self.particle_weights,
+                    risk_weights, risk_modelparams = self.reapprox(self.particle_weights,
                             self.particle_locations,n_particle_subset)
 
                 if cache_samples:
