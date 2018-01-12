@@ -771,6 +771,8 @@ class SMCUpdater(Distribution):
         :return tuple: A tuple containing (reduced_particle_weights,reduced_particle_locations), of the form 
         (:class:`numpy.ndarray`,:class:`numpy.ndarray`).
         """
+        n_ini = len(particle_weights)
+        
         if n_particles<n_ini:
             reduced_indices = np.random.choice(np.arange(n_ini),n_particles,replace=False)
         #if more particles than initial fiter take intial filter and then choose additional
