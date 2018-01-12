@@ -627,13 +627,14 @@ class Model(Simulatable):
                 outcomes = np.unique(outcomes,axis=0)
 
            
-            L = self.likelihood(outcomes, likelihood_modelparams, expparams)[:,0,...].transpose(2,0,1)
+            L = self.likelihood(outcomes, likelihood_modelparams, expparams).transpose(2,0,1)
+
 
             if self.domain(expparams[0])[0].is_discrete:
                     # If we sum L_ep over the weighted modelparams, we get the total probability 
                     # of the respective outcome. We want the total probability of 
                     # getting _any_ outcome to be near 1.
-                 
+         
                     coverage = np.sum(np.tensordot(likelihood_weights, L, (0, 2)),axis=1)
                     not_covered = coverage < self.outcome_warning_threshold
                     if np.any(not_covered):
