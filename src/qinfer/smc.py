@@ -756,7 +756,7 @@ class SMCUpdater(Distribution):
         #upsampled particles with replacement. 
  
 
-    def sample_particle_filter(self,particle_weights,particle_locations,n_particles):
+    def down_sample_particle_filter(self,particle_weights,particle_locations,n_particles):
         """
         Generates an approximation of the particle filter by sampling particles with frequency
         determined by the particle weighting. This method allows there to be a nonzero chance for non-zero
@@ -772,23 +772,24 @@ class SMCUpdater(Distribution):
         (:class:`numpy.ndarray`,:class:`numpy.ndarray`).
         """
         n_ini = len(particle_weights)
+        if n_particles>n_ini:
+            n_particles = n_ini
         
-        if n_particles<n_ini:
-            reduced_indices = np.random.choice(np.arange(n_ini),n_particles,replace=False)
-        #if more particles than initial fiter take intial filter and then choose additional
-        #upsampled particles with replacement. 
-        else:
-            reduced_indices = np.concatenate([np.arange(n_ini),
-                              np.random.choice(np.arange(n_ini),n_particles-n_ini,replace=True)])
-
-
-            
+        #draw random permutation
+        permuted_indices = np.random.permutation(n_ini)
+        
+        #permute weights/locations to avoid patterns while sorting
+        particle_weights = particle_weights[permuted_indices]
+        particle_location = particle_locations[permuted_indices]
+        
+        #sort to return highest weighted particles in approximation
+        particles = np.arange(n_particles)
+        reduced_indices = np.argsort(particle_weights)[::-1][:n_particles]
         reduced_particle_weights = particle_weights[reduced_indices]
         reduced_particle_locations = particle_locations[reduced_indices]
         
         #normalize weights 
         reduced_particle_weights = reduced_particle_weights/np.sum(reduced_particle_weights)
-
         return reduced_particle_weights, reduced_particle_locations
     
 
@@ -865,7 +866,7 @@ class SMCUpdater(Distribution):
                     risk_weights = self.particle_weights
                     risk_modelparams = self.particle_locations
                 else:
-                    risk_weights, risk_modelparams = self.sample_particle_filter(self.particle_weights,
+                    risk_weights, risk_modelparams = self.down_sample_particle_filter(self.particle_weights,
                             self.particle_locations,n_particle_subset)
 
                 if cache_samples:
@@ -887,7 +888,7 @@ class SMCUpdater(Distribution):
                     if n_o > self.model.n_outcomes_cutoff and self.model.n_outcomes_cutoff is not None:                       
                         sampled_weights, sampled_modelparams = self.reapprox(self.particle_weights,
                         self.particle_locations,n_o)
-                        risk_weights, risk_modelparams = self.sample_particle_filter(self.particle_weights,
+                        risk_weights, risk_modelparams = self.down_sample_particle_filter(self.particle_weights,
                         self.particle_locations,n_particle_subset)
                     else:
                         sampled_weights = self.particle_weights
