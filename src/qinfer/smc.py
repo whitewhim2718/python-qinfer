@@ -1253,9 +1253,7 @@ class SMCUpdater(Distribution):
                 n_outcomes_split = [n_outcomes]*4
             else:
                 n_outcomes_split = np.array_split(n_outcomes,n_engines,axis=0)
-            
-            import pdb
-            pdb.set_trace()
+
             risk = np.concatenate(self._dview.map_sync(
                 parallel_risk_eval,
                 expparams_split,
