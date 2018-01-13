@@ -1036,9 +1036,6 @@ class SMCUpdater(Distribution):
             
             risk = np.empty((n_expparams, ))
 
-            
-            
-
             if n_const:
                 weights = all_sampled_weights
                 modelparams = all_sampled_modelparams
@@ -1243,10 +1240,7 @@ class SMCUpdater(Distribution):
         n_const = self.model.is_n_outcomes_constant
         allow_identical_outcomes = self.model.allow_identical_outcomes
         Q = self.model.Q
-        
 
-
-             
         if self._dview and ipp is not None:
             n_engines = len(self._dview)
             expparams_split = np.array_split(expparams,n_engines,axis=0)
