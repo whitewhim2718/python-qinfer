@@ -72,6 +72,23 @@ except ImportError:
     plt = None
 
 try:
+    import ipyparallel as ipp
+    interactive = ipp.interactive
+except ImportError:
+    try:
+        import IPython.parallel as ipp
+        interactive = ipp.interactive
+    except (ImportError, AttributeError):
+        import warnings
+        warnings.warn(
+            "Could not import IPython parallel. "
+            "Parallelization support will be disabled."
+        )
+        ipp = None
+        interactive = lambda fn: fn
+
+
+try:
     import mpltools.special as mpls
 except:
     # Don't even warn in this case.
@@ -121,7 +138,8 @@ class SMCUpdater(Distribution):
             debug_resampling=False,
             track_resampling_divergence=False,
             zero_weight_policy='error', zero_weight_thresh=None,
-            canonicalize=True,reset_sample_cache_on_update=True
+            canonicalize=True,reset_sample_cache_on_update=True,
+            dview = None
         ):
 
         # Initialize zero-element arrays such that n_particles is always
@@ -132,7 +150,7 @@ class SMCUpdater(Distribution):
         # Initialize metadata on resampling performance.
         self._resample_count = 0
         self._min_n_ess = n_particles
-        
+        self._dview = dview           
         self.model = model
         self.prior = prior
 
@@ -968,8 +986,7 @@ class SMCUpdater(Distribution):
                         cache_samples=cache_samples,n_particle_subset=n_particle_subset)
 
         posterior_covariances = []
-        if not hasattr(self,'_old_modelparams'):
-            self._old_modelparams = all_sampled_modelparams[0]
+   
         
         for idx_exp in range(n_expparams):
             weights = all_sampled_weights[idx_exp]
@@ -1106,116 +1123,157 @@ class SMCUpdater(Distribution):
                     self._sample_outcomes_modelparams(expparams,use_cached_samples=use_cached_samples,
                         cache_samples=cache_samples,n_particle_subset=n_particle_subset)
 
-        risk = np.empty((n_expparams, ))
-        if not hasattr(self,'_old_modelparams'):
-            self._old_modelparams = all_sampled_modelparams[0]
+
+        n_outcomes = self.model.n_outcomes(expparams)
+        n_const = self.model.is_n_outcomes_constant
+        allow_identical_outcomes = self.model.allow_identical_outcomes
+        Q = self.model.Q
         
-        
+        def parallel_risk_eval(expparams,all_sampled_weights,all_sampled_modelparams,all_sampled_outcomes,all_likelihoods,
+            n_outcomes,allow_identical_outcomes,Q,n_const,var_fun):
+            expparams = np.asarray(expparams).reshape(-1)
+            n_expparams = expparams.shape[0]
+            scalar_n_o = not np.isscalar(n_outcomes)
+            
+            risk = np.empty((n_expparams, ))
 
-        if n_const:
-            weights = all_sampled_weights
-            modelparams = all_sampled_modelparams
-            if not isinstance(all_likelihoods,np.ndarray):
-                L = np.vstack(all_likelihoods)
-            else:
-                L = all_likelihoods # shape (n_expparams,n_outcomes, n_particles)
-
-            if not isinstance(all_sampled_outcomes,np.ndarray):
-                outcomes = np.vstack(all_sampled_outcomes)
-            else:
-                outcomes = all_sampled_outcomes
-
-            hyp_weights = L*weights[np.newaxis,...]  #(n_expparams,n_outcomes, n_particles)
+            
             
 
-            norm_scale = np.sum(hyp_weights,axis=2) # shape (n_expparams, n_outcomes)
-            norm_weights = np.nan_to_num(hyp_weights/norm_scale[...,np.newaxis]) # shape(n_expparams,n_outcomes, n_particles)
-            p_o = norm_scale/np.sum(norm_scale,axis=1)[:,np.newaxis] # shape (n_expparams, n_outcomes)
-            est_posterior_means = np.tensordot(norm_weights,modelparams,axes=(2,0))# shape(n_expparams,n_outcomes, n_particles)
-
-       
-            if self.model.allow_identical_outcomes:
-                    if var_fun == 'simplified':
-                        est_posterior_mom2 = (1./norm_weights.shape[1])*np.sum(est_posterior_means**2, axis=1) # shape (n_expparams,n_mps)
-                        est_mom2 = (1./norm_weights.shape[1])*np.sum(np.tensordot(norm_weights, modelparams**2, axes=(2,0)),axis=1)# shape (n_expparams,n_mps)
-                        risk = np.sum(self.model.Q[np.newaxis,:] * (est_mom2 - est_posterior_mom2), axis=1)
-               
-                    elif var_fun == 'full':
-                        frequentist_risk =np.tensordot(self.model.Q,(modelparams[np.newaxis,np.newaxis,:,:]-\
-                                            est_posterior_means[:,:,np.newaxis,:])**2,axes=(0,3))
-                        risk = (1./norm_weights.shape[1])*np.sum(norm_weights*frequentist_risk,axis=(1,2))
-                    else:
-                        raise ValueError("'var_fun' must be either 'simplified' or 'full'.")
-            else:
-
-                if var_fun == 'simplified':
-                    posterior_mom2 = est_posterior_means**2
-                    mom2 = np.tensordot(norm_weights, modelparams**2, axes=(2,0))# shape(n_expparams,n_outcomes, n_particles)
-          
-                    risk = np.sum(self.model.Q[np.newaxis,:] * np.sum(p_o[:,:,np.newaxis]*(mom2 - posterior_mom2),axis=1), axis=1)
-                elif var_fun == 'full':
-                    frequentist_risk = np.tensordot(self.model.Q,(modelparams[:,np.newaxis,:,:]-\
-                                        est_posterior_means[:,:,np.newaxis,:])**2,axes=(0,3))
-                    risk = np.tensordot(p_o,np.sum(norm_weights*frequentist_risk,axis=2),axes=(1,1))
-
+            if n_const:
+                weights = all_sampled_weights
+                modelparams = all_sampled_modelparams
+                if not isinstance(all_likelihoods,np.ndarray):
+                    L = np.vstack(all_likelihoods)
                 else:
-                    raise ValueError("'var_fun' must be either 'simplified' or 'full'.")
+                    L = all_likelihoods # shape (n_expparams,n_outcomes, n_particles)
 
-        else:
-            for idx_exp in range(n_expparams):
-                weights = all_sampled_weights[idx_exp]
-                modelparams = all_sampled_modelparams[idx_exp]
-                L = all_likelihoods[idx_exp]     # shape (n_outcomes, n_particles)
-          
-                outcomes = all_sampled_outcomes[idx_exp] # shape (n_outcomes)
-                # (unnormalized) hypothetical posterior weights for this experiment
-                hyp_weights = L*weights # shape (n_outcomes, n_particles)
-                # Sum up the weights to find the renormalization scale.
-                norm_scale = np.sum(hyp_weights, axis=1)                 # shape (n_outcomes)
-                #If norm_scale has 0 weighted,weights dividing by zero will be undefined
-                #set norm_weights nan to zero weighted particle
-                norm_weights = np.nan_to_num(hyp_weights / norm_scale[..., np.newaxis]) # shape(n_outcomes, n_particles)
-                p_o = norm_scale/np.sum(norm_scale)
+                if not isinstance(all_sampled_outcomes,np.ndarray):
+                    outcomes = np.vstack(all_sampled_outcomes)
+                else:
+                    outcomes = all_sampled_outcomes
+
+                hyp_weights = L*weights[np.newaxis,...]  #(n_expparams,n_outcomes, n_particles)
                 
-                # compute the expected mean for each of the outcomes
-                est_posterior_means = np.tensordot(norm_weights, modelparams, axes=(1, 0)) # shape(n_outcomes, n_mps)
-                # compute the second moment of these means over the outcome distribution
 
-                
-                if self.model.allow_identical_outcomes:
-                    if var_fun == 'simplified':
+                norm_scale = np.sum(hyp_weights,axis=2) # shape (n_expparams, n_outcomes)
+                norm_weights = np.nan_to_num(hyp_weights/norm_scale[...,np.newaxis]) # shape(n_expparams,n_outcomes, n_particles)
+                p_o = norm_scale/np.sum(norm_scale,axis=1)[:,np.newaxis] # shape (n_expparams, n_outcomes)
+                est_posterior_means = np.tensordot(norm_weights,modelparams,axes=(2,0))# shape(n_expparams,n_outcomes, n_particles)
 
-                        est_posterior_mom2 = (1./norm_weights.shape[-1])*np.sum(est_posterior_means**2, axis=0) # shape (n_mps)
-                        est_mom2 = (1./norm_weights.shape[0])*np.sum(np.tensordot(norm_weights, modelparams**2, axes=(1,0)),axis=0)
-                        curr_risk = np.sum(self.model.Q * (est_mom2 - est_posterior_mom2), axis=0)
-                    elif var_fun == 'full':
-                        frequentist_risk =np.tensordot(self.model.Q,(modelparams[np.newaxis,:,:]-\
-                                            est_posterior_means[:,np.newaxis,:])**2,axes=(0,2))
-                        curr_risk = (1./norm_weights.shape[0])*np.sum(norm_weights*frequentist_risk)
-                    else:
-                        raise ValueError("'var_fun' must be either 'simplified' or 'full'.")
+           
+                if allow_identical_outcomes:
+                        if var_fun == 'simplified':
+                            est_posterior_mom2 = (1./norm_weights.shape[1])*np.sum(est_posterior_means**2, axis=1) # shape (n_expparams,n_mps)
+                            est_mom2 = (1./norm_weights.shape[1])*np.sum(np.tensordot(norm_weights, modelparams**2, axes=(2,0)),axis=1)# shape (n_expparams,n_mps)
+                            risk = np.sum(Q[np.newaxis,:] * (est_mom2 - est_posterior_mom2), axis=1)
+                   
+                        elif var_fun == 'full':
+                            frequentist_risk =np.tensordot(Q,(modelparams[np.newaxis,np.newaxis,:,:]-\
+                                                est_posterior_means[:,:,np.newaxis,:])**2,axes=(0,3))
+                            risk = (1./norm_weights.shape[1])*np.sum(norm_weights*frequentist_risk,axis=(1,2))
+                        else:
+                            raise ValueError("'var_fun' must be either 'simplified' or 'full'.")
                 else:
 
                     if var_fun == 'simplified':
                         posterior_mom2 = est_posterior_means**2
-                        mom2 = np.tensordot(norm_weights, modelparams**2, axes=(1,0))
-                        curr_risk = np.sum(self.model.Q * np.tensordot(p_o,mom2 - posterior_mom2,axes=(0,0)), axis=0)
+                        mom2 = np.tensordot(norm_weights, modelparams**2, axes=(2,0))# shape(n_expparams,n_outcomes, n_particles)
+              
+                        risk = np.sum(Q[np.newaxis,:] * np.sum(p_o[:,:,np.newaxis]*(mom2 - posterior_mom2),axis=1), axis=1)
                     elif var_fun == 'full':
-                        frequentist_risk = np.tensordot(self.model.Q,(modelparams[np.newaxis,:,:]-\
-                                            est_posterior_means[:,np.newaxis,:])**2,axes=(0,2))
-                        curr_risk = np.tensordot(p_o,np.sum(norm_weights*frequentist_risk,axis=1),axes=(0,0))
+                        frequentist_risk = np.tensordot(Q,(modelparams[:,np.newaxis,:,:]-\
+                                            est_posterior_means[:,:,np.newaxis,:])**2,axes=(0,3))
+                        risk = np.tensordot(p_o,np.sum(norm_weights*frequentist_risk,axis=2),axes=(1,1))
 
                     else:
                         raise ValueError("'var_fun' must be either 'simplified' or 'full'.")
 
+            else:
+                for idx_exp in range(n_expparams):
+                    weights = all_sampled_weights[idx_exp]
+                    modelparams = all_sampled_modelparams[idx_exp]
+                    L = all_likelihoods[idx_exp]     # shape (n_outcomes, n_particles)
+              
+                    outcomes = all_sampled_outcomes[idx_exp] # shape (n_outcomes)
+                    # (unnormalized) hypothetical posterior weights for this experiment
+                    hyp_weights = L*weights # shape (n_outcomes, n_particles)
+                    # Sum up the weights to find the renormalization scale.
+                    norm_scale = np.sum(hyp_weights, axis=1)                 # shape (n_outcomes)
+                    #If norm_scale has 0 weighted,weights dividing by zero will be undefined
+                    #set norm_weights nan to zero weighted particle
+                    norm_weights = np.nan_to_num(hyp_weights / norm_scale[..., np.newaxis]) # shape(n_outcomes, n_particles)
+                    p_o = norm_scale/np.sum(norm_scale)
                     
+                    # compute the expected mean for each of the outcomes
+                    est_posterior_means = np.tensordot(norm_weights, modelparams, axes=(1, 0)) # shape(n_outcomes, n_mps)
+                    # compute the second moment of these means over the outcome distribution
 
-                risk[idx_exp] = curr_risk
+                    
+                    if allow_identical_outcomes:
+                        if var_fun == 'simplified':
 
-                
-           
+                            est_posterior_mom2 = (1./norm_weights.shape[-1])*np.sum(est_posterior_means**2, axis=0) # shape (n_mps)
+                            est_mom2 = (1./norm_weights.shape[0])*np.sum(np.tensordot(norm_weights, modelparams**2, axes=(1,0)),axis=0)
+                            curr_risk = np.sum(Q * (est_mom2 - est_posterior_mom2), axis=0)
+                        elif var_fun == 'full':
+                            frequentist_risk =np.tensordot(Q,(modelparams[np.newaxis,:,:]-\
+                                                est_posterior_means[:,np.newaxis,:])**2,axes=(0,2))
+                            curr_risk = (1./norm_weights.shape[0])*np.sum(norm_weights*frequentist_risk)
+                        else:
+                            raise ValueError("'var_fun' must be either 'simplified' or 'full'.")
+                    else:
 
-         
+                        if var_fun == 'simplified':
+                            posterior_mom2 = est_posterior_means**2
+                            mom2 = np.tensordot(norm_weights, modelparams**2, axes=(1,0))
+                            curr_risk = np.sum(Q * np.tensordot(p_o,mom2 - posterior_mom2,axes=(0,0)), axis=0)
+                        elif var_fun == 'full':
+                            frequentist_risk = np.tensordot(Q,(modelparams[np.newaxis,:,:]-\
+                                                est_posterior_means[:,np.newaxis,:])**2,axes=(0,2))
+                            curr_risk = np.tensordot(p_o,np.sum(norm_weights*frequentist_risk,axis=1),axes=(0,0))
+
+                        else:
+                            raise ValueError("'var_fun' must be either 'simplified' or 'full'.")
+
+                        
+
+                    risk[idx_exp] = curr_risk
+
+                    
+            return risk 
+
+             
+        if self._dview and ipp is not None:
+            n_engines = len(self._dview)
+            expparams_split = np.array_split(expparams,n_engines,axis=0)
+            likelihoods_split = np.array_split(all_likelihoods,n_engines,axis=0)
+            outcomes_split = np.array_split(all_sampled_modelparams,n_engines,axis=0)
+            if np.isscalar(n_outcomes):
+                n_outcomes_split = [n_outcomes]*4
+            else:
+                n_outcomes_split = np.array_split(n_outcomes,n_engines,axis=0)
+            
+            import pdb
+            pdb.set_trace()
+            risk = np.concatenate(self._dview.map_sync(
+                parallel_risk_eval,
+                expparams_split,
+                [all_sampled_weights]*n_engines,
+                [all_sampled_modelparams]*n_engines,
+                outcomes_split,
+                likelihoods_split,
+                n_outcomes_split,
+                [allow_identical_outcomes]*n_engines,
+                [Q]*n_engines,
+                [n_const]*n_engines,
+                [var_fun]*n_engines
+                ),axis=0)
+        else:
+            risk = parallel_risk_eval(expparams,all_sampled_weights,all_sampled_modelparams,
+                        all_sampled_outcomes,all_likelihoods,n_outcomes,
+                        allow_identical_outcomes,Q,n_const,var_fun)
+        
         risk = risk.clip(min=0)
         if return_sampled_parameters:
             return risk, weights, modelparams, all_sampled_outcomes, all_likelihoods
