@@ -622,7 +622,6 @@ class Model(Simulatable):
 
             outcomes = self.simulate_experiment(modelparams, expparams, repeat=1)[0,:,:]
         
-            np.unique(self.simulate_experiment(modelparams, expparams, repeat=1)[0,:,:],axis=0).shape
             if not self.allow_identical_outcomes:
                 outcomes = np.unique(outcomes,axis=0)
 
