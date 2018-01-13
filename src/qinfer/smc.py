@@ -1275,7 +1275,7 @@ class SMCUpdater(Distribution):
         risk = risk.clip(min=0)
 
         if return_sampled_parameters:
-            return risk, all_sampled_weight, all_sampled_modelparams, all_sampled_outcomes, all_likelihoods
+            return risk, all_sampled_weights, all_sampled_modelparams, all_sampled_outcomes, all_likelihoods
         else:
             return risk
       
