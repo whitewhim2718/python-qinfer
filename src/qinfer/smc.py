@@ -1273,6 +1273,9 @@ class SMCUpdater(Distribution):
                         allow_identical_outcomes,Q,n_const,var_fun)
         
         risk = risk.clip(min=0)
+
+        import pdb
+        pdb.set_trace()
         if return_sampled_parameters:
             return risk, weights, modelparams, all_sampled_outcomes, all_likelihoods
         else:
