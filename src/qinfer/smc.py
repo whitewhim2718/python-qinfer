@@ -2057,8 +2057,7 @@ class MixedApproximateSMCUpdater(SMCUpdater):
             good_model, approximate_model,
             n_particles, prior,
             resample_a=None, resampler=None, resample_thresh=0.5,
-            mixture_ratio=0.5, mixture_thresh=1.0, min_good=0,
-            reset_sample_cache_on_update=True
+            mixture_ratio=0.5, mixture_thresh=1.0, min_good=0
             ):
             
         self._good_model = good_model
@@ -2066,8 +2065,7 @@ class MixedApproximateSMCUpdater(SMCUpdater):
         
         super(MixedApproximateSMCUpdater, self).__init__(
             good_model, n_particles, prior,
-            resample_a, resampler, resample_thresh,
-            reset_sample_cache_on_update=reset_sample_cache_on_update
+            resample_a, resampler, resample_thresh
         )
         
         self._mixture_ratio = mixture_ratio
@@ -2185,8 +2183,7 @@ class SMCUpdaterBCRB(SMCUpdater):
         non-adaptive and adaptive Bayes Information matrices.
     :param initial_bim: If the regularity conditions are not met, then taking
         the outer products of gradients over the prior will not give the correct
-        initial (Bayesian Information Matrix) BIM. 
-        In such cases, ``initial_bim`` can be set to the correct
+        initial BIM. In such cases, ``initial_bim`` can be set to the correct
         BIM corresponding to having done no experiments.
     """
     
@@ -2197,7 +2194,7 @@ class SMCUpdaterBCRB(SMCUpdater):
             key: kwargs[key] for key in kwargs
             if key in [
                 'resampler_a', 'resampler', 'resample_thresh', 'model',
-                'prior', 'n_particles', 'reset_sample_cache_on_update'
+                'prior', 'n_particles'
             ]
         })
         

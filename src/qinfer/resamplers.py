@@ -5,7 +5,7 @@
 ##
 # © 2012 Chris Ferrie (csferrie@gmail.com) and
 #        Christopher E. Granade (cgranade@gmail.com)
-#     
+#
 # This file is a part of the Qinfer project.
 # Licensed under the AGPL version 3.
 ##
@@ -50,6 +50,7 @@ from future.utils import with_metaclass
 
 import qinfer.clustering
 from qinfer._exceptions import ResamplerWarning, ResamplerError
+from qinfer.distributions import ParticleDistribution
 
 ## LOGGING ####################################################################
 
@@ -92,11 +93,11 @@ class ClusteringResampler(object):
     r"""
     Creates a resampler that breaks the particles into clusters, then applies
     a secondary resampling algorithm to each cluster independently.
-    
+
     :param secondary_resampler: Resampling algorithm to be applied to each
         cluster. If ``None``, defaults to ``LiuWestResampler()``.
     """
-    
+
     def __init__(self, eps=0.5, secondary_resampler=None, min_particles=5, metric='euclidean', weighted=False, w_pow=0.5, quiet=True):
         warnings.warn("This class is deprecated, and will be removed in a future version.", DeprecationWarning)
         self.secondary_resampler = (
@@ -104,16 +105,16 @@ class ClusteringResampler(object):
             if secondary_resampler is not None
             else LiuWestResampler()
         )
-        
+
         self.eps = eps
         self.quiet = quiet
         self.min_particles = min_particles
         self.metric = metric
         self.weighted = weighted
         self.w_pow = w_pow
-        
+
     ## METHODS ##
-    
+
     def __call__(self, model, particle_weights, particle_locations):
         ## TODO: docstring.
         

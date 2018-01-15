@@ -52,17 +52,17 @@ from qinfer import (
     RandomizedBenchmarkingModel,
     ReferencedPoissonModel,
     PoisonedModel, BinomialModel, MultinomialModel,
-    MLEModel, RandomWalkModel,
-    ProductDistribution,
-    NormalDistribution, UniformDistribution,
-    BetaDistribution, GammaDistribution, 
+    MLEModel, RandomWalkModel, GaussianRandomWalkModel,
+    ProductDistribution, NormalDistribution,
+    BetaDistribution, UniformDistribution,
+    GammaDistribution,
     PostselectedDistribution,
     ConstrainedSumDistribution,
     DirectViewParallelizedModel
 )
 from qinfer.ale import ALEApproximateModel
 from qinfer.tomography import TomographyModel, DiffusiveTomographyModel, pauli_basis, GinibreDistribution
-from qinfer.utils import check_qutip_version
+from qinfer.utils import check_qutip_version, to_simplex, from_simplex
 
 import unittest
 
@@ -297,55 +297,6 @@ class TestALEApproximateModel(ConcreteModelTest, DerandomizedTestCase):
         ts = np.linspace(0,5,10, dtype=self.model.expparams_dtype)
         return ts
 
-class TestReferencedPoissonModel(ConcreteModelTest, DerandomizedTestCase):
-    """
-    Tests ReferencedPoissonModel with CoinModel as the underlying model
-    (underlying model has no expparams).
-    """
-
-    def instantiate_model(self):
-        return ReferencedPoissonModel(CoinModel())
-    def instantiate_prior(self):
-        p_dist = BetaDistribution(mean=0.5, var=0.1)
-        ref_dist = PostselectedDistribution(
-            UniformDistribution(np.array([[6000,6100],[900,1000]])),
-            self.model
-        )
-        return ProductDistribution(p_dist, ref_dist)
-    def instantiate_expparams(self):
-        b = ReferencedPoissonModel.BRIGHT
-        d = ReferencedPoissonModel.DARK
-        s = ReferencedPoissonModel.SIGNAL
-        modes = np.repeat(np.array([b,d,s]),4).astype([('mode','int')])
-        # the ps values don't matter since CoinValue has no expparams
-        ps = np.arange(12).astype([('p','float')])
-        return rfn.merge_arrays([modes, ps])
-
-class TestReferencedPoissonModel2(ConcreteModelTest, DerandomizedTestCase):
-    """
-    Tests ReferencedPoissonModel with NoisyCoinModel as the underlying model
-    (underlying model has 2 expparams).
-    """
-
-    def instantiate_model(self):
-        return ReferencedPoissonModel(CoinModel())
-    def instantiate_prior(self):
-        p_dist = BetaDistribution(mean=0.5, var=0.1)
-        ref_dist = PostselectedDistribution(
-            UniformDistribution(np.array([[6000,6100],[900,1000]])),
-            self.model
-        )
-        return ProductDistribution(p_dist, ref_dist)
-    def instantiate_expparams(self):
-        b = ReferencedPoissonModel.BRIGHT
-        d = ReferencedPoissonModel.DARK
-        s = ReferencedPoissonModel.SIGNAL
-        modes = np.repeat(np.array([b,d,s]),4).astype([('mode','int')])
-        # the ps values don't matter since CoinValue has no expparams
-        alphas = (0.1 * np.ones((10,))).astype([('alpha','float')])
-        betas = np.linspace(0,0.5,10, dtype=[('beta','float')])
-        return rfn.merge_arrays([alphas, betas, modes])
-
 class TestBinomialModel(ConcreteModelTest, DerandomizedTestCase):
     """
     Tests BinomialModel with CoinModel as the underlying model
@@ -503,3 +454,132 @@ class TestDirectViewParallelizedModel(ConcreteModelTest, DerandomizedTestCase):
         return UniformDistribution([[0, 1]] * 2)
     def instantiate_expparams(self):
         return np.array([(10.0, 2)], dtype=MockModel().expparams_dtype)
+        
+class TestGaussianRandomWalkModel1(ConcreteModelTest, DerandomizedTestCase):
+    """
+    Tests GaussianRandomWalkModel with diagonal fixed covariance.
+    """
+
+    def instantiate_model(self):
+        m = BinomialModel(CoinModel())
+        return GaussianRandomWalkModel(
+            m,
+            fixed_covariance = np.array([0.01]),
+            diagonal = True
+        )
+    def instantiate_prior(self):
+        return UniformDistribution(np.array([[0.45,0.55]]))
+    def instantiate_expparams(self):
+        return np.arange(100, 120).astype(self.model.expparams_dtype)
+        
+    def test_est_update_covariance(self):
+        cov = self.model.est_update_covariance(self.modelparams)
+        eigs, v = np.linalg.eig(cov)
+        assert(np.greater_equal(eigs, -1e-10).all())
+        
+class TestGaussianRandomWalkModel2(ConcreteModelTest, DerandomizedTestCase):
+    """
+    Tests GaussianRandomWalkModel with dense fixed covariance.
+    """
+
+    def instantiate_model(self):
+        m = MultinomialModel(NDieModel(n=6))
+        cov = np.random.random(size=(3,3))
+        cov = np.dot(cov, cov.T)
+        return GaussianRandomWalkModel(
+            m,
+            fixed_covariance = cov,
+            diagonal = False,
+            random_walk_idxs = np.s_[:6:2],
+            model_transformation = (from_simplex, to_simplex),
+            scale_mult = 'n_meas'
+        )
+    def instantiate_prior(self):
+        unif = UniformDistribution(np.array([[.45,.55]] * 6))
+        return ConstrainedSumDistribution(unif, desired_total=1)
+    def instantiate_expparams(self):
+        return np.arange(10).astype(self.model.expparams_dtype)
+    
+    def test_est_update_covariance(self):
+        cov = self.model.est_update_covariance(self.modelparams)
+        eigs, v = np.linalg.eig(cov)
+        assert(np.greater_equal(eigs, -1e-10).all())
+        
+class TestGaussianRandomWalkModel3(ConcreteModelTest, DerandomizedTestCase):
+    """
+    Tests GaussianRandomWalkModel with dense learned covariance.
+    """
+
+    def instantiate_model(self):
+        m = MultinomialModel(NDieModel(n=6))
+        return GaussianRandomWalkModel(
+            m,
+            diagonal = False,
+            random_walk_idxs = [1,2,4],
+            model_transformation = (from_simplex, to_simplex),
+            scale_mult = 'n_meas'
+        )
+    def instantiate_prior(self):
+        die = ConstrainedSumDistribution(
+                UniformDistribution(np.array([[.45,.55]] * 6)),
+                desired_total = 1
+            )
+        walk = UniformDistribution([[0,1]] * 6)
+        return ProductDistribution(die, walk)
+    def instantiate_expparams(self):
+        return np.arange(10).astype(self.model.expparams_dtype)
+    
+    def test_est_update_covariance(self):
+        cov = self.model.est_update_covariance(self.modelparams)
+        eigs, v = np.linalg.eig(cov)
+        assert(np.greater_equal(eigs, -1e-10).all())
+        
+class TestGaussianRandomWalkModel4(ConcreteModelTest, DerandomizedTestCase):
+    """
+    Tests GaussianRandomWalkModel with diagonal learned covariance.
+    """
+
+    def instantiate_model(self):
+        m = MultinomialModel(NDieModel(n=6))
+        mult = lambda eps: eps['n_meas']**2
+        return GaussianRandomWalkModel(
+            m,
+            diagonal = True,
+            random_walk_idxs = [1,2,4],
+            model_transformation = (from_simplex, to_simplex),
+            scale_mult = mult
+        )
+    def instantiate_prior(self):
+        die = ConstrainedSumDistribution(
+                UniformDistribution(np.array([[.45,.55]] * 6)),
+                desired_total = 1
+            )
+        walk = UniformDistribution([[0,1]] * 3)
+        return ProductDistribution(die, walk)
+    def instantiate_expparams(self):
+        return np.arange(10).astype(self.model.expparams_dtype)
+        
+    def test_est_update_covariance(self):
+        cov = self.model.est_update_covariance(self.modelparams)
+        eigs, v = np.linalg.eig(cov)
+        assert(np.greater_equal(eigs, -1e-10).all())
+        
+class TestGaussianRandomWalkModel5(DerandomizedTestCase):
+    """
+    Tests miscillaneous properties of GaussianRandomWalkModel.
+    """
+
+    def test_indexing(self):
+        model = lambda slice: GaussianRandomWalkModel(
+                MultinomialModel(NDieModel(n=6)), 
+                random_walk_idxs = slice
+            )
+
+        assert(model('all').n_modelparams == 12)
+        assert(model(np.s_[:6]).n_modelparams == 12)
+        assert(model(np.s_[:6:2]).n_modelparams == 9)
+        assert(model([2,3,4]).n_modelparams == 9)
+        
+        self.assertRaises(IndexError, model, np.s_[:7])
+        self.assertRaises(IndexError, model, np.s_[6:])
+        self.assertRaises(IndexError, model, [1,2,8])        
