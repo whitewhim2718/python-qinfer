@@ -625,6 +625,7 @@ class Model(Simulatable):
             if not self.allow_identical_outcomes:
                 outcomes = np.unique(outcomes,axis=0)
 
+
             L = self.likelihood(outcomes, likelihood_modelparams, expparams).transpose(2,0,1)
 
 
