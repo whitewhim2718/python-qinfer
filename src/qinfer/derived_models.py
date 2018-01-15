@@ -428,7 +428,7 @@ class ReferencedPoissonModel(DerivedModel):
         )
 
 
-class BinomialModel(DerivedModel):
+class BinomialModel(DerivedModel,FiniteOutcomeModel):
     """
     Model representing finite numbers of iid samples from another model,
     using the binomial distribution to calculate the new likelihood function.
