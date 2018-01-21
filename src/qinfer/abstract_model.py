@@ -1121,3 +1121,5 @@ class DifferentiableModel(with_metaclass(abc.ABCMeta, Model)):
         #for generalized outcomes models
         else:
             return self._generalized_fisher_information(modelparams,expparams)
+
+

@@ -559,14 +559,19 @@ class GaussianModel(DifferentiableModel):
 
         super(GaussianModel, self).likelihood(outcomes, modelparams, expparams)
 
-        
+
         if modelparams.ndim == 1:
             modelparams = modelparams[np.newaxis, ...]
       
-        if len(outcomes.shape) == 1:
+        if outcomes.ndim == 1:
             outcomes = outcomes[...,np.newaxis, np.newaxis]
-        else:
+        elif outcomes.ndim == 2:
             outcomes = outcomes[:,np.newaxis,:]
+        else:
+            outcomes = outcomes[:,np.newaxis,:,:]
+
+        expparams = np.atleast_1d(expparams)
+        expparams_tmp = expparams.reshape(-1)
 
         # Check to see if var/mu are model parameters, and if 
         # so remove from model parameter array 
@@ -577,8 +582,19 @@ class GaussianModel(DifferentiableModel):
         else: 
             var = np.full((1,modelparams.shape[0],1),self._var)
 
-        x = self.model_function(modelparams,expparams)[np.newaxis,:,:]
-        
+
+        #x = self.model_function(modelparams,expparams_tmp).reshape(modelparams.shape[:-1]+expparams.shape)
+
+        if len(expparams.shape) == 2:
+
+  
+            x = self.model_function(modelparams,expparams_tmp)
+            x = x.reshape(1,modelparams.shape[0],expparams.shape[0],expparams.shape[1])
+
+            var = var[...,np.newaxis]
+        else:
+            x = self.model_function(modelparams,expparams)[np.newaxis,...]
+
         likelihood = np.exp(-1./2*np.log(2*np.pi*var)-(outcomes-x)**2/(2*var))
 
         return likelihood

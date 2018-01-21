@@ -146,7 +146,7 @@ class SMCUpdater(Distribution):
         # a valid property.
         self.particle_locations = np.zeros((0, model.n_modelparams))
         self.particle_weights = np.zeros((0,))
-        
+
         # Initialize metadata on resampling performance.
         self._resample_count = 0
         self._min_n_ess = n_particles
@@ -1057,7 +1057,7 @@ class SMCUpdater(Distribution):
                 p_o = norm_scale/np.sum(norm_scale,axis=1)[:,np.newaxis] # shape (n_expparams, n_outcomes)
                 est_posterior_means = np.tensordot(norm_weights,modelparams,axes=(2,0))# shape(n_expparams,n_outcomes, n_particles)
 
-           
+                
                 if allow_identical_outcomes:
                         if var_fun == 'simplified':
                             est_posterior_mom2 = np.sum(est_posterior_means**2, axis=1) # shape (n_expparams,n_mps)
@@ -1175,6 +1175,8 @@ class SMCUpdater(Distribution):
                         the mean squared is much different than the second moment, but is 
                         faster to evaluate. `full` is numerically more stable but slower. 
         :param return_sampled_parameters: bool
+        :param batch: Maximum number of expparams in each batch.
+        :type batch: int
             
         :return float: The Bayes risk for the current posterior distribution
             of the hypothetical experiment ``expparams``.
@@ -1240,8 +1242,6 @@ class SMCUpdater(Distribution):
         n_const = self.model.is_n_outcomes_constant
         allow_identical_outcomes = self.model.allow_identical_outcomes
         Q = self.model.Q
-
- 
 
         if self._dview and ipp is not None:
             n_engines = len(self._dview)
@@ -1311,7 +1311,8 @@ class SMCUpdater(Distribution):
                 particles if the number of outcomes is large. Set `n_particle_subset` to control
                 the number of particles used to calculate the Bayes Risk. Default behavior 
         :type n_particle_subset: int  
-
+        :param batch: Maximum number of expparams in each batch.
+        :type batch: int
             
         :return float: The expected improvement of the Bayes risk for the current posterior distribution
             of the hypothetical experiment ``expparams``.
@@ -1338,7 +1339,7 @@ class SMCUpdater(Distribution):
             return risk_improvements
 
     def risk_information_gain(self, expparams, use_cached_samples=False,cache_samples=True,
-                    return_sampled_parameters=False,n_particle_subset=None):
+                    return_sampled_parameters=False,n_particle_subset=None,batch=None):
         r"""
         Calculates the information gain (todo: elaborate on what I mean) of the Bayes risk for each hypothetical experiment, assuming the
         quadratic loss function defined by the current model's scale matrix
@@ -1369,7 +1370,7 @@ class SMCUpdater(Distribution):
                 particles if the number of outcomes is large. Set `n_particle_subset` to control
                 the number of particles used to calculate the Bayes Risk. Default behavior 
         :type n_particle_subset: int  
-
+    
             
         :return float: The expected improvement of the Bayes risk for the current posterior distribution
             of the hypothetical experiment ``expparams``.
@@ -1402,9 +1403,78 @@ class SMCUpdater(Distribution):
             return information_gains
 
 
-        
+    @staticmethod
+    def _parallel_expected_ig_eval(expparams,all_sampled_weights,all_sampled_modelparams,all_sampled_outcomes,all_likelihoods,
+            n_outcomes,allow_identical_outcomes,Q,n_const):
+            expparams = np.asarray(expparams).reshape(-1)
+            n_expparams = expparams.shape[0]
+            scalar_n_o = not np.isscalar(n_outcomes)
+            
+            igs = np.empty((n_expparams, ))
+
+            if n_const:
+                weights = all_sampled_weights
+                modelparams = all_sampled_modelparams
+                if not isinstance(all_likelihoods,np.ndarray):
+                    L = np.vstack(all_likelihoods)
+                else:
+                    L = all_likelihoods # shape (n_expparams,n_outcomes, n_particles)
+
+                if not isinstance(all_sampled_outcomes,np.ndarray):
+                    outcomes = np.vstack(all_sampled_outcomes)
+                else:
+                    outcomes = all_sampled_outcomes
+
+                hyp_weights = L*weights[np.newaxis,...]  #(n_expparams,n_outcomes, n_particles)
+                
+
+                norm_scale = np.sum(hyp_weights,axis=2) # shape (n_expparams, n_outcomes)
+                norm_weights = np.nan_to_num(hyp_weights/norm_scale[...,np.newaxis]) # shape(n_expparams,n_outcomes, n_particles)
+                import pdb
+                pdb.set_trace()
+                if allow_identical_outcomes:
+
+                    hyp_weights = np.nan_to_num(norm_weights)
+                    igs = np.sum(xlogy(hyp_weights,hyp_weights/weights),axis=(1,2))/hyp_weights.shape[1]
+                    import pdb
+                    pdb.set_trace()
+                else:
+
+                    igs = np.sum(np.nan_to_num(xlogy(hyp_weights ,norm_weights)), axis=(1,2))
+                    import pdb
+                    pdb.set_trace()
+
+            else:
+                for idx_exp in range(n_expparams):
+                    weights = all_sampled_weights[idx_exp]
+                    modelparams = all_sampled_modelparams[idx_exp]
+                    L = all_likelihoods[idx_exp]     # shape (n_outcomes, n_particles)
+              
+                    outcomes = all_sampled_outcomes[idx_exp] # shape (n_outcomes)
+                    # (unnormalized) hypothetical posterior weights for this experiment
+                    hyp_weights = L*weights # shape (n_outcomes, n_particles)
+                    # Sum up the weights to find the renormalization scale.
+                    norm_scale = np.sum(hyp_weights, axis=1)                 # shape (n_outcomes)
+                    #If norm_scale has 0 weighted,weights dividing by zero will be undefined
+                    #set norm_weights nan to zero weighted particle
+                    norm_weights = hyp_weights / norm_scale[..., np.newaxis] # shape(n_outcomes, n_particles)
+                    
+                    if self.model.allow_identical_outcomes:
+                        hyp_weights = np.nan_to_num(norm_weights)
+                        igs[idx_exp] = np.sum(xlogy(hyp_weights,hyp_weights/weights),axis=(0,1))/hyp_weights.shape[0]
+     
+                    else:
+                        igs[idx_exp] = np.sum(np.nan_to_num(xlogy(hyp_weights ,norm_weights)), axis=(0,1))
+
+                        
+
+
+                    
+            return igs 
+
+     
     def expected_information_gain(self, expparams, use_cached_samples=False,cache_samples=True,
-                    return_sampled_parameters=False,n_particle_subset=None):
+                    return_sampled_parameters=False,n_particle_subset=None,batch=None):
         r"""
         Calculates the expected information gain for each hypothetical experiment.
         
@@ -1432,56 +1502,111 @@ class SMCUpdater(Distribution):
                 particles if the number of outcomes is large. Set `n_particle_subset` to control
                 the number of particles used to calculate the Bayes Risk. Default behavior 
         :type n_particle_subset: int  
-
+        :param batch: Maximum number of expparams in each batch.
+        :type batch: int
             
         :return float: The Bayes risk for the current posterior distribution
             of the hypothetical experiment ``expparams``.
         """
+
         expparams = np.asarray(expparams).reshape(-1)
         n_expparams = expparams.shape[0]
         n_outcomes = self.model.n_outcomes(expparams)
         scalar_n_o = not np.isscalar(n_outcomes)
         n_const = self.model.is_n_outcomes_constant
+        
+  
 
+        if batch is not None:
+            split_expparams = np.array_split(expparams,n_expparams/batch+1)
+            results = []
+
+            if return_sampled_parameters:
+                igs = []
+                weights = []
+                modelparams = []
+                all_sampled_outcomes = []
+                all_likelihoods = []
+                for exps in split_expparams:
+                
+                    igs_i, weights_i, modelparams_i, all_sampled_outcomes_i, all_likelihoods_i = self.expected_information_gain(exps, 
+                    use_cached_samples=True,cache_samples=True,
+                    return_sampled_parameters=return_sampled_parameters,n_particle_subset=n_particle_subset,
+                    batch=None)
+                    igs.append(igs_i)
+                    weights.append(weights_i)
+                    modelparams.append(modelparams_i)
+                    all_sampled_outcomes.append(all_sampled_outcomes_i)
+                    all_likelihoods.append(all_likelihoods_i)
+                
+                igs = np.concatenate(igs)
+                weights = weights[0]
+                modelparams = modelparams[0]
+                all_sampled_outcomes = np.concatenate(all_sampled_outcomes,axis=1)
+                all_likelihoods = np.concatenate(all_likelihoods)
+
+                return igs,weights,modelparams,all_sampled_outcomes,all_likelihoods
+            else:
+                igs = []
+                for exps in split_expparams:
+                
+                    igs_i= self.expected_information_gain(exps, 
+                    use_cached_samples=True,cache_samples=True,
+                    return_sampled_parameters=return_sampled_parameters,n_particle_subset=n_particle_subset,
+                    batch=None)
+                    igs.append(igs_i)
+
+                igs = np.concatenate(igs)
+                return igs
+
+
+        # retrieve sampled weights, modelparams, outcomes, and associated likelihoods
         all_sampled_weights,all_sampled_modelparams,all_sampled_outcomes,all_likelihoods =  \
                     self._sample_outcomes_modelparams(expparams,use_cached_samples=use_cached_samples,
                         cache_samples=cache_samples,n_particle_subset=n_particle_subset)
 
-        # preallocate information gain array
-        ig = np.empty((n_expparams, ))
 
-        for idx_exp in range(n_expparams):
-            weights = all_sampled_weights[idx_exp]
-            modelparams = all_sampled_modelparams[idx_exp]
-            L = np.nan_to_num(all_likelihoods[idx_exp])     # shape (n_outcomes, n_particles)
-            outcomes = all_sampled_outcomes[idx_exp] # shape (n_outcomes)
+        n_outcomes = self.model.n_outcomes(expparams)
+        n_const = self.model.is_n_outcomes_constant
+        allow_identical_outcomes = self.model.allow_identical_outcomes
+        Q = self.model.Q
 
+    
 
-            # (unnormalized) hypothetical posterior weights for this experiment
-            hyp_weights = L*weights# shape (n_outcomes, n_particles)
-            # Sum up the weights to find the renormalization scale.
-        
-            # Sum over particles and outcomes. It may take some fiddling to convince yourself
-            # that this is the correct formula. See the second last formula of the second 
-            # page of derivations here: https://github.com/QInfer/python-qinfer/pull/70
-
-           
-            if self.model.allow_identical_outcomes:
-                hyp_weights = np.nan_to_num(hyp_weights/np.sum(hyp_weights,axis=1)[...,np.newaxis])
-                #ig[idx_exp] = np.sum(hyp_weights * np.log(L / norm_scale), axis=(0,1))
-                ig[idx_exp] = np.sum(xlogy(hyp_weights,hyp_weights/weights),axis=(0,1))/hyp_weights.shape[0]
-     
+        if self._dview and ipp is not None:
+            n_engines = len(self._dview)
+            expparams_split = np.array_split(expparams,n_engines,axis=0)
+            likelihoods_split = np.array_split(all_likelihoods,n_engines,axis=0)
+            outcomes_split = np.array_split(all_sampled_modelparams,n_engines,axis=0)
+            if np.isscalar(n_outcomes):
+                n_outcomes_split = [n_outcomes]*4
             else:
-                norm_scale = np.sum(hyp_weights, axis=1)
-                ig[idx_exp] = np.sum(np.nan_to_num(xlogy(hyp_weights ,L / norm_scale[..., np.newaxis])), axis=(0,1))
+                n_outcomes_split = np.array_split(n_outcomes,n_engines,axis=0)
 
+            ig = np.concatenate(self._dview.map_sync(
+                SMCUpdater._parallel_expected_ig_eval,
+                expparams_split,
+                [all_sampled_weights]*n_engines,
+                [all_sampled_modelparams]*n_engines,
+                outcomes_split,
+                likelihoods_split,
+                n_outcomes_split,
+                [allow_identical_outcomes]*n_engines,
+                [Q]*n_engines,
+                [n_const]*n_engines,
+                ),axis=0)
+        else:
+            ig = SMCUpdater._parallel_expected_ig_eval(expparams,all_sampled_weights,all_sampled_modelparams,
+                        all_sampled_outcomes,all_likelihoods,n_outcomes,
+                        allow_identical_outcomes,Q,n_const)
+        
         ig = ig.clip(min=0)
+
 
         if return_sampled_parameters:
             return ig, all_sampled_weights, all_sampled_modelparams, all_sampled_outcomes, all_likelihoods
         else:
             return ig
-
     def reset_sample_cache(self):
         """
         Reset the sampling cache used in utility metrics
@@ -2194,7 +2319,7 @@ class SMCUpdaterBCRB(SMCUpdater):
             key: kwargs[key] for key in kwargs
             if key in [
                 'resampler_a', 'resampler', 'resample_thresh', 'model',
-                'prior', 'n_particles'
+                'prior', 'n_particles','dview'
             ]
         })
         

@@ -40,7 +40,8 @@ __all__ = [
     'MultinomialModel',
     'MLEModel',
     'RandomWalkModel',
-    'GaussianRandomWalkModel'
+    'GaussianRandomWalkModel',
+    'DifferentiableDerivedModel'
 ]
 
 ## IMPORTS ####################################################################
@@ -156,6 +157,17 @@ class DerivedModel(Model):
         self._sim_count += modelparams.shape[0] * expparams.shape[0] * repeat
 
 PoisonModes = enum.enum("ALE", "MLE")
+
+
+class DifferentiableDerivedModel(DerivedModel,DifferentiableModel):
+    def score(self, outcomes, modelparams, expparams):
+        return self.underlying_model.score(outcomes,modelparams,expparams)
+        
+    def fisher_information(self, modelparams, expparams):
+        return self.underlying_model.fisher_information(modelparams,expparams)
+
+
+
 
 class PoisonedModel(DerivedModel, FiniteOutcomeModel):
     r"""

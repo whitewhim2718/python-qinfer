@@ -30,13 +30,13 @@ from __future__ import division # Ensures that a/b is always a float.
 
 ## EXPORTS ###################################################################
 
-__all__ = ['DirectViewParallelizedModel']
+__all__ = ['DirectViewParallelizedModel','DirectViewParallelizedDifferentiableModel']
 
 ## IMPORTS ###################################################################
 
 import numpy as np
-from qinfer.abstract_model import FiniteOutcomeModel
-from qinfer.derived_models import DerivedModel
+from qinfer.abstract_model import FiniteOutcomeModel,DifferentiableModel
+from qinfer.derived_models import DerivedModel,DifferentiableDerivedModel
 
 import warnings
 
@@ -219,7 +219,7 @@ class DirectViewParallelizedModel(DerivedModel):
 
         return np.concatenate(L, axis=1)
 
-    def simulate_experiment(self, modelparams, expparams, repeat=1, split_by_modelparams=True):
+    def simulate_experiment(self, modelparams, expparams, repeat=1, split_by_modelparams=False):
         """
         Simulates the underlying (serial) model using the parallel 
         engines. Returns what the serial model would return, see
@@ -282,3 +282,7 @@ class DirectViewParallelizedModel(DerivedModel):
 
             return np.concatenate(os, axis=1)
 
+
+
+class DirectViewParallelizedDifferentiableModel(DirectViewParallelizedModel,DifferentiableDerivedModel):
+    pass
