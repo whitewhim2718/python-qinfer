@@ -657,7 +657,7 @@ class SMCUpdater(Distribution):
         """
         return self._model.n_modelparams
         
-    def sample(self, n=1):
+    def sample(self, n=1,particle_weights=None,particle_locations=None):
         """
         Returns samples from the current posterior distribution.
 
@@ -665,9 +665,13 @@ class SMCUpdater(Distribution):
         :return: The sampled model parameter vectors.
         :rtype: `~numpy.ndarray` of shape ``(n, updater.n_rvs)``.
         """
-        cumsum_weights = np.cumsum(self.particle_weights)
+        if particle_weights is None:
+            particle_weights = self.particle_weights
+        if particle_locations is None:
+            particle_locations = self.particle_locations
+        cumsum_weights = np.cumsum(particle_weights)
 
-        return self.particle_locations[np.minimum(cumsum_weights.searchsorted(
+        return particle_locations[np.minimum(cumsum_weights.searchsorted(
             np.random.random((n,)),
             side='right'
         ), len(cumsum_weights) - 1)]
@@ -767,7 +771,7 @@ class SMCUpdater(Distribution):
 
         #if less particles than initial filter. Choose without replacement
         
-        samples = self.sample(n_particles)
+        samples = self.sample(n_particles,particle_weights,particle_locations)
         weights = np.ones(n_particles)/n_ini
         return weights,samples
         #if more particles than initial fiter take intial filter and then choose additional
@@ -878,8 +882,7 @@ class SMCUpdater(Distribution):
         #otherwise draw new weights/modelparams for outcome sampling      
         if not cache_available:
             if n_const:
-                sampled_weights, sampled_modelparams = self.reapprox(self.particle_weights,
-                        self.particle_locations,n_outcomes)
+                
                 if n_particle_subset == self.particle_weights.shape[0]:
                     risk_weights = self.particle_weights
                     risk_modelparams = self.particle_locations
@@ -887,6 +890,10 @@ class SMCUpdater(Distribution):
                     risk_weights, risk_modelparams = self.down_sample_particle_filter(self.particle_weights,
                             self.particle_locations,n_particle_subset)
 
+                sampled_weights, sampled_modelparams = self.reapprox(risk_weights,
+                       risk_modelparams,n_outcomes)
+
+        
                 if cache_samples:
                     self._sampled_weights = sampled_weights
                     self._sampled_modelparams = sampled_modelparams
@@ -904,10 +911,11 @@ class SMCUpdater(Distribution):
                     exp = expparams[idx_exp:idx_exp+1]
                     
                     if n_o > self.model.n_outcomes_cutoff and self.model.n_outcomes_cutoff is not None:                       
-                        sampled_weights, sampled_modelparams = self.reapprox(self.particle_weights,
-                        self.particle_locations,n_o)
                         risk_weights, risk_modelparams = self.down_sample_particle_filter(self.particle_weights,
                         self.particle_locations,n_particle_subset)
+                        sampled_weights, sampled_modelparams = self.reapprox(risk_weights,
+                        risk_modelparams,n_o)
+                        
                     else:
                         sampled_weights = self.particle_weights
                         sampled_modelparams = self.particle_locations
@@ -928,7 +936,7 @@ class SMCUpdater(Distribution):
             all_risk_weights = risk_weights
             all_risk_modelparams = risk_modelparams
        
-        
+   
             all_likelihoods,all_sampled_outcomes = self.model.representative_outcomes(
                             sampled_weights, sampled_modelparams, expparams, 
                             risk_modelparams, risk_weights)
@@ -1054,6 +1062,8 @@ class SMCUpdater(Distribution):
 
                 norm_scale = np.sum(hyp_weights,axis=2) # shape (n_expparams, n_outcomes)
                 norm_weights = np.nan_to_num(hyp_weights/norm_scale[...,np.newaxis]) # shape(n_expparams,n_outcomes, n_particles)
+
+
                 p_o = norm_scale/np.sum(norm_scale,axis=1)[:,np.newaxis] # shape (n_expparams, n_outcomes)
                 est_posterior_means = np.tensordot(norm_weights,modelparams,axes=(2,0))# shape(n_expparams,n_outcomes, n_particles)
 
@@ -1063,7 +1073,7 @@ class SMCUpdater(Distribution):
                             est_posterior_mom2 = np.sum(est_posterior_means**2, axis=1) # shape (n_expparams,n_mps)
                             est_mom2 = np.sum(np.tensordot(norm_weights, modelparams**2, axes=(2,0)),axis=1)# shape (n_expparams,n_mps)
                             risk = (1./norm_weights.shape[1])*np.sum(Q[np.newaxis,:] * (est_mom2 - est_posterior_mom2), axis=1)
-                   
+
                         elif var_fun == 'full':
                             frequentist_risk =np.tensordot(Q,(modelparams[np.newaxis,np.newaxis,:,:]-\
                                                 est_posterior_means[:,:,np.newaxis,:])**2,axes=(0,3))
@@ -1071,14 +1081,14 @@ class SMCUpdater(Distribution):
                         else:
                             raise ValueError("'var_fun' must be either 'simplified' or 'full'.")
                 else:
-
+             
                     if var_fun == 'simplified':
                         posterior_mom2 = est_posterior_means**2
                         mom2 = np.tensordot(norm_weights, modelparams**2, axes=(2,0))# shape(n_expparams,n_outcomes, n_particles)
               
                         risk = np.sum(Q[np.newaxis,:] * np.sum(p_o[:,:,np.newaxis]*(mom2 - posterior_mom2),axis=1), axis=1)
                     elif var_fun == 'full':
-                        frequentist_risk = np.tensordot(Q,(modelparams[:,np.newaxis,:,:]-\
+                        frequentist_risk = np.tensordot(Q,(modelparams[np.newaxis,np.newaxis,:,:]-\
                                             est_posterior_means[:,:,np.newaxis,:])**2,axes=(0,3))
                         risk = np.tensordot(p_o,np.sum(norm_weights*frequentist_risk,axis=2),axes=(1,1))
 
@@ -1430,19 +1440,16 @@ class SMCUpdater(Distribution):
 
                 norm_scale = np.sum(hyp_weights,axis=2) # shape (n_expparams, n_outcomes)
                 norm_weights = np.nan_to_num(hyp_weights/norm_scale[...,np.newaxis]) # shape(n_expparams,n_outcomes, n_particles)
-                import pdb
-                pdb.set_trace()
+       
                 if allow_identical_outcomes:
 
                     hyp_weights = np.nan_to_num(norm_weights)
                     igs = np.sum(xlogy(hyp_weights,hyp_weights/weights),axis=(1,2))/hyp_weights.shape[1]
-                    import pdb
-                    pdb.set_trace()
+              
                 else:
 
                     igs = np.sum(np.nan_to_num(xlogy(hyp_weights ,norm_weights)), axis=(1,2))
-                    import pdb
-                    pdb.set_trace()
+               
 
             else:
                 for idx_exp in range(n_expparams):

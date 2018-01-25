@@ -627,7 +627,7 @@ class Model(Simulatable):
 
 
             L = self.likelihood(outcomes, likelihood_modelparams, expparams).transpose(2,0,1)
-
+            
 
             if self.domain(expparams[0])[0].is_discrete:
                     # If we sum L_ep over the weighted modelparams, we get the total probability 

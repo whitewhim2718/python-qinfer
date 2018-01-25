@@ -596,7 +596,6 @@ class GaussianModel(DifferentiableModel):
             x = self.model_function(modelparams,expparams)[np.newaxis,...]
 
         likelihood = np.exp(-1./2*np.log(2*np.pi*var)-(outcomes-x)**2/(2*var))
-
         return likelihood
 
 

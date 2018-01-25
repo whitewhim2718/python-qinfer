@@ -279,8 +279,8 @@ class DirectViewParallelizedModel(DerivedModel):
                 np.array_split(expparams, self.n_engines, axis=0),
                 [repeat] * self.n_engines
             )
-
-            return np.concatenate(os, axis=1)
+     
+            return np.concatenate(os, axis=2)
 
 
 

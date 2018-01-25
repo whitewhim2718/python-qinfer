@@ -87,6 +87,7 @@ class DerivedModel(Model):
     _underlying_model = None
     def __init__(self, underlying_model):
         self._underlying_model = underlying_model
+        self._allow_identical_outcomes = self.underlying_model.allow_identical_outcomes
         super(DerivedModel, self).__init__()
     
     @property
@@ -118,6 +119,14 @@ class DerivedModel(Model):
     def Q(self):
         return self.underlying_model.Q
     
+    @property
+    def allow_identical_outcomes(self):
+        return self._allow_identical_outcomes
+    @allow_identical_outcomes.setter
+    def allow_identical_outcomes(self, value):
+        self._allow_identical_outcomes = value
+ 
+
     def clear_cache(self):
         self.underlying_model.clear_cache()
 
@@ -142,10 +151,7 @@ class DerivedModel(Model):
     def update_callback(self,weights,modelparams):
         return self.underlying_model.update_callback(weights,modelparams)
     
-    def representative_outcomes(self, weights, modelparams, expparams,likelihood_modelparams=None,
-                                likelihood_weights=None):
-        return self.underlying_model.representative_outcomes(weights, modelparams, expparams,likelihood_modelparams,
-                                likelihood_weights)
+
         
     def simulate_experiment(self,modelparams,expparams,repeat=1):
         # It might be tempting to call this for sim_count incrementing, 
