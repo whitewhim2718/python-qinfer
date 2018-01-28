@@ -1044,7 +1044,9 @@ class SMCUpdater(Distribution):
             
             risk = np.empty((n_expparams, ))
 
+
             if n_const:
+    
                 weights = all_sampled_weights
                 modelparams = all_sampled_modelparams
                 if not isinstance(all_likelihoods,np.ndarray):
@@ -1061,14 +1063,17 @@ class SMCUpdater(Distribution):
                 
 
                 norm_scale = np.sum(hyp_weights,axis=2) # shape (n_expparams, n_outcomes)
-                norm_weights = np.nan_to_num(hyp_weights/norm_scale[...,np.newaxis]) # shape(n_expparams,n_outcomes, n_particles)
+                norm_weights = (hyp_weights/norm_scale[...,np.newaxis]) # shape(n_expparams,n_outcomes, n_particles)
 
+       
 
                 p_o = norm_scale/np.sum(norm_scale,axis=1)[:,np.newaxis] # shape (n_expparams, n_outcomes)
                 est_posterior_means = np.tensordot(norm_weights,modelparams,axes=(2,0))# shape(n_expparams,n_outcomes, n_particles)
 
+      
                 
                 if allow_identical_outcomes:
+                       
                         if var_fun == 'simplified':
                             est_posterior_mom2 = np.sum(est_posterior_means**2, axis=1) # shape (n_expparams,n_mps)
                             est_mom2 = np.sum(np.tensordot(norm_weights, modelparams**2, axes=(2,0)),axis=1)# shape (n_expparams,n_mps)
@@ -1081,7 +1086,8 @@ class SMCUpdater(Distribution):
                         else:
                             raise ValueError("'var_fun' must be either 'simplified' or 'full'.")
                 else:
-             
+
+                    
                     if var_fun == 'simplified':
                         posterior_mom2 = est_posterior_means**2
                         mom2 = np.tensordot(norm_weights, modelparams**2, axes=(2,0))# shape(n_expparams,n_outcomes, n_particles)
@@ -1096,11 +1102,12 @@ class SMCUpdater(Distribution):
                         raise ValueError("'var_fun' must be either 'simplified' or 'full'.")
 
             else:
+                
                 for idx_exp in range(n_expparams):
                     weights = all_sampled_weights[idx_exp]
                     modelparams = all_sampled_modelparams[idx_exp]
                     L = all_likelihoods[idx_exp]     # shape (n_outcomes, n_particles)
-              
+                    
                     outcomes = all_sampled_outcomes[idx_exp] # shape (n_outcomes)
                     # (unnormalized) hypothetical posterior weights for this experiment
                     hyp_weights = L*weights # shape (n_outcomes, n_particles)

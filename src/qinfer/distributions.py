@@ -770,6 +770,9 @@ class ProductDistribution(Distribution):
         return np.hstack([f.sample(n) for f in self._factors])
 
 
+    def grad_log_pdf(self, x):
+        return np.sum([f.grad_log_pdf(x) for f in self._factors],axis=2)
+
 _DEFAULT_RANGES = np.array([[0, 1]])
 _DEFAULT_RANGES.flags.writeable = False # Prevent anyone from modifying the
                                         # default ranges.

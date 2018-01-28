@@ -597,7 +597,7 @@ class GaussianModel(DifferentiableModel):
 
         likelihood = np.exp(-1./2*np.log(2*np.pi*var)-(outcomes-x)**2/(2*var))
         return likelihood
-
+        #return scipy.stats.norm.pdf((outcomes-x)/np.sqrt(var))
 
     def score(self, outcomes, modelparams, expparams, return_L=False):
         
