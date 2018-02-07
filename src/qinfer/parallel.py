@@ -171,7 +171,7 @@ class DirectViewParallelizedModel(DerivedModel):
         except:
             pass
     
-    def likelihood(self, outcomes, modelparams, expparams):
+    def likelihood(self, outcomes, modelparams, expparams,log=False):
         # By calling the superclass implementation, we can consolidate
         # call counting there.
         """

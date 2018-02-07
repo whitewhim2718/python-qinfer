@@ -545,7 +545,7 @@ class Model(Simulatable):
         return self.are_models_valid(modelparams[np.newaxis, :])[0]
 
     def representative_outcomes(self, weights, modelparams, expparams,likelihood_modelparams=None,
-                                likelihood_weights=None):
+                                likelihood_weights=None,log=False):
         """
         Given the distribution of model parameters specified by 
         (``weights``, ``modelparams``), for each experimental parameter 
@@ -626,7 +626,7 @@ class Model(Simulatable):
                 outcomes = np.unique(outcomes,axis=0)
 
 
-            L = self.likelihood(outcomes, likelihood_modelparams, expparams).transpose(2,0,1)
+            L = self.likelihood(outcomes, likelihood_modelparams, expparams,log=log).transpose(2,0,1)
             
 
             if self.domain(expparams[0])[0].is_discrete:
@@ -665,7 +665,7 @@ class Model(Simulatable):
 
                 # Find the likelihood for each outcome given each modelparam (irrespective 
                 # of which modelparam the outcome resulted from)
-                L_ep = self.likelihood(os, likelihood_modelparams, expparam)[:,:,0]
+                L_ep = self.likelihood(os, likelihood_modelparams, expparam,log=log)[:,:,0]
 
                 if self.domain(expparam)[0].is_discrete:
                     # If we sum L_ep over the weighted modelparams, we get the total probability 
@@ -822,7 +822,7 @@ class FiniteOutcomeModel(Model):
         return outcomes[0, 0, 0] if repeat == 1 and expparams.shape[0] == 1 and modelparams.shape[0] == 1 else outcomes
 
     def representative_outcomes(self, weights, modelparams, expparams,likelihood_modelparams=None,
-                                likelihood_weights=None):
+                                likelihood_weights=None,log=False):
         """
         Given the distribution of model parameters specified by 
         (``weights``, ``modelparams``), for each experimental parameter 
@@ -895,12 +895,12 @@ class FiniteOutcomeModel(Model):
         #check if we can vectorize likelihood call
         if constant_outcomes:
             if self.n_outcomes_cutoff is None or n_outcomes <= self.n_outcomes_cutoff:
-                L = self.likelihood(outcomes[0], likelihood_modelparams, expparams).transpose(2,0,1)
+                L = self.likelihood(outcomes[0], likelihood_modelparams, expparams,log=log).transpose(2,0,1)
 
             else:
                 L,outcomes = super(FiniteOutcomeModel, self).representative_outcomes(
                         weights, modelparams, expparams, likelihood_modelparams,
-                        likelihood_weights)
+                        likelihood_weights,log=log)
                 
         # We have to loop over expparams only because each one, unfortunately, might have 
         # a different dtype and/or number of outcomes .
@@ -916,12 +916,12 @@ class FiniteOutcomeModel(Model):
                 if self.n_outcomes_cutoff is None or n_o <= self.n_outcomes_cutoff:
                     # If we don't have to many outcomes, just report them all.
                     os = self.domain(expparam)[0].values
-                    L.append(self.likelihood(os, likelihood_modelparams, expparam)[:,:,0])
+                    L.append(self.likelihood(os, likelihood_modelparams, expparam,log=log)[:,:,0])
                 else:
                     # Otherwise, use the generic method to pick some randomly.
                     L_s,os = super(FiniteOutcomeModel, self).representative_outcomes(
                         weights, modelparams, expparam, likelihood_modelparams,
-                        likelihood_weights)[0]
+                        likelihood_weights,log=log)[0]
                     L.append(L_s)
 
                 outcomes.append(os)

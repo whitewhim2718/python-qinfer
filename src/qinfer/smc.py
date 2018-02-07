@@ -816,7 +816,7 @@ class SMCUpdater(Distribution):
     
 
     def _sample_outcomes_modelparams(self,expparams,use_cached_samples=False,cache_samples=True,
-                                        n_particle_subset=None):
+                                        n_particle_subset=None,log=False):
         """
         Hidden method that implements sampling of outcomes for monte carlo integration. Is used by 
         both the `bayes_risk`, and `expected_information_gain` methods to draw outcomes. Also implements
@@ -924,7 +924,7 @@ class SMCUpdater(Distribution):
 
                     likelihoods, sampled_outcomes = self.model.representative_outcomes(
                             sampled_weights, sampled_modelparams, exp, 
-                            risk_modelparams, risk_weights)
+                            risk_modelparams, risk_weights,log=log)
 
                
                     all_risk_weights.append(risk_weights)
@@ -939,7 +939,7 @@ class SMCUpdater(Distribution):
    
             all_likelihoods,all_sampled_outcomes = self.model.representative_outcomes(
                             sampled_weights, sampled_modelparams, expparams, 
-                            risk_modelparams, risk_weights)
+                            risk_modelparams, risk_weights,log=log)
 
       
          
@@ -1037,16 +1037,40 @@ class SMCUpdater(Distribution):
 
     @staticmethod
     def _parallel_risk_eval(expparams,all_sampled_weights,all_sampled_modelparams,all_sampled_outcomes,all_likelihoods,
-            n_outcomes,allow_identical_outcomes,Q,n_const,var_fun):
+            n_outcomes,allow_identical_outcomes,Q,n_const,var_fun,log):
             expparams = np.asarray(expparams).reshape(-1)
             n_expparams = expparams.shape[0]
             scalar_n_o = not np.isscalar(n_outcomes)
             
             risk = np.empty((n_expparams, ))
 
+            if log:
+                weights = all_sampled_weights
+                modelparams = all_sampled_modelparams
+                if not isinstance(all_likelihoods,np.ndarray):
+                    L = np.vstack(all_likelihoods)
+                else:
+                    L = all_likelihoods # shape (n_expparams,n_outcomes, n_particles)
 
-            if n_const:
-    
+                if not isinstance(all_sampled_outcomes,np.ndarray):
+                    outcomes = np.vstack(all_sampled_outcomes)
+                else:
+                    outcomes = all_sampled_outcomes
+                log_weights = np.log(weights)
+                log_posterior_weights =   L + log_weights[np.newaxis,...] #(n_expparams,n_outcomes, n_particles)
+                L0 = scipy.misc.logsumexp(log_posterior_weights,axis=2)
+                norm_log_posterior_weights = log_posterior_weights-L0[...,np.newaxis]
+                #Q_modelparams = np.tensordot(Q,modelparams,axes=(0,1))
+                #Q_modelparams_2 = np.tensordot(Q,modelparams**2,axes=(0,1))
+                est_posterior_means = np.exp(scipy.misc.logsumexp(a=norm_log_posterior_weights[...,np.newaxis],b=modelparams[np.newaxis,np.newaxis,...],
+                                    axis=(2)))
+                est_posterior_mom2 = np.sum(est_posterior_means**2,axis=1)
+                est_mom2 = np.sum(np.exp(scipy.misc.logsumexp(a=norm_log_posterior_weights[...,np.newaxis],b=(modelparams**2)[np.newaxis,np.newaxis,...],
+                                    axis=(2))),axis=1)
+
+                risk = (1./log_posterior_weights.shape[1])*np.sum(Q[np.newaxis,:] * (est_mom2 - est_posterior_mom2), axis=1)
+         
+            elif n_const:
                 weights = all_sampled_weights
                 modelparams = all_sampled_modelparams
                 if not isinstance(all_likelihoods,np.ndarray):
@@ -1157,7 +1181,7 @@ class SMCUpdater(Distribution):
             return risk 
 
     def bayes_risk(self, expparams, use_cached_samples=False,cache_samples=True,
-                    return_sampled_parameters=False,n_particle_subset=None,var_fun='simplified',batch=None):
+                    return_sampled_parameters=False,n_particle_subset=None,var_fun='simplified',batch=None,log=False):
         r"""
         Calculates the Bayes risk for each hypothetical experiment, assuming the
         quadratic loss function defined by the current model's scale matrix
@@ -1221,7 +1245,7 @@ class SMCUpdater(Distribution):
                     risks_i, weights_i, modelparams_i, all_sampled_outcomes_i, all_likelihoods_i = self.bayes_risk(exps, 
                     use_cached_samples=True,cache_samples=True,
                     return_sampled_parameters=return_sampled_parameters,n_particle_subset=n_particle_subset,
-                    var_fun=var_fun,batch=None)
+                    var_fun=var_fun,batch=None,log=log)
                     risks.append(risks_i)
                     weights.append(weights_i)
                     modelparams.append(modelparams_i)
@@ -1242,7 +1266,7 @@ class SMCUpdater(Distribution):
                     risks_i= self.bayes_risk(exps, 
                     use_cached_samples=True,cache_samples=True,
                     return_sampled_parameters=return_sampled_parameters,n_particle_subset=n_particle_subset,
-                    var_fun=var_fun,batch=None)
+                    var_fun=var_fun,batch=None,log=log)
                     risks.append(risks_i)
 
                 risks = np.concatenate(risks)
@@ -1252,7 +1276,7 @@ class SMCUpdater(Distribution):
         # retrieve sampled weights, modelparams, outcomes, and associated likelihoods
         all_sampled_weights,all_sampled_modelparams,all_sampled_outcomes,all_likelihoods =  \
                     self._sample_outcomes_modelparams(expparams,use_cached_samples=use_cached_samples,
-                        cache_samples=cache_samples,n_particle_subset=n_particle_subset)
+                        cache_samples=cache_samples,n_particle_subset=n_particle_subset,log=log)
 
 
         n_outcomes = self.model.n_outcomes(expparams)
@@ -1281,12 +1305,13 @@ class SMCUpdater(Distribution):
                 [allow_identical_outcomes]*n_engines,
                 [Q]*n_engines,
                 [n_const]*n_engines,
-                [var_fun]*n_engines
+                [var_fun]*n_engines,
+                [log]*n_engines
                 ),axis=0)
         else:
             risk = SMCUpdater._parallel_risk_eval(expparams,all_sampled_weights,all_sampled_modelparams,
                         all_sampled_outcomes,all_likelihoods,n_outcomes,
-                        allow_identical_outcomes,Q,n_const,var_fun)
+                        allow_identical_outcomes,Q,n_const,var_fun,log)
         
         risk = risk.clip(min=0)
 

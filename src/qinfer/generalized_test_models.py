@@ -553,7 +553,7 @@ class GaussianModel(DifferentiableModel):
         return self._domain if expparams is None else [self._domain for ep in expparams]
     
 
-    def likelihood(self, outcomes, modelparams, expparams):
+    def likelihood(self, outcomes, modelparams, expparams,log=False):
         # By calling the superclass implementation, we can consolidate
         # call counting there.
 
@@ -595,6 +595,11 @@ class GaussianModel(DifferentiableModel):
         else:
             x = self.model_function(modelparams,expparams)[np.newaxis,...]
 
+
+        if log: 
+            log_L = -(outcomes-x)**2/(2*var)-0.5*(np.log(2*np.pi))-np.log(var)/2
+  
+            return log_L
         likelihood = np.exp(-1./2*np.log(2*np.pi*var)-(outcomes-x)**2/(2*var))
         return likelihood
         #return scipy.stats.norm.pdf((outcomes-x)/np.sqrt(var))

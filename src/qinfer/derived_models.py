@@ -151,6 +151,8 @@ class DerivedModel(Model):
     def update_callback(self,weights,modelparams):
         return self.underlying_model.update_callback(weights,modelparams)
     
+    def experiment_cost(self,expparams):
+        return self.underlying_model.experiment_cost(expparams)
 
         
     def simulate_experiment(self,modelparams,expparams,repeat=1):
